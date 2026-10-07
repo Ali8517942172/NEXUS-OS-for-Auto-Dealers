@@ -260,8 +260,8 @@ import { N8N_BASE } from '../lib/env.js';
    the moment a label stops being the bare status word — "HOT severity" rather
    than "HOT" — that derivation falls through to the neutral grey. See the
    severity pill in renderAlerts(). */
-import { TZ, ago, dubaiDate, dubaiStamp, esc, initials, num, pct, pill, tone } from '../lib/format.js';
-import { displayName, maskText } from '../lib/privacy.js';
+import { TZ, ago, dubaiDate, dubaiStamp, esc, initials, n0, num, pct, pill, tone } from '../lib/format.js';
+import { displayName, maskEmail, maskText } from '../lib/privacy.js';
 /* The only module allowed to interpret audit_log.status or v_workflow_health.
    `status === 'FAILED'` is never written on a screen; see lib/health.js. */
 import { HEALTH_WORDS, healthWords, successRate } from '../lib/health.js';
@@ -272,10 +272,9 @@ import { HEALTH_WORDS, healthWords, successRate } from '../lib/health.js';
    rule; every identity decision below goes through these four functions. */
 import { AMBIGUITY, SUFFIX_LEN, describeKey, expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
-import { openModal } from '../lib/modal.js';
-import { SCREENS } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi } from '../lib/ui.js';
+import { SCREENS, go } from '../lib/nav.js';
+import { BTN, emptyState, errorState, openStitchModal, skeleton, statusChip, trustFooter } from '../lib/stitch-ui.js';
+import { ME } from '../lib/data.js';
 
 /* Caps. An inbox that has been running a year has more history than a screen
    needs to paint, and an unbounded select is how a screen starts timing out in
@@ -294,7 +293,7 @@ const ATTN_LIMIT = 100;
    so it may never be reached silently. Live 1 Sep 2026 19:00 UTC the table holds
    3 rows. */
 const LEAD_POOL_LIMIT = 1000;
-const LEAD_POOL_COLS = 'id,name,email,phone,status';
+const LEAD_POOL_COLS = 'id,name,email,phone,status,vehicle_interest,ai_score,assigned_to';
 
 /* The look-back inside `v_needs_attention.unanswered_chat`. It is used here only
    to explain why a thread that is plainly waiting is absent from the alert strip
@@ -1063,6 +1062,58 @@ const sameAsWhy = t =>
   + 'left separate so the counts on this screen keep agreeing with the attention list and the nav badge, which count '
   + 'view rows — but the message pane reads the whole person, so opening either row shows the same history.';
 
+/* ── Stitch vocabulary (complete, literal class strings) ─────────────────────
+   From design/stitch/conversations-omnichannel-dealership-inbox--f2b061.html.
+   The dialogs keep lib/modal.js's { wrap, close, msg } contract through
+   openStitchModal(); this adapter keeps their call sites as they were. */
+const openModal = (title, bodyHtml, footHtml) => openStitchModal({ title, bodyHtml, footHtml, wide: true });
+const SECTION = 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm';
+const NOTE = {
+  info: 'flex items-start gap-2.5 p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-blue-950 font-body-sm text-body-sm',
+  warm: 'flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm',
+  hot:  'flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm',
+};
+const TABS_BTN = {
+  on:  'px-2.5 py-1 rounded-md bg-primary text-on-primary font-body-sm text-[12px] font-semibold',
+  off: 'px-2.5 py-1 rounded-md bg-surface-container text-on-surface hover:bg-surface-container-high font-body-sm text-[12px] font-medium transition-colors',
+};
+const ROW = {
+  on:  'flex items-start gap-3 px-3 py-3 border-l-4 border-primary bg-secondary-fixed/40 cursor-pointer',
+  off: 'flex items-start gap-3 px-3 py-3 border-l-4 border-transparent hover:bg-surface-container-low cursor-pointer transition-colors',
+};
+const BUBBLE = {
+  in:  'max-w-[78%] self-start bg-surface-container-lowest border border-outline-variant/40 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm font-body-md text-body-sm text-on-surface',
+  out: 'max-w-[78%] self-end bg-primary-fixed border border-primary/20 rounded-xl rounded-tr-sm px-4 py-3 shadow-sm font-body-md text-body-sm text-on-surface',
+  inFlag:  'max-w-[78%] self-start bg-surface-container-lowest border-2 border-amber-400 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm font-body-md text-body-sm text-on-surface',
+  outFlag: 'max-w-[78%] self-end bg-primary-fixed border-2 border-amber-400 rounded-xl rounded-tr-sm px-4 py-3 shadow-sm font-body-md text-body-sm text-on-surface',
+};
+const SEV_CARD = {
+  hot:  'flex items-start gap-3 p-3 rounded-lg bg-surface-container-lowest border border-red-200 shadow-sm',
+  warm: 'flex items-start gap-3 p-3 rounded-lg bg-surface-container-lowest border border-amber-200 shadow-sm',
+  cold: 'flex items-start gap-3 p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/40 shadow-sm',
+};
+const SEV_AVATAR = {
+  hot: 'w-9 h-9 rounded-lg bg-red-50 text-red-700 flex items-center justify-center shrink-0',
+  warm: 'w-9 h-9 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center shrink-0',
+  cold: 'w-9 h-9 rounded-lg bg-surface-container text-on-surface-variant flex items-center justify-center shrink-0',
+};
+const AVATAR = 'w-9 h-9 rounded-lg bg-primary-container text-on-primary font-bold text-[12px] flex items-center justify-center shrink-0';
+/* A KPI tile whose sub-line is trusted markup this screen built. */
+const tile = (label, value, subHtml, cls = '') => `<div class="bg-surface-container-lowest p-space-md rounded-xl border border-outline-variant/40 shadow-sm flex flex-col gap-1.5 min-w-0">
+    <span class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">${esc(label)}</span>
+    <span class="font-label-numeric-lg text-[1.75rem] leading-none font-bold tracking-tight ${cls || 'text-on-surface'}">${value}</span>
+    <div class="font-body-sm text-[12px] leading-snug text-on-surface-variant" style="white-space:normal">${subHtml}</div></div>`;
+const LABEL = 'font-table-header text-table-header uppercase tracking-wider text-outline font-semibold';
+const actorName = () => String((ME && (ME.name || ME.email)) || 'Signed-in user');
+/* An error panel whose sentence is OURS (nothing failed — no key could be
+   matched), with the "Couldn't load" heading the gate detects an errored screen
+   by. lib/stitch-ui.js errorState() takes only a backend error. */
+const noteError = (what, noteText) => `<div class="p-space-lg rounded border border-red-200 bg-red-50/20 flex items-start gap-3">
+    <span class="material-symbols-outlined text-red-700">sync_problem</span>
+    <div><h3 class="font-headline-md text-body-lg font-semibold text-red-950">Couldn't load ${esc(what)}</h3>
+      <p class="font-body-sm text-body-sm text-red-900 mt-1">${esc(noteText)}</p>
+      <button type="button" class="${BTN.secondary} mt-2" data-retry="thread">Retry</button></div></div>`;
+
 SCREENS.conversations = async host => {
   /* `.ds-screen` is the class lib/design-system.css gates its handful of
      upgrades to existing chrome behind. It goes on a wrapper this screen
@@ -1072,20 +1123,36 @@ SCREENS.conversations = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
      screens/setup.js and screens/inventory.js. */
-  const root = el('div', 'ds-screen');
+  /* Stitch layout, 7 Oct 2026: `nx-stitch` on a wrapper this screen appends,
+     never on `#screen`. The reads, the identity rules and every caveat below
+     are unchanged; the inbox is the Stitch three-column layout — threads,
+     conversation, client dossier. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  const readAt = new Date();
+  const headHost = el('div');
+  headHost.innerHTML = `<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-sm">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2"><span class="font-table-header text-table-header uppercase tracking-wider text-outline">Work</span>
+          <span class="font-table-header text-table-header text-outline-variant">/</span>
+          <span class="font-table-header text-table-header uppercase tracking-wider text-primary font-semibold">Conversations</span></div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Conversations</h1>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-0.5 max-w-3xl">Every WhatsApp thread NEXUS has logged, who is waiting on a person, and a reply box that shows you where the message is going before it goes.</p>
+      </div>
+    </div>`;
+  root.appendChild(headHost);
 
   /* Order on the page is order of urgency. The alert strip is what somebody is
      waiting on right now; the KPIs are the shape of the inbox; the inbox itself
      is where the work happens. */
+  const strip = el('div');
   const alertHost = el('div');
-  alertHost.style.marginBottom = '16px';
-  const strip = el('div', 'grid g4');
-  const wrap  = el('div', 'card flush');
-  wrap.style.marginTop = '16px';
-  root.appendChild(alertHost);
+  const wrap  = el('div');
+  const footHost = el('div');
   root.appendChild(strip);
+  root.appendChild(alertHost);
   root.appendChild(wrap);
+  root.appendChild(footHost);
 
   let threads = [], dropped = 0, capped = false;
   let attn = [], attnError = null;
@@ -1388,9 +1455,10 @@ SCREENS.conversations = async host => {
               + 'gone unanswered, nor on a silence-escalation marker. A row appears here when one does, stays for the '
               + `${num(CHAT_WINDOW_DAYS)} days the view looks back over, and after that this screen goes on `
               + 'reporting it here on its own.</span>';
-      alertHost.innerHTML = `<div class="ds-cell-sub" style="padding:2px 2px 0;display:flex;gap:8px;align-items:flex-start">
-          <span class="material-symbols-outlined ${cls}" aria-hidden="true" style="font-size:18px">${icon}</span>
-          <span style="white-space:normal">${why}</span>
+      alertHost.innerHTML = `<div class="${SECTION} px-space-md py-3 flex gap-3 items-start">
+          <span class="material-symbols-outlined ${cls}" aria-hidden="true" style="font-size:20px">${icon}</span>
+          <div class="min-w-0"><div class="font-body-md text-body-sm font-semibold text-on-surface">Floor action queue: waiting on a human</div>
+          <div class="ds-cell-sub" style="white-space:normal">${why}</div></div>
         </div>`;
       return;
     }
@@ -1454,12 +1522,13 @@ SCREENS.conversations = async host => {
         + ' It is not a lead status. HOT, WARM and COLD are words in both vocabularies and this product renders '
         + 'them with the same component, which is why this one carries the noun.';
       const sevTone = tone(a.severity) || 'unknown';
-      return `<div class="list-item" ${t ? `role="button" tabindex="0" data-a="${i}"` : ''}
-           style="align-items:flex-start;cursor:${t ? 'pointer' : 'default'}">
-          <span class="material-symbols-outlined" aria-hidden="true"
+      const sevKey = low(a.severity) === 'hot' ? 'hot' : (low(a.severity) === 'warm' ? 'warm' : 'cold');
+      return `<div class="${SEV_CARD[sevKey]}" ${t ? `role="button" tabindex="0" data-a="${i}"` : ''}
+           style="cursor:${t ? 'pointer' : 'default'}">
+          <span class="${SEV_AVATAR[sevKey]}"><span class="material-symbols-outlined" aria-hidden="true"
                 style="font-size:20px">${a.kind === 'unanswered_chat' ? 'mark_chat_unread'
                     : (a.kind === 'no_whatsapp_address' ? 'link_off'
-                    : (a.kind === 'silence_escalated' ? 'notifications_paused' : 'schedule'))}</span>
+                    : (a.kind === 'silence_escalated' ? 'notifications_paused' : 'schedule'))}</span></span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span title="${esc(sevWhy)}">${pill(`${a.severity} severity`, sevTone, { verbatim: false })}</span>
@@ -1471,28 +1540,33 @@ SCREENS.conversations = async host => {
             </div>
             <div class="ds-cell-sub" style="white-space:normal">${esc(a.detail)}${dead}</div>
           </div>
-          <span class="ds-cell-sub" style="flex-shrink:0" title="${esc(stamp(a.at))}">${esc(ago(a.at))}</span>
+          <div class="flex flex-col items-end gap-1.5 shrink-0">
+            <span class="ds-cell-sub" title="${esc(stamp(a.at))}">${esc(ago(a.at))}</span>
+            ${t ? `<span class="${BTN.primary}">Jump<span class="material-symbols-outlined text-[16px]">arrow_forward</span></span>` : ''}
+          </div>
         </div>`;
     }).join('');
 
     const hot = rows.filter(a => low(a.severity) === 'hot').length;
-    alertHost.innerHTML = `<div class="card flush">
-        <div class="card-head">
-          <div>
-            <div class="card-title">Waiting on a human</div>
-            <div class="card-sub">${num(rows.length)} item${rows.length === 1 ? '' : 's'}${hot ? ` · ${num(hot)} urgent` : ''}
+    alertHost.innerHTML = `<section class="${SECTION}">
+        <div class="px-space-md py-3 border-b border-outline-variant/30 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap"><span class="w-2 h-2 rounded-full bg-error"></span>
+              <span class="font-headline-md text-headline-md text-on-surface">Floor action queue: waiting on a human</span>
+              ${hot ? `<span class="px-2 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-label-numeric-sm font-semibold">${num(hot)} urgent</span>` : ''}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${num(rows.length)} item${rows.length === 1 ? '' : 's'}${hot ? ` · ${num(hot)} urgent` : ''}
               · ${num(fromView.length)} from the attention list for this screen${derived.length
                 ? `, ${num(derived.length)} this screen can see that the view cannot`
                 : ''}.
               A thread the bot chose not to answer is not a failure — that is the allowlist working — but somebody still has to reply.</div>
           </div>
         </div>
-        ${attnError ? `<div style="padding:0 20px 12px"><div class="banner warm">
+        ${attnError ? `<div style="padding:12px 16px 0"><div class="${NOTE.warm}">
           <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">error</span>
           <div>The attention list could not be read (${esc(attnError)}), so only the items this screen derived for itself are listed. The triaged list is missing, not empty.</div>
         </div></div>` : ''}
-        ${items}
-      </div>`;
+        <div class="p-space-md grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-space-sm">${items}</div>
+      </section>`;
 
     alertHost.querySelectorAll('[data-a]').forEach(node => {
       const open = () => {
@@ -1524,11 +1598,10 @@ SCREENS.conversations = async host => {
     alertHost.innerHTML = `<div class="ds-cell-sub" style="padding:2px">${esc('Checking what needs a human\u2026')}</div>`;
     /* The strip chooses its own layout once the rows are counted, so it loads
        and fails as one box rather than as a quarter of a four-up grid. */
-    strip.className = 'card flush';
-    strip.innerHTML = stateLoading(2);
-    wrap.style.display = 'block';
-    wrap.style.minHeight = '';
-    wrap.innerHTML = stateLoading(8);
+    strip.className = '';
+    strip.innerHTML = skeleton({ rows: 1 });
+    wrap.className = '';
+    wrap.innerHTML = skeleton({ rows: 4 });
 
     /* Both reads start together — the attention view does not depend on the
        thread list — but the strip is only painted once the threads are in, since
@@ -1561,9 +1634,9 @@ SCREENS.conversations = async host => {
       const a = await alertsRead;
       attn = a.rows; attnError = a.error;
       renderAlerts();
-      strip.className = 'card flush';
-      strip.innerHTML = stateError('the inbox summary', e);
-      wrap.innerHTML = stateError('conversations', e, 'reload');
+      strip.className = '';
+      strip.innerHTML = errorState({ what: 'the inbox summary', err: e });
+      wrap.innerHTML = errorState({ what: 'conversations', err: e, retry: 'reload' });
       wrap.querySelector('[data-retry]')?.addEventListener('click', boot);
       return;
     }
@@ -1589,23 +1662,34 @@ SCREENS.conversations = async host => {
     renderStrip();
 
     if (!threads.length) {
-      wrap.innerHTML = stateEmpty(
-        dropped ? 'No conversation can be addressed' : 'No conversations yet',
-        dropped
+      wrap.innerHTML = emptyState({ icon: 'forum',
+        title: dropped ? 'No conversation can be addressed' : 'No conversations yet',
+        body: dropped
           ? `${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread identifier on file, so there is `
             + 'no contact to attach those messages to and no thread that could be opened or replied to.'
           : 'NEXUS returned no rows, so no message in the message history resolves to a person. A thread '
             + 'appears here as soon as somebody messages the dealership WhatsApp number, or the agent sends its '
             + 'first message — the view groups every log row onto one contact, so the first message is also the '
-            + 'first thread.',
-        'forum');
+            + 'first thread.' });
+      paintFoot();
       return;
     }
 
     renderShell();
+    paintFoot();
     drawList();
     const oldest = oldestWaiting();
     openThread((oldest || threads[0]).key);
+  }
+
+  /* The trust footer: which reads this inbox rests on, and when. */
+  function paintFoot() {
+    footHost.innerHTML = trustFooter({
+      source: 'v_conversations · v_communication_log_evidence · v_needs_attention · v_workflow_health · leads',
+      asOf: dubaiStamp(readAt),
+      evidence: `${num(threads.length)} ${plural(threads.length, 'thread', 'threads')} read${capped ? ` (capped at ${num(THREAD_LIMIT)})` : ''}`,
+      actor: actorName(),
+    });
   }
 
   const oldestWaiting = () => {
@@ -1720,14 +1804,14 @@ SCREENS.conversations = async host => {
        all-clear; it is either a dealership nobody has messaged or a read that
        came back with nothing, and the two are worth telling apart. */
     if (!threads.length) {
-      strip.className = 'card';
+      strip.className = `${SECTION} p-space-md`;
       strip.innerHTML = `
         <div style="display:flex;gap:12px;align-items:flex-start">
           <span class="material-symbols-outlined t-muted" aria-hidden="true" style="font-size:20px">inbox</span>
           <div style="min-width:0">
-            <div class="label-caps">The whole inbox</div>
-            <div class="kpi-value sm" style="white-space:normal">No conversations</div>
-            <div class="kpi-sub" style="white-space:normal">
+            <div class="${LABEL}">The whole inbox</div>
+            <div class="font-headline-md text-headline-md text-on-surface" style="white-space:normal">No conversations</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">
               NEXUS returned no rows${dropped ? `, and ${num(dropped)} ${plural(dropped, 'row was', 'rows were')} dropped for having no thread identifier` : ''}.
               Nothing is claimed about reply times, phone coverage or whether anything is repliable — there is
               nothing to claim it about, and a tile reading 0 beside the words "every thread" is a statement about
@@ -1779,18 +1863,18 @@ SCREENS.conversations = async host => {
       const whole = (capped || dropped)
         ? ''
         : 'This is every conversation the view holds — not a page of a longer list. ';
-      strip.className = 'card';
+      strip.className = `${SECTION} p-space-md`;
       strip.innerHTML = `
         <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">
           <div style="flex:1 1 340px;min-width:0">
-            <div class="label-caps">The whole inbox</div>
+            <div class="${LABEL}">The whole inbox</div>
             ${/* "Customer" is a claim about a person and it was being made from
                   v_conversations.lead_email, which is null for a lead the view's
                   exact joins cannot see. It follows the resolved answer from
                   1 Sep 2026 evening, and says "one contact" where the leads read
                   did not come back rather than either word. */''}
-            <div class="kpi-value sm" style="white-space:normal">${num(msgs)} ${plural(msgs, 'message', 'messages')}, <span title="${esc(leadWhy(t))}">${leadOf(t).state === 'matched' ? 'one customer' : 'one contact'}</span></div>
-            <div class="kpi-sub" style="white-space:normal">
+            <div class="font-headline-md text-headline-md text-on-surface" style="white-space:normal">${num(msgs)} ${plural(msgs, 'message', 'messages')}, <span title="${esc(leadWhy(t))}">${leadOf(t).state === 'matched' ? 'one customer' : 'one contact'}</span></div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">
               ${num(realInbound(t))} from ${esc(who)}, ${num(realOutbound(t))} sent back${outboundIsFloor(t)
                 ? ` <span class="t-warm" title="${esc('The count of messages sent out is ' + t.outbound + ' because it counts every row with direction \'outbound\', and the newest row here is the silence detector\'s ' + SILENCE_MARKER + ' marker, written with that direction before the detector was fixed. The view\'s msg_outbound_count column, which counts messages only, did not come back on this read — so one marker has been taken out here and any older marker in this history has not. This figure is a floor. Open the thread for the exact count.')}">(a floor — NEXUS says ${num(t.outbound)} and its message-only count did not load)</span>`
                 : (t.internalCount
@@ -1804,7 +1888,7 @@ SCREENS.conversations = async host => {
             </div>
           </div>
           <div style="flex:1 1 260px;min-width:0">
-            <div class="label-caps">Where it stands</div>
+            <div class="${LABEL}">Where it stands</div>
             <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${reply}</div>
             <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${send}</div>
           </div>
@@ -1861,7 +1945,7 @@ SCREENS.conversations = async host => {
          person the sub-line says so rather than the headline moving — a headline
          that disagreed with the nav badge would be a worse problem than the one
          it fixed. */
-      kpi('Conversations', num(threads.length),
+      tile('Conversations', num(threads.length),
         `<span title="${esc(msgsExact
             ? `Summed from the message-only count, which counts only rows NEXUS’s own test for what counts as a message accepts.${internalTotal ? ` A further ${internalTotal} row${internalTotal === 1 ? '' : 's'} across this inbox ${internalTotal === 1 ? 'is' : 'are'} the dealership's own internal notes — the 12-hour silence detector's markers and rows like them — and ${internalTotal === 1 ? 'is' : 'are'} not counted here.` : ''}`
             : 'At least one thread fell back to the count of every row filed under a contact, which counts every row filed under a contact including the dealership\'s own internal notes, because the message-only column did not come back on this read. This total therefore mixes two populations.')}">${num(msgs)} ${plural(msgs, 'message', 'messages')} logged</span>`
@@ -1881,7 +1965,7 @@ SCREENS.conversations = async host => {
          is a row we wrote about a customer, not a message we sent to one — and
          because awaiting_reply is false for both, they were being counted into
          this green all-clear. Named separately, in amber, 1 Sep 2026. */
-      kpi('Reply due', num(awaiting.length),
+      tile('Reply due', num(awaiting.length),
         (awaiting.length
           ? `<span class="t-hot">Oldest waiting since ${esc(ago(oldest.last_at))}</span>`
             + (outsideWindow
@@ -1903,7 +1987,7 @@ SCREENS.conversations = async host => {
          word and stays the view's; where the last-9 rule has linked such a row
          to a named one, the sub-line says how many, because "unidentified" and
          "unidentified but we know who this is" are different things to act on. */
-      kpi('Numbers on file', num(withPhone),
+      tile('Numbers on file', num(withPhone),
         (noPhone
           ? `<span class="t-warm">${num(noPhone)} ${plural(noPhone, 'thread has', 'threads have')} none</span>`
           : '<span class="t-ok">Every thread has a number</span>')
@@ -1935,7 +2019,7 @@ SCREENS.conversations = async host => {
          endpoint the dashboard calls returns its outcome in the HTTP reply and
          this screen reads it at the moment of the send (§4). So NOT_INSTRUMENTED
          here is the design and is said as the design, not as a blind spot. */
-      kpi('Repliable from here', num(withChat),
+      tile('Repliable from here', num(withChat),
         (!N8N_BASE
           ? '<span class="t-hot">Sending is not available on this installation</span>'
           : noChat
@@ -1944,8 +2028,8 @@ SCREENS.conversations = async host => {
         + sendHealthNote()),
     ].join('');
     const hl = healthLine();
-    strip.innerHTML = `<div class="grid g4">${tiles}</div>`
-      + (hl ? `<div class="ds-cell-sub" style="padding:12px 2px 0;white-space:normal">${hl}</div>` : '');
+    strip.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">${tiles}</div>`
+      + (hl ? `<div class="ds-cell-sub" style="padding:10px 2px 0;white-space:normal">${hl}</div>` : '');
   }
 
   /* What v_workflow_health can and cannot tell us about the Send button. */
@@ -2022,39 +2106,42 @@ SCREENS.conversations = async host => {
        summary above it says that this is the whole inbox rather than a page of
        it. The list comes back the moment there is a second thread. */
     shellSolo = threads.length < SPLIT_MIN;
+    /* The dossier column (f2b061 "Client dossier & context") is drawn in both
+       layouts: it is about the open thread, not about the list. */
     if (shellSolo) {
-      wrap.style.display = 'block';
-      wrap.style.gridTemplateColumns = '';
-      wrap.style.minHeight = '';
-      wrap.innerHTML = '<div style="display:flex;flex-direction:column;min-width:0;min-height:560px" id="cvPane"></div>';
+      wrap.className = 'grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-space-md items-start';
+      wrap.innerHTML = `<section class="${SECTION} flex flex-col min-w-0 min-h-[560px]" id="cvPane"></section>
+        <aside class="${SECTION} min-w-0" id="cvDossier"></aside>`;
       return;
     }
 
     const tabs = TABS.filter(t => !t.optional || t.count() > 0);
-    wrap.style.display = 'grid';
-    wrap.style.gridTemplateColumns = '360px minmax(0,1fr)';
-    wrap.style.minHeight = '640px';
+    wrap.className = 'flex flex-col gap-space-md';
     wrap.innerHTML = `
-      <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0">
-        <div class="toolbar" style="border-bottom:1px solid var(--border-subtle)">
-          <div class="grow">
-            <label class="sr-only" for="cvQ">Search conversations</label>
-            <input type="search" id="cvQ" placeholder="Search name, number, email, handle, last message" />
-          </div>
-        </div>
-        ${tabs.length > 1 ? `<div class="toolbar" id="cvTabs" style="padding-top:0;border-bottom:1px solid var(--border-subtle)">
-          <div class="seg" role="group" aria-label="Filter conversations">
-            ${tabs.map(t => `<button type="button" data-f="${esc(t.f)}"${t.f === filter ? ' class="on"' : ''}
+      <div class="${SECTION} px-space-md py-2.5 flex items-center justify-between gap-3 flex-wrap">
+        ${tabs.length > 1 ? `<div id="cvTabs" class="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter conversations">
+            ${tabs.map(t => `<button type="button" data-f="${esc(t.f)}" class="${t.f === filter ? TABS_BTN.on : TABS_BTN.off}"
               aria-pressed="${t.f === filter ? 'true' : 'false'}"${t.title ? ` title="${esc(t.title)}"` : ''}
               >${esc(t.label)} ${num(t.count())}</button>`).join('')}
-          </div>
-        </div>` : ''}
-        <div id="cvList" style="overflow-y:auto;flex:1"></div>
+          </div>` : '<div></div>'}
+        <div class="relative w-full max-w-sm">
+          <label class="sr-only" for="cvQ">Search conversations</label>
+          <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[16px]">search</span>
+          <input type="search" id="cvQ" placeholder="Search name, number, email, handle, last message" class="w-full h-9 pl-8 pr-3 rounded-lg bg-surface-container-low border border-outline-variant/40 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+        </div>
       </div>
-      <div style="display:flex;flex-direction:column;min-width:0" id="cvPane"></div>`;
+      <div class="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_300px] gap-space-md items-start">
+        <section class="${SECTION} flex flex-col min-w-0">
+          <div class="px-space-md py-2.5 bg-surface-container-low border-b border-outline-variant/40 flex items-center justify-between">
+            <span class="${LABEL}">Inbound feed</span><span class="font-label-numeric-sm text-label-numeric-sm text-outline">Dubai time</span></div>
+          <div id="cvList" class="overflow-y-auto max-h-[680px] divide-y divide-outline-variant/20"></div>
+        </section>
+        <section class="${SECTION} flex flex-col min-w-0 min-h-[640px]" id="cvPane"></section>
+        <aside class="${SECTION} min-w-0 lg:col-span-2 xl:col-span-1" id="cvDossier"></aside>
+      </div>`;
 
     $('cvQ').addEventListener('input', e => { q = low(e.target.value); drawList(); });
-    wrap.querySelectorAll('.seg button').forEach(b => {
+    wrap.querySelectorAll('#cvTabs button').forEach(b => {
       b.addEventListener('click', () => { filter = b.dataset.f; pressFilter(); drawList(); });
     });
   }
@@ -2063,9 +2150,9 @@ SCREENS.conversations = async host => {
      clicked, because a tab can also be removed underneath the operator — a reply
      empties "Reply due" — and the filter falls back to All when that happens. */
   function pressFilter() {
-    wrap.querySelectorAll('.seg button').forEach(x => {
+    wrap.querySelectorAll('#cvTabs button').forEach(x => {
       const on = x.dataset.f === filter;
-      x.classList.toggle('on', on);
+      x.className = on ? TABS_BTN.on : TABS_BTN.off;
       x.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
@@ -2138,7 +2225,7 @@ SCREENS.conversations = async host => {
      back to All. When nothing but All is left the whole bar goes, because a
      single filter that filters nothing is a control with no purpose. */
   function paintFilterCounts() {
-    const seg = wrap.querySelector('.seg');
+    const seg = wrap.querySelector('#cvTabs');
     if (!seg) return;
     let changed = false;
     TABS.forEach(t => {
@@ -2174,7 +2261,7 @@ SCREENS.conversations = async host => {
     notes.push('Search covers names, numbers, handles, the matched lead’s row (id, name, email and status) and the '
       + 'newest message only — older message text is not loaded until a thread is opened. A number matches however '
       + 'it is typed: spaces, a leading + and a leading 0 are ignored.');
-    const footHtml = `<div class="list-item" style="cursor:default;align-items:flex-start">
+    const footHtml = `<div class="flex items-start gap-2 px-3 py-3">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
         <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div>
       </div>`;
@@ -2183,12 +2270,11 @@ SCREENS.conversations = async host => {
       ? rows.map(t => {
         const id = identOf(t);
         return `
-          <div class="list-item${t.key === selected ? ' on' : ''}" role="button" tabindex="0"
-               data-k="${esc(t.key)}" aria-current="${t.key === selected ? 'true' : 'false'}"
-               style="align-items:flex-start">
-            <div class="avatar" aria-hidden="true">${avatarOf(t)}</div>
+          <div class="${t.key === selected ? ROW.on : ROW.off}" role="button" tabindex="0"
+               data-k="${esc(t.key)}" aria-current="${t.key === selected ? 'true' : 'false'}">
+            <div class="${AVATAR}" aria-hidden="true">${avatarOf(t)}</div>
             <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:baseline;gap:8px;min-width:0">
+              <div style="display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;min-width:0">
                 <span title="${esc(titleWhy(t))}"
                       style="font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap${t.name ? '' : ';font-style:italic'}"
                       class="${t.name ? '' : 't-muted'}">${esc(titleOf(t))}</span>
@@ -2244,11 +2330,10 @@ SCREENS.conversations = async host => {
             </div>
           </div>`;
       }).join('')
-      : stateEmpty('No conversation matches',
+      : emptyState({ icon: 'search_off', title: 'No conversation matches', body:
           filter === 'all'
             ? `No conversation matches "${q}". Search covers the name, the number, the WhatsApp address, the matched lead’s row and the newest message of each of the ${num(threads.length)} threads read — not the older message text, which is only loaded when a thread is opened.`
-            : `No conversation is both in the "${filter === 'await' ? 'Reply due' : (filter === 'notlead' ? 'Not in leads' : 'Unidentified')}" tab and a match for what is typed in the search box.`,
-          'search_off')) + footHtml;
+            : `No conversation is both in the "${filter === 'await' ? 'Reply due' : (filter === 'notlead' ? 'Not in leads' : 'Unidentified')}" tab and a match for what is typed in the search box.` })) + footHtml;
 
     listHost.querySelectorAll('[data-k]').forEach(node => {
       node.addEventListener('click', () => openThread(node.dataset.k));
@@ -2272,7 +2357,7 @@ SCREENS.conversations = async host => {
     const listHost = $('cvList');
     if (listHost) listHost.querySelectorAll('[data-k]').forEach(n => {
       const on = n.dataset.k === key;
-      n.classList.toggle('on', on);
+      n.className = on ? ROW.on : ROW.off;
       n.setAttribute('aria-current', on ? 'true' : 'false');
     });
     renderPane(t, note);
@@ -2292,14 +2377,14 @@ SCREENS.conversations = async host => {
        wrong instruction on Ali's second thread. */
     if (t.siblings.length) {
       const named = namedSibling(t);
-      out.push(`<div class="banner info">
+      out.push(`<div class="${NOTE.info}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">merge</span>
         <div>${esc(sameAsWhy(t))}
         ${named && !t.name ? ` The name above (${esc(maskText(named.name))}) is that thread’s, not this one’s.` : ''}</div>
       </div>`);
     }
     if (t.identified === 'unidentified') {
-      out.push(`<div class="banner warm">
+      out.push(`<div class="${NOTE.warm}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">person_search</span>
         <div>${esc(note)}
         ${t.siblings.length
@@ -2312,7 +2397,7 @@ SCREENS.conversations = async host => {
               : 'Read the handle below as an address, not a name.')}</div>
       </div>`);
     } else if (t.identified === 'whatsapp_profile' || t.identified === 'phone_only') {
-      out.push(`<div class="banner info">
+      out.push(`<div class="${NOTE.info}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">info</span>
         <div>${esc(note)}</div>
       </div>`);
@@ -2330,7 +2415,7 @@ SCREENS.conversations = async host => {
          leads.status anywhere in it — so the status is named here rather than
          the queue being second-guessed. */
       const status = leadStatusOf(t);
-      out.push(`<div class="banner ${stale ? 'warm' : 'hot'}">
+      out.push(`<div class="${stale ? NOTE.warm : NOTE.hot}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">schedule</span>
         <div>The newest message is inbound, logged ${esc(ago(t.last_at))}, and no outbound message has been recorded after it.
         ${stale
@@ -2349,7 +2434,7 @@ SCREENS.conversations = async host => {
        up to find out why the newest bubble is not a message. Added 1 Sep 2026,
        with the date the detector fired and the fact that no alert covers it. */
     if (t.lastIsMarker) {
-      out.push(`<div class="banner warm">
+      out.push(`<div class="${NOTE.warm}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">notifications_paused</span>
         ${/* Every clause here used to be asserted flat. `lastIsMarker` is now
               true of ANY internal row — the view answers it with
@@ -2388,7 +2473,7 @@ SCREENS.conversations = async host => {
     const outReal = realOutbound(t);
     const inReal = realInbound(t);
     if (inReal === 0 && outReal > 0) {
-      out.push(`<div class="banner info">
+      out.push(`<div class="${NOTE.info}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">send</span>
         <div>Only outbound messages are logged for this contact, so this thread shows one side of the conversation.</div>
       </div>`);
@@ -2410,7 +2495,7 @@ SCREENS.conversations = async host => {
          It now follows the resolved answer, and says nothing at all where the
          answer is unknown. */
       const m = leadOf(t);
-      out.push(`<div class="banner ${t.awaiting ? 'warm' : 'info'}">
+      out.push(`<div class="${t.awaiting ? NOTE.warm : NOTE.info}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">forum</span>
         <div>Nothing has ever been sent to this contact — every message here came from them.
         ${m.state === 'matched'
@@ -2421,6 +2506,62 @@ SCREENS.conversations = async host => {
       </div>`);
     }
     return out.join('');
+  }
+
+  /* ── Client dossier (f2b061, right column) ──────────────────────────────
+     Only what the screen already holds about this thread: the identity answer,
+     the lead it resolved to (from the same pool §1b matched against), the
+     vehicle that lead names and its owner. The Stitch mock's occupation, KYC
+     badges, vehicle photo, asking price and bank partner have no source here
+     and are not drawn; finance context is COMING SOON. */
+  function renderDossier(t) {
+    const box = $('cvDossier');
+    if (!box) return;
+    const id = identOf(t);
+    const m = leadOf(t);
+    const l = leadRow(t);
+    const leadCard = m.state === 'matched' && l
+      ? `<div class="p-3 rounded-lg bg-surface-container-low flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-2"><span class="font-label-numeric-sm text-label-numeric-sm text-outline">Lead #${esc(str(l.id))}</span>${leadStatusPill(t)}</div>
+          <div class="font-headline-md text-body-lg font-semibold text-on-surface">${esc(displayName(str(l.name) || titleOf(t), l.id))}</div>
+          <div class="ds-cell-sub">${str(l.email) ? esc(maskEmail(str(l.email))) : 'No email on the lead'}</div>
+          ${n0(l.ai_score) != null ? `<div class="ds-cell-sub">AI score ${esc(String(l.ai_score))}</div>` : ''}
+        </div>`
+      : `<div class="p-3 rounded-lg bg-surface-container-low ds-cell-sub" style="white-space:normal">${esc(leadWhy(t))}</div>`;
+    box.innerHTML = `
+      <div class="px-space-md py-2.5 bg-surface-container-low border-b border-outline-variant/40 flex items-center justify-between gap-2">
+        <span class="${LABEL}">Client dossier &amp; context</span>
+        ${m.state === 'matched' && l ? `<button type="button" class="${BTN.tertiary}" data-dossier-lead="${esc(str(l.id))}">Open full lead<span class="material-symbols-outlined text-[16px]">open_in_new</span></button>` : ''}
+      </div>
+      <div class="p-space-md flex flex-col gap-3">
+        <div class="flex items-center gap-2 flex-wrap"><span title="${esc(identNote(t))}">${pill(id.label, id.tone, { verbatim: false })}</span></div>
+        ${leadCard}
+        <div class="${LABEL}">Vehicle under discussion</div>
+        <div class="p-3 rounded-lg bg-surface-container-low font-body-sm text-body-sm">${l && str(l.vehicle_interest)
+          ? `<div class="font-semibold">${esc(str(l.vehicle_interest))}</div><div class="ds-cell-sub">As named on the lead, in the customer's words.</div>`
+          : `<div class="text-outline">${l ? 'The lead names no vehicle.' : 'No lead is matched, so no vehicle is on record for this contact.'}</div>`}</div>
+        <div class="${LABEL}">Floor execution</div>
+        <div class="grid grid-cols-[100px_minmax(0,1fr)] gap-x-2 gap-y-1.5 font-body-sm text-body-sm">
+          <span class="text-outline">Assigned rep</span><span>${l ? esc(str(l.assigned_to) || 'Unassigned') : '—'}</span>
+          <span class="text-outline">Phone</span><span>${phoneHtml(t, '')}</span>
+          <span class="text-outline">Replies go to</span><span style="word-break:break-all">${chatHtml(t, '')}</span>
+        </div>
+        <div class="p-3 rounded-lg border border-indigo-200 bg-indigo-50/30 flex items-start gap-2">
+          <span class="material-symbols-outlined text-[18px] text-indigo-700">payments</span>
+          <div class="font-body-sm text-body-sm text-indigo-950"><div class="flex items-center gap-2 flex-wrap font-semibold">Finance context ${statusChip('coming-soon')}</div>
+            <div class="text-indigo-900">Budget, bank partner and quote status for this contact. Needs a link from finance quotes to the lead — none exists yet.</div></div>
+        </div>
+      </div>`;
+    box.querySelector('[data-dossier-lead]')?.addEventListener('click', async e => {
+      const b = e.currentTarget; b.disabled = true;
+      try {
+        const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(b.dataset.dossierLead)}&limit=1`);
+        if (rows.length) leadDrawer(rows[0]);
+        else setNote(`<span class="t-warm">Lead ${esc(b.dataset.dossierLead)} is not in your leads now, so there is no record to open.</span>`);
+      } catch (err) {
+        setNote(`<span class="t-hot">The lead record could not be read — ${esc(err.message)}</span>`);
+      } finally { b.disabled = false; }
+    });
   }
 
   function renderPane(t, note) {
@@ -2434,15 +2575,15 @@ SCREENS.conversations = async host => {
     const dis = canSend ? '' : ` disabled title="${esc(why)}"`;
 
     $('cvPane').innerHTML = `
-      <div class="card-head">
-        <div class="avatar" aria-hidden="true">${avatarOf(t)}</div>
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/40 flex items-center gap-3 flex-wrap">
+        <div class="w-11 h-11 rounded-full bg-primary-container text-on-primary font-bold flex items-center justify-center shrink-0" aria-hidden="true">${avatarOf(t)}</div>
         <div style="min-width:0">
-          <div class="card-title" style="display:flex;align-items:baseline;gap:10px;min-width:0">
+          <div class="font-headline-md text-headline-md text-on-surface" style="display:flex;align-items:baseline;gap:10px;min-width:0">
             <span class="${t.name ? '' : 't-muted'}" title="${esc(titleWhy(t))}"
                   style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap${t.name ? '' : ';font-style:italic'}">${esc(titleOf(t))}</span>
-            <span style="flex:0 0 auto">${phoneHtml(t, 'card-sub')}</span>
+            <span style="flex:0 0 auto">${phoneHtml(t, 'font-label-numeric-sm text-label-numeric-sm text-outline')}</span>
           </div>
-          <div class="card-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
             ${subLine(t)}
           </div>
         </div>
@@ -2455,7 +2596,7 @@ SCREENS.conversations = async host => {
               status of the row lib/identity.js matched, so Effco Contracting llc
               now shows DISQUALIFIED here instead of nothing at all. */''}
         ${leadStatusPill(t)}
-        <button class="btn sm" id="cvRefresh"><span class="material-symbols-outlined">refresh</span>Refresh</button>
+        <button type="button" class="${BTN.secondary}" id="cvRefresh"><span class="material-symbols-outlined text-[18px]">refresh</span>Refresh</button>
         ${/* The disabled tooltip used to say flatly "No lead record resolves for
               this thread". On a linked row the sub-line two lines above it says
               "In leads as <address>, via the linked thread", and both cannot be
@@ -2478,7 +2619,7 @@ SCREENS.conversations = async host => {
               about a row that was sitting there. Same call as
               screens/overview.js:1241. */''}
         ${leadOf(t).state === 'matched'
-          ? `<button class="btn sm" id="cvLead" data-lead="${esc(str(leadRow(t).id))}" title="${esc(leadWhy(t))}">Open lead</button>`
+          ? `<button type="button" class="${BTN.secondary}" id="cvLead" data-lead="${esc(str(leadRow(t).id))}" title="${esc(leadWhy(t))}">Open lead</button>`
           : (t.siblings.find(s => s.lead_email)
               /* This branch is now only reached when the lead match itself could
                  not be made — the leads read failed, or two leads share the
@@ -2487,16 +2628,25 @@ SCREENS.conversations = async host => {
                  being the reason when the button started opening by lead id, so
                  the reason it gives is the real one and it still names the row
                  that does open. */
-              ? `<button class="btn sm" disabled title="${esc(maskText(leadWhy(t) + ' The same person IS in leads, as ' + t.siblings.find(s => s.lead_email).lead_email + ', on the linked thread keyed "' + t.siblings.find(s => s.lead_email).key + '" — open that row and the button may work there.'))}">Open lead</button>`
-              : `<button class="btn sm" disabled title="${esc((leadOf(t).state === 'none'
+              ? `<button type="button" class="${BTN.secondary}" disabled title="${esc(maskText(leadWhy(t) + ' The same person IS in leads, as ' + t.siblings.find(s => s.lead_email).lead_email + ', on the linked thread keyed "' + t.siblings.find(s => s.lead_email).key + '" — open that row and the button may work there.'))}">Open lead</button>`
+              : `<button type="button" class="${BTN.secondary}" disabled title="${esc((leadOf(t).state === 'none'
                     ? 'No lead record resolves for this thread. '
                     : 'No lead record can be offered for this thread. ') + leadWhy(t))}">Open lead</button>`)}
       </div>
-      <div class="ds-cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
-      ${bannerHtml ? `<div style="padding:16px 20px 0">${bannerHtml}</div>` : ''}
-      <div style="flex:1;overflow-y:auto" id="cvBody">${stateLoading(5)}</div>
-      <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
-        <div class="field">
+      <div class="ds-cell-sub" id="cvNote" style="padding:0 16px" aria-live="polite"></div>
+      ${bannerHtml ? `<div class="flex flex-col gap-2" style="padding:12px 16px 0">${bannerHtml}</div>` : ''}
+      <div class="flex-1 overflow-y-auto max-h-[560px] bg-surface-container-low/40" id="cvBody">${skeleton({ rows: 4 })}</div>
+      <div class="px-space-md py-2 border-t border-outline-variant/30 flex items-center gap-2 flex-wrap bg-surface-container-low">
+        ${/* The policy decision. The engine that answers FREEFORM_ALLOWED /
+              TEMPLATE_REQUIRED / BLOCKED (whatsapp_policy_decision_for_channel)
+              is service_role-only, and nothing this screen reads carries its
+              answer — so the Stitch "policy state" strip is shown as NOT
+              CHECKED rather than as a green chip it has no evidence for. */''}
+        <span class="${LABEL}">Policy state</span>
+        <span title="NEXUS's WhatsApp policy engine decides whether a free-form reply is allowed, a template is required, or the send is blocked. That decision is not readable from the dashboard, so this screen does not show one — the send workflow and WhatsApp still refuse whatever they refuse.">${statusChip('not-tested', 'Not checked by this screen')}</span>
+      </div>
+      <div class="px-space-md py-3 border-t border-outline-variant/30">
+        <div class="flex flex-col gap-1.5">
           ${/* The same ladder as the confirmation dialog's To field, and it was
                 left off this label by the identity work on 1 Sep 2026: the pane
                 header said "Ali", the phone beside it said his number, and the
@@ -2504,14 +2654,14 @@ SCREENS.conversations = async host => {
                 borrowed name is carried here with the sentence that says where
                 it came from, on the title — never bare, and never as though
                 v_conversations had answered with it. */''}
-          <label for="cvReply">Reply on WhatsApp to ${t.name
+          <label for="cvReply" class="font-body-sm text-body-sm font-semibold text-on-surface">Reply on WhatsApp to ${t.name
             ? esc(displayName(t.name))
             : (linkedName(t)
                 ? `<span title="${esc(linkWhy(t))}">${esc(linkedName(t))}</span> <span class="t-muted">(named by the linked thread, not by this one)</span>`
                 : (anyPhone(t) ? esc(anyPhone(t)) : 'this contact'))}</label>
-          <textarea id="cvReply" rows="3"${dis}
+          <textarea id="cvReply" rows="3"${dis} class="w-full px-3 py-2 rounded-lg bg-surface-container-lowest border border-outline-variant/50 font-body-md text-body-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-surface-container-low disabled:cursor-not-allowed"
             placeholder="${canSend ? 'Type a reply. Enter adds a line break — nothing is sent until you confirm.' : 'Replying from the dashboard is unavailable for this thread'}"></textarea>
-          <div class="hint">${canSend
+          <div class="ds-cell-sub" style="white-space:normal">${canSend
             /* The address is printed here, not only in the confirmation. The
                thread is named and keyed on one string and answered on another,
                and the operator should be able to see which one their message is
@@ -2520,13 +2670,14 @@ SCREENS.conversations = async host => {
             : esc(why)}</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
-          <button class="btn primary" id="cvSend"${dis}>
-            <span class="material-symbols-outlined">send</span>Review and send</button>
+          <button type="button" class="${BTN.primary}" id="cvSend"${dis}>
+            <span class="material-symbols-outlined text-[18px]">send</span>Review and send</button>
           <span class="ds-cell-sub" id="cvSendMsg" aria-live="polite">${note || ''}</span>
         </div>
       </div>`;
 
     $('cvRefresh').addEventListener('click', () => { loadMessages(t); });
+    renderDossier(t);
 
     $('cvLead')?.addEventListener('click', async () => {
       const b = $('cvLead');
@@ -2610,7 +2761,7 @@ SCREENS.conversations = async host => {
   async function loadMessages(t) {
     const body = $('cvBody');
     if (!body) return;
-    body.innerHTML = stateLoading(5);
+    body.innerHTML = skeleton({ rows: 4 });
     const identity = groupIdentity(t);
     const collision = (identity.ambiguityCodes || []).includes(AMBIGUITY.PHONE_SUFFIX_COLLISION);
     /* Read through v_communication_log_evidence rather than communication_logs
@@ -2659,7 +2810,7 @@ SCREENS.conversations = async host => {
          is no error to describe. This sentence is ours, and it is the whole
          point of the branch — a blank panel here must not be read as "this
          person has no history", because no query was ever issued. */
-      body.innerHTML = stateError('this conversation', null, 'thread',
+      body.innerHTML = noteError('this conversation',
         'No key on this thread can be matched against the key each message is filed under — the thread key identifies '
         + 'nobody and there is no email, phone or chat id to read under. Nothing was queried, so nothing here is '
         + 'evidence that this person has no history.');
@@ -2670,7 +2821,7 @@ SCREENS.conversations = async host => {
     try {
       msgs = await db(path);
     } catch (e) {
-      body.innerHTML = stateError('this conversation', e, 'thread');
+      body.innerHTML = errorState({ what: 'this conversation', err: e, retry: 'thread' });
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
       return;
     }
@@ -2681,12 +2832,11 @@ SCREENS.conversations = async host => {
     const expected = groupCount(t);
 
     if (!list.length) {
-      body.innerHTML = stateEmpty('No messages in this thread',
+      body.innerHTML = emptyState({ icon: 'forum', title: 'No messages in this thread', body:
         `NEXUS counts ${num(expected)} ${plural(expected, 'row', 'rows')} for this contact, but `
         + `The message history returned none under ${plural(keys.length, 'the key', 'any of the keys')} this read `
         + `matched on (${keys.join(', ')}${patterns.length ? `, and any key ending ${identity.suffix}` : ''}). `
-        + 'Nothing is being shown rather than guessing at the history.',
-        'forum');
+        + 'Nothing is being shown rather than guessing at the history.' });
       return;
     }
 
@@ -2802,15 +2952,15 @@ SCREENS.conversations = async host => {
       : '';
 
     body.innerHTML = `
-      ${truncated ? `<div style="padding:16px 20px 0"><div class="banner info">
+      ${truncated ? `<div style="padding:16px 20px 0"><div class="${NOTE.info}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">history</span>
         <div>Only the newest ${num(MSG_LIMIT)} messages of this thread were read. Anything older is not shown.</div>
       </div></div>` : ''}
-      <div class="thread">
+      <div class="flex flex-col gap-3 p-space-md">
         ${list.map((m, i) => {
           const day = dayLabel(m.created_at);
           const sep = (i === 0 || day !== dayLabel(list[i - 1].created_at))
-            ? `<div class="label-caps" style="text-align:center;margin-top:6px">${esc(day)}</div>` : '';
+            ? `<div class="self-center px-3 py-0.5 rounded-full bg-surface-container font-label-numeric-sm text-[11px] uppercase tracking-wider text-outline">${esc(day)}</div>` : '';
           const text = String(m.message == null ? '' : m.message).trim();
           /* An internal marker is not a chat bubble. Until 1 Sep this fell into
              the `out` branch — a row saying "[SILENCE-ESCALATED] Silent for 12h
@@ -2853,7 +3003,7 @@ SCREENS.conversations = async host => {
               'it has been superseded by a corrected record',
           }[str(m.evidence_reason_code)] || 'NEXUS has ruled its contents unreliable';
           const flagBand = flagged
-            ? `<div class="banner warm" style="margin:0 0 8px;padding:8px 10px">
+            ? `<div class="${NOTE.warm}" style="margin:0 0 8px;padding:8px 10px">
                  <span class="material-symbols-outlined" style="font-size:18px" aria-hidden="true">report</span>
                  <div><strong>This message was sent, and it is not reliable.</strong>
                  NEXUS has marked it as invalid evidence because ${esc(why)}.
@@ -2864,8 +3014,9 @@ SCREENS.conversations = async host => {
                  </div>
                </div>`
             : '';
-          return `${sep}<div class="bubble ${inbound ? 'in' : 'out'}"${flagged ? ' style="border:1px solid var(--warm,#b46b00)"' : ''}>${flagBand}${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}
-            <div class="bubble-meta">
+          const bub = inbound ? (flagged ? BUBBLE.inFlag : BUBBLE.in) : (flagged ? BUBBLE.outFlag : BUBBLE.out);
+          return `${sep}<div class="${bub}">${flagBand}<div style="white-space:pre-wrap;word-break:break-word">${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}</div>
+            <div class="flex items-center gap-2 flex-wrap mt-2 font-label-numeric-sm text-[11px] text-outline">
               <span class="chip">${esc(str(m.channel) || 'unrecorded channel')}</span>
               <span>${esc(low(m.direction) || 'direction not recorded')}</span>
               ${flagged ? '<span class="t-warm">invalid evidence</span>' : ''}
@@ -2874,7 +3025,7 @@ SCREENS.conversations = async host => {
           </div>`;
         }).join('')}
       </div>
-      <div class="ds-cell-sub" style="padding:0 20px 16px;text-align:center">
+      <div class="ds-cell-sub" style="padding:0 16px 16px;text-align:center">
         ${num(real.length)} ${plural(real.length, 'message', 'messages')} shown · ${num(inboundReal)} inbound · ${num(outboundReal)} outbound${markers.length ? ` · ${num(markers.length)} internal ${plural(markers.length, 'note', 'notes')}` : ''}
         ${countNote}
         ${flaggedNote}
@@ -2897,13 +3048,13 @@ SCREENS.conversations = async host => {
             number. Both the colour and the sentence follow the resolved answer
             from 1 Sep 2026 evening; amber is now reserved for a contact who
             really is unmatched, or whose match could not be checked. */''}
-      <div class="banner ${t.identified === 'lead' || leadOf(t).state === 'matched' ? 'info' : 'warm'}">
+      <div class="${t.identified === 'lead' || leadOf(t).state === 'matched' ? NOTE.info : NOTE.warm}">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">
           ${t.identified === 'lead' || leadOf(t).state === 'matched' ? 'info' : 'person_search'}</span>
         <div>${esc(identNote(t))}</div>
       </div>
-      <dl class="kv" style="margin-top:16px">
-        <dt>To</dt><dd>${t.name
+      <dl class="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3 gap-y-2 font-body-sm text-body-sm mt-4">
+        <dt class="text-outline">To</dt><dd>${t.name
           ? esc(displayName(t.name))
           /* A name borrowed from a linked thread is shown here — an operator
              about to send on the dealership's live number should know who they
@@ -2914,14 +3065,14 @@ SCREENS.conversations = async host => {
               : (anyPhone(t)
                   ? '<span class="t-muted">We have this number but not a name for it</span>'
                   : '<span class="t-muted">Unidentified contact — we do not know whose number this is</span>'))}</dd>
-        <dt>Phone</dt><dd>${addressPhone(t.phone)
+        <dt class="text-outline">Phone</dt><dd>${addressPhone(t.phone)
           ? `<span class="mono" title="Stored as ${esc(maskText(t.phone))}">${esc(maskText(addressPhone(t.phone)))}</span>`
           : addressPhone(t.keyDigits)
             ? `<span class="mono">${esc(addressPhone(t.keyDigits))}</span> <span class="t-muted">— not stored in the number saved for this contact; these digits are read out of the thread key <span class="mono">${esc(t.key)}</span>, which a workflow minted from the number it was given</span>`
             : (t.phone
                 ? `<span class="mono">${esc(maskText(t.phone))}</span> <span class="t-muted">— stored as something that does not read as a dialable number, so it is shown exactly as stored</span>`
                 : `<span class="t-warm">Not stored for this contact</span> <span class="t-muted">${esc(NO_PHONE_WHY)}</span>`)}</dd>
-        <dt>In leads</dt><dd>${t.lead_email
+        <dt class="text-outline">In leads</dt><dd>${t.lead_email
           ? esc(maskText(t.lead_email))
           : (t.siblings.find(s => s.lead_email)
               ? `${esc(maskText(t.siblings.find(s => s.lead_email).lead_email))} <span class="t-muted">— not on this thread’s own row. NEXUS matched it to the linked thread <span class="mono">${esc(maskText(t.siblings.find(s => s.lead_email).key))}</span>, which is the same person by the last ${SUFFIX_LEN} digits. The bot may therefore answer this number automatically.</span>`
@@ -2935,15 +3086,15 @@ SCREENS.conversations = async host => {
                   : leadOf(t).state === 'none'
                     ? `<span class="t-muted" title="${esc(NOT_A_LEAD)}">No — the bot does not answer this number automatically, so this reply is the first one they get from a person.</span>`
                     : `<span class="t-warm">${esc(leadWhy(t))}</span>`))}</dd>
-        <dt>WhatsApp address</dt><dd>${chatHtml(t, '')}</dd>
-        <dt>Thread keyed on</dt><dd><span class="mono">${esc(t.key)}</span> <span class="t-muted">— ${esc(keyKind(t.key))}. This is who the thread is, not where it goes; the message is addressed to the line above.</span></dd>
-        <dt>Identified as</dt><dd>${pill(id.label, id.tone, { verbatim: false })}${leadStatusPill(t) ? ' ' + leadStatusPill(t) : ''}</dd>
+        <dt class="text-outline">WhatsApp address</dt><dd>${chatHtml(t, '')}</dd>
+        <dt class="text-outline">Thread keyed on</dt><dd><span class="mono">${esc(t.key)}</span> <span class="t-muted">— ${esc(keyKind(t.key))}. This is who the thread is, not where it goes; the message is addressed to the line above.</span></dd>
+        <dt class="text-outline">Identified as</dt><dd>${pill(id.label, id.tone, { verbatim: false })}${leadStatusPill(t) ? ' ' + leadStatusPill(t) : ''}</dd>
       </dl>
-      <div class="label-caps" style="margin-top:16px">Message as it will be sent</div>
-      <div class="bubble out" style="max-width:100%;margin-top:8px">${esc(text)}</div>
+      <div class="${LABEL} mt-4">Message as it will be sent</div>
+      <div class="mt-2 bg-primary-fixed border border-primary/20 rounded-xl px-4 py-3 font-body-md text-body-sm text-on-surface" style="white-space:pre-wrap">${esc(text)}</div>
       <p class="ds-cell-sub" style="margin-top:12px">This is sent from the dealership's live WhatsApp number and cannot be recalled or edited afterwards.</p>`,
-      `<button class="btn primary" id="cvGo"><span class="material-symbols-outlined">send</span>Send on WhatsApp</button>
-       <button class="btn" id="cvCancel">Cancel</button>`);
+      `<button type="button" class="${BTN.secondary}" id="cvCancel">Cancel</button>
+       <button type="button" class="${BTN.primary}" id="cvGo"><span class="material-symbols-outlined text-[18px]">send</span>Send on WhatsApp</button>`);
 
     const go = m.wrap.querySelector('#cvGo');
     const cancel = m.wrap.querySelector('#cvCancel');
@@ -3019,6 +3170,7 @@ SCREENS.conversations = async host => {
       annotateLeads(threads);
       if (shellSolo !== (threads.length < SPLIT_MIN)) renderShell();
       renderStrip();
+      paintFoot();
       drawList();
       /* A reply is exactly the thing that clears an unanswered_chat, so the
          attention view is re-read rather than assumed to have changed — the

@@ -103,10 +103,10 @@
    not measurable. NULL means no measured wait. It does not mean nobody measured,
    it is not a zero, and it must never render as a blank — a blank in a response
    column reads as "fast" to everyone who has ever looked at one. */
-import { HOOK, db, dbWrite, n8n } from '../lib/data.js';
+import { HOOK, ME, db, dbWrite, myStaffId, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pill, tone } from '../lib/format.js';
 import { displayName, maskEmail, maskPhone, maskText } from '../lib/privacy.js';
 /* audit_log.status is not ours to read literally. lib/health.js is the only
    module allowed to say what one means — it mirrors public.nexus_outcome_class()
@@ -119,10 +119,9 @@ import { attributionCompleteness, attributionConfidence, ORIGIN_NOT_RECORDED, WR
 import { AMBIGUITY, describeKey, expandIdentity, KEY_SHAPE, keyShape, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { manualLeadDialog } from '../lib/manual-lead-form.js';
-import { openModal } from '../lib/modal.js';
+import { readFlag, writeFlag } from '../lib/prefs.js';
 import { SCREENS } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { table, wireRows } from '../lib/ui.js';
+import { BTN, emptyState, errorState, kpiTile, openStitchModal, sectionHeader, skeleton, statusChip, tempChip, trustFooter } from '../lib/stitch-ui.js';
 
 const up  = s => String(s || '').toUpperCase();
 const low = s => String(s || '').trim().toLowerCase();
@@ -375,25 +374,88 @@ const phoneText = l => str(l.phone)
 /* Name and number on one line, for the places that have no second line. */
 const nameAndPhone = l => `${leadName(l)} <span class="ds-t-tertiary">·</span> ${phoneText(l)}`;
 
+/* ── Stitch class vocabulary for this screen ─────────────────────────────────
+   Every class string is complete and literal (scripts/stitch-classes.mjs fails
+   the build on one assembled at runtime). They are copied from the leads-*
+   exports in design/stitch/; the shared pieces come from lib/stitch-ui.js. */
+const TOOL_BTN = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors';
+const LAYOUT_BTN = {
+  on:  'flex items-center gap-1.5 px-3 py-1 rounded bg-surface-container-lowest text-primary font-body-md text-body-sm font-semibold shadow-sm',
+  off: 'flex items-center gap-1.5 px-3 py-1 rounded text-outline hover:text-on-surface font-body-md text-body-sm font-medium transition-colors',
+};
+const STAGE_BTN = 'px-1.5 py-0.5 rounded bg-surface-container text-on-surface hover:bg-surface-container-highest transition-colors';
+const STAGE_BTN_ON = 'px-1.5 py-0.5 rounded bg-primary-fixed text-primary font-bold';
+const FIELD = 'h-9 pr-4 rounded-lg bg-surface-container-low text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary';
+const FILTER_PILL = 'flex items-center gap-1.5 px-2.5 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium whitespace-nowrap';
+const PILL_SELECT = 'bg-transparent font-semibold text-primary focus:outline-none cursor-pointer max-w-[130px]';
+const ROW_BTN = 'w-8 h-8 inline-flex items-center justify-center rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container text-primary transition-colors disabled:text-outline-variant disabled:bg-surface-container-low disabled:cursor-not-allowed';
+const ACT_ICON = { escalate: 'campaign', drip: 'mark_email_unread', retryScoring: 'refresh' };
+const VIP_TAG = 'inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-label-numeric-sm font-bold bg-surface-container-highest text-primary';
+const PREVIEW_CHIP = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container text-on-surface font-body-sm text-[12px] whitespace-nowrap hover:bg-surface-container-high transition-colors';
+const CHECK = 'rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer';
+const TH_L = 'px-3 py-2 font-table-header text-table-header uppercase tracking-wider text-left';
+const TH_R = 'px-3 py-2 font-table-header text-table-header uppercase tracking-wider text-right';
+const TD_L = 'px-3 py-2 align-top text-left';
+const TD_R = 'px-3 py-2 align-top text-right';
+const ROW = {
+  off: 'hover:bg-surface-container-low transition-colors cursor-pointer',
+  on:  'bg-secondary-fixed/30 hover:bg-secondary-fixed/50 transition-colors cursor-pointer',
+};
+const ATTN_ROW = {
+  open:  'flex items-start gap-3 px-space-md py-3 hover:bg-surface-container-low cursor-pointer transition-colors',
+  still: 'flex items-start gap-3 px-space-md py-3',
+};
+const ALERT_CARD = 'bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm p-space-md flex flex-col gap-2 cursor-pointer hover:border-primary transition-colors';
+const ALERT_CARD_ON = 'bg-surface-container-lowest rounded-xl border-2 border-primary shadow-sm p-space-md flex flex-col gap-2 cursor-pointer transition-colors';
+const SEV_TEXT = { HOT: 'text-red-700', WARM: 'text-amber-700', COLD: 'text-sky-700' };
+const SCORE_BAR = {
+  hot: 'bg-red-600', warm: 'bg-amber-500', cold: 'bg-sky-600', ok: 'bg-emerald-600', won: 'bg-emerald-600',
+  open: 'bg-violet-600', dead: 'bg-zinc-400', unknown: 'bg-zinc-400',
+};
+const NOTE = {
+  info: 'flex items-start gap-2.5 p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-blue-950 font-body-sm text-body-sm',
+  warm: 'flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm',
+  hot:  'flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm',
+};
+/* A Stitch note band, in place of the legacy `.banner`. `html` is trusted
+   markup the caller escaped. */
+const note = (t, icon, html) =>
+  `<div class="${NOTE[t] || NOTE.info}"><span class="material-symbols-outlined text-[18px] shrink-0">${esc(icon)}</span><div class="min-w-0 flex-1">${html}</div></div>`;
+/* Lead status and severity words. HOT / WARM / COLD / WON / LOST / OPEN take
+   the Stitch temperature chip; every other word keeps lib/format.js pill(),
+   whose provenance note (`verbatim`) is the reason it exists. */
+const TEMP_WORDS = new Set(['HOT', 'WARM', 'COLD', 'WON', 'LOST', 'OPEN']);
+const statusTag = (label, verbatim = true) => (TEMP_WORDS.has(up(label))
+  ? tempChip(label)
+  : pill(label, undefined, { verbatim }));
+/* The signed-in person, for the trust footer. A staff name, never a customer's. */
+const actorName = () => String((ME && (ME.name || ME.email)) || 'Signed-in user');
+
 SCREENS.leads = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Inventory or Money Leaks and restyle a screen nobody
-     converted. A wrapper cannot leak — go() removes it with the rest of the
-     subtree. Same pattern as screens/overview.js, screens/money-leaks.js and
-     screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* Stitch redesign, 7 Oct 2026 — design/stitch/leads-saved-views-board-
+     inspector-drawer--088011.html is the layout; the alert cards come from
+     leads-pipeline-audit-drawer--0e162f and the KPI row from
+     leads-pipeline-inspector--930cc7. `nx-stitch` turns on the scoped reset the
+     Stitch classes were designed against. It sits on a wrapper this screen
+     appends and never on `#screen`, for the reason the `.ds-screen` wrapper
+     always did: lib/nav.js empties `#screen` between renders without touching
+     its classes, so a class set there would follow the operator onto a screen
+     nobody migrated. Every read, refusal and caveat below is unchanged; only the
+     markup moved. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  const alertCard = el('div', 'card flush'); root.appendChild(alertCard);
-  alertCard.innerHTML = `<div class="card-head"><div><div class="card-title">Needs attention</div>
-    <div class="card-sub">The attention list for this screen, plus four checks this screen runs on the leads it just read</div></div></div>
-    <div class="pbody">${stateLoading(2)}</div>`;
+  const headHost = el('div'); root.appendChild(headHost);
+  headHost.innerHTML = sectionHeader({ eyebrow: 'Work / Leads & intake', title: 'Leads Desk',
+    sub: 'Every enquiry on file, who owns it, and what is waiting on somebody.' });
+  const kpiHost = el('div', 'grid grid-cols-2 xl:grid-cols-4 gap-space-md'); root.appendChild(kpiHost);
+  const alertCard = el('section', 'flex flex-col gap-space-sm'); root.appendChild(alertCard);
+  alertCard.innerHTML = skeleton({ rows: 2 });
+  const card = el('div', 'flex flex-col gap-space-sm'); root.appendChild(card);
+  card.innerHTML = skeleton({ rows: 4 });
+  const footHost = el('div'); root.appendChild(footHost);
+  const readAt = new Date();
 
-  const card = el('div', 'card flush'); card.style.marginTop = '16px'; root.appendChild(card);
-  card.innerHTML = stateLoading(8);
 
   /* The strip's three extra reads are started before the leads read is awaited,
      so the whole screen costs one round of requests rather than one per alert. */
@@ -781,65 +843,70 @@ SCREENS.leads = async host => {
       : '',
   ].filter(Boolean);
 
+
   const previewOf = ls => {
     const shown = ls.slice(0, PREVIEW).map(l =>
-      `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(l.id)}"
+      `<button type="button" class="${PREVIEW_CHIP}" data-lead="${esc(l.id)}"
         title="Open this lead">${nameAndPhone(l)}</button>`).join(' ');
     const rest = ls.length - Math.min(ls.length, PREVIEW);
-    return `${shown}${rest ? ` <span class="ds-t-tertiary">+${num(rest)} more</span>` : ''}`;
+    return `${shown}${rest ? ` <span class="font-label-numeric-sm text-label-numeric-sm text-outline">+${num(rest)} more</span>` : ''}`;
   };
 
+  /* The view's own rows: one line each, in the view's own terms. */
+  /* The view's own rows, as cards in the same row as the checks below (the
+     audit-drawer export's alert cards), in the view's own terms. */
   const viewRows = viewItems.map(it => {
     const lead = matchRef(it.ref);
     const icon = KIND_ICON[it.kind] || 'warning';
     const sev = str(it.severity);
     const openable = !!lead;
-    const idLine = lead
-      ? `<div class="ds-cell-sub">${nameAndPhone(lead)}</div>`
-      : `<div class="ds-cell-sub ds-t-tertiary">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} loaded here, so it cannot be opened from this screen.</div>`;
-    return `<div class="list-item"${openable
+    return `<div class="${ALERT_CARD}"${openable
         ? ` role="button" tabindex="0" data-open-lead="${esc(lead.id)}" title="Open this lead"`
-        : ' style="cursor:default"'}>
-      <span class="material-symbols-outlined t-${esc(tone(sev) || 'muted')}" style="font-size:20px">${icon}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${sev ? pill(sev, undefined, { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
-          <span class="chip">${esc(str(it.kind) || 'item')}</span>
-        </div>
-        <div class="ds-cell-sub">${esc(str(it.detail))}</div>
-        ${idLine}
-        <div class="ds-cell-sub ds-t-tertiary">${it.at
-          ? `Waiting since ${esc(when(it.at))} — ${esc(ago(it.at))}`
-          : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
+        : ''}>
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-center gap-1.5 flex-wrap">${sev ? statusTag(sev) : ''}<span class="chip">${esc(str(it.kind) || 'item')}</span></div>
+        <span class="material-symbols-outlined text-[20px] ${SEV_TEXT[up(sev)] || 'text-outline'}">${icon}</span>
       </div>
-      ${openable ? '<span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>' : ''}
+      <div class="font-body-md text-body-md font-semibold text-on-surface leading-snug">${esc(str(it.title) || str(it.kind) || 'Attention item')}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(str(it.detail))}</div>
+      ${lead
+        ? `<div class="ds-cell-sub">${nameAndPhone(lead)}</div>`
+        : `<div class="ds-cell-sub ds-t-tertiary">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} loaded here, so it cannot be opened from this screen.</div>`}
+      <div class="mt-auto pt-2 border-t border-outline-variant/30 flex items-center justify-between gap-2">
+        <span class="font-label-numeric-sm text-[11px] text-outline">${it.at ? `Waiting since ${esc(when(it.at))}` : 'No timestamp given'}</span>
+        ${openable ? '<span class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary">Open<span class="material-symbols-outlined text-[16px]">arrow_forward</span></span>' : ''}
+      </div>
     </div>`;
   }).join('');
 
+  /* The four checks as the audit-drawer export's alert cards: severity tag, the
+     count at the size of a finding, the sentence, and "Filter" — which is the
+     only thing the card does. The long "how this was counted" sentence is kept
+     whole behind a disclosure rather than cut, because it names the denominator
+     the count was taken against. */
   const checkRows = checks.map(c => `
-    <div class="list-item" role="button" tabindex="0" data-focus="${esc(c.key)}"
+    <div class="${ALERT_CARD}" role="button" tabindex="0" data-focus="${esc(c.key)}"
       title="Show these ${esc(String(c.leads.length))} leads in the table below">
-      <span class="material-symbols-outlined t-${esc(tone(c.sev))}" style="font-size:20px">${c.icon}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill(c.sev, undefined, { verbatim: false })}${esc(c.title)}
-        </div>
-        <div class="ds-cell-sub">${esc(c.detail)}</div>
-        <div class="ds-cell-sub" style="margin-top:4px">${previewOf(c.leads)}</div>
+      <div class="flex items-start justify-between gap-2">
+        ${statusTag(c.sev)}
+        <span class="material-symbols-outlined text-[20px] ${SEV_TEXT[c.sev] || 'text-outline'}">${c.icon}</span>
       </div>
-      <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">filter_alt</span>
+      <div class="flex items-baseline gap-2">
+        <span class="font-label-numeric-lg text-[2rem] leading-none font-bold ${SEV_TEXT[c.sev] || 'text-on-surface'}">${num(c.leads.length)}</span>
+        <span class="font-body-md text-body-sm text-on-surface-variant">${plural(c.leads.length, 'lead', 'leads')}</span>
+      </div>
+      <div class="font-body-md text-body-md font-semibold text-on-surface leading-snug">${esc(c.title)}</div>
+      <details class="font-body-sm text-body-sm text-on-surface-variant" data-stop>
+        <summary class="cursor-pointer text-primary font-semibold">How this was counted · who</summary>
+        <p class="mt-1">${esc(c.detail)}</p>
+        <div class="flex flex-wrap gap-1 mt-2">${previewOf(c.leads)}</div>
+      </details>
+      <div class="mt-auto pt-2 border-t border-outline-variant/30 flex justify-end">
+        <span class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary">Filter
+          <span class="material-symbols-outlined text-[16px]">arrow_forward</span></span>
+      </div>
     </div>`).join('');
 
-  /* The honest empty case, which today is the only case. Not a box with nothing
-     in it, and not one run-on sentence either: one line per check, each naming
-     the denominator it counted against, so "no alerts" reads as a result an
-     operator can audit rather than as a panel that failed to load.
-
-     The last line is the one that stops this reading as an all-clear. These
-     checks passing says nothing about reply speed unless something is measuring
-     it, and until 31 Aug nothing was — a strip that looked identical either way
-     is exactly how an unmeasured promise gets mistaken for a kept one. It now
-     states which of the two it is, from the rows it just read. */
   const nLeads = `${num(all.length)} ${plural(all.length, 'lead', 'leads')}`;
   const nothingLines = [
     `The attention list returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a HOT lead with no assigned_to_id, and sla_breach, which fires on a first reply over ${SLA_MINUTES} minutes on a lead created in the last ${SLA_VIEW_WINDOW_DAYS} days — neither is filed against anything in your leads right now.`,
@@ -872,26 +939,31 @@ SCREENS.leads = async host => {
           : ''),
   ].filter(Boolean);
 
-  const nothing = `<div class="list-item" style="cursor:default">
-    <span class="material-symbols-outlined ds-t-success" style="font-size:20px">task_alt</span>
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:500">Nothing on this screen needs attention right now</div>
+  const nothing = `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm p-space-md flex items-start gap-3">
+    <span class="material-symbols-outlined text-[22px] text-emerald-700">task_alt</span>
+    <div class="flex-1 min-w-0">
+      <div class="font-body-md text-body-md font-semibold text-on-surface">Nothing on this screen needs attention right now</div>
       <div class="ds-cell-sub" style="white-space:normal">${nothingLines.map(esc).join('<br>')}</div>
     </div>
   </div>`;
 
-  const notesRow = stripNotes.length ? `<div class="list-item" style="cursor:default">
-    <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-    <div class="ds-cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
-  </div>` : '';
+  /* Every caveat on these counts, kept whole and one click away rather than
+     printed as a wall above the table. */
+  const notesRow = stripNotes.length ? `<details class="${NOTE.info}" style="display:block">
+      <summary class="cursor-pointer font-semibold">Notes on these counts (${num(stripNotes.length)})</summary>
+      <div class="mt-1">${stripNotes.map(esc).join('<br>')}</div></details>` : '';
 
-  alertCard.querySelector('.pbody').innerHTML =
-    (viewItems.length || checks.length ? viewRows + checkRows : nothing) + notesRow;
+  alertCard.innerHTML = (viewItems.length || checks.length
+      ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">${viewRows}${checkRows}</div>`
+      : nothing)
+    + notesRow;
 
   if (leadsErr) {
     /* The strip above still says what the view reported and why the checks are
        missing; the table is the thing that is actually broken. */
-    card.innerHTML = stateError('leads', leadsErr);
+    card.innerHTML = errorState({ what: 'leads', err: leadsErr });
+    kpiHost.innerHTML = '';
+    footHost.innerHTML = trustFooter({ source: 'leads', asOf: dubaiStamp(readAt), evidence: 'The leads read failed', actor: actorName() });
     return;
   }
 
@@ -962,7 +1034,7 @@ SCREENS.leads = async host => {
      labelled as this session's doing — it is our own receipt, not a DB row. */
   const sent = new Map();
 
-  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', scoring: 'ALL', sort: 'new', alert: null };
+  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', scoring: 'ALL', sort: 'new', alert: null, untimed: false, mine: false };
 
   function filtered() {
     const focus = f.alert ? checkByKey.get(f.alert) : null;
@@ -978,6 +1050,11 @@ SCREENS.leads = async host => {
          is named after is worse than no filter. */
       if (f.rep === '__none' && owned(l)) return false;
       if (f.rep !== 'ALL' && f.rep !== '__none' && repOf(l) !== f.rep) return false;
+      /* Saved views. "No first reply timed" reads the same null the First reply
+         column paints; "My leads" matches assigned_to_id against this login's
+         staff id, the key the leads policy itself uses. */
+      if (f.untimed && respOf(l) != null) return false;
+      if (f.mine && String(l.assigned_to_id || '') !== String(myStaffId() || '')) return false;
       if (f.scoring !== 'ALL' && (up(l.scoring_state) || 'PENDING') !== f.scoring) return false;
       if (f.q) {
         const hay = [l.name, l.email, l.phone, l.vehicle_interest].join(' ').toLowerCase();
@@ -1039,64 +1116,195 @@ SCREENS.leads = async host => {
       ? 'The tabs are the statuses actually in the table, not just the router\'s three, so they add up to All. HOT, WARM and COLD are written by the Master Router; CONTACTED, QUALIFIED, WON and LOST by the Slack Command Center; DISQUALIFIED by the BDC agent.'
       : '';
 
-  card.innerHTML = `
-    <div class="toolbar">
-      <div class="seg" id="segStatus" role="group" aria-label="Filter by status">
-        ${segs.map(([k, c], i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
+
+  /* ── KPI row (leads-pipeline-inspector--930cc7) ─────────────────────────
+     Counts of the rows just read, never a rate or an average: the 5-minute
+     figure is "N of the M that carry a measured first reply", because a mean
+     over a handful of measurements is not a performance figure. The Stitch
+     tile "Active pipeline value" is kept as a tile and deliberately left
+     unsummed — `budget_aed` is what a customer said they might spend, not a
+     figure NEXUS worked out, and adding those up would put an estimate in a
+     money position with nothing behind it. */
+  const openCount = all.filter(l => !TERMINAL.has(up(l.status))).length;
+  const withBudget = all.filter(l => n0(l.budget_aed) != null).length;
+  /* Compact KPI tiles, the shape of leads-pipeline-inspector--930cc7's row:
+     label, figure, one line, icon. The full sentence is on the tile's hover. */
+  const kpiC = (label, value, sub, icon, tone = '') => `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm px-space-md py-3 flex items-center justify-between gap-3 min-w-0" title="${esc(sub)}">
+      <div class="min-w-0">
+        <div class="font-table-header text-table-header uppercase tracking-wider ${tone === 'hot' ? 'text-red-700' : 'text-outline'} font-semibold">${esc(label)}</div>
+        <div class="font-label-numeric-lg text-[1.5rem] leading-tight font-bold ${tone === 'hot' ? 'text-red-700' : 'text-on-surface'}">${value == null ? '—' : esc(value)}</div>
+        <div class="font-body-sm text-[12px] text-on-surface-variant line-clamp-2">${esc(sub)}</div>
       </div>
-      <div class="grow"><input type="search" id="q" aria-label="Search leads"
-        placeholder="Search name, email, phone or vehicle" /></div>
-      <!-- The walk-in and phone-call entry path. Until 7 Sep 2026 those two
-           sources reported CONNECTED with nowhere to enter one; this button is
-           the other half of that fix. It writes nothing itself — it opens a
-           dialog that calls rpc/nexus_lead_record_manual, which walks the same
-           record -> hydrate -> promote path a provider lead walks, so a walk-in
-           lands with a real origin instead of as a row nobody can place. -->
-      <button class="btn primary sm" id="addLead">
-        <span class="material-symbols-outlined" style="font-size:18px">person_add</span> Add a lead</button>
-      <!-- Every option carries an explicit value. Without one, HTMLOptionElement.value
-           falls back to .text, which the HTML spec strips and collapses whitespace in,
-           so a source called "Facebook  Lead Ads" or a rep called "Ali Hassan " selected
-           an option that could never equal the stored string: 0 of N leads, an empty
-           table and nothing on screen saying why. -->
-      <!-- Filters on leads.source, which is the WRITER, so it is labelled as the
-           writer. Renaming the column in the table and leaving this one saying
-           "source" would have moved the wrong word rather than removed it. -->
-      <select id="fSource" aria-label="Filter by which part of NEXUS wrote the row" title="${esc(WRITER_COLUMN_NOTE)}" style="width:auto"><option value="ALL">Written by: any</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
-      <select id="fRep" aria-label="Filter by assigned rep" style="width:auto"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
-      <!-- NX1005: PENDING/FAILED are the two scoring states worth filtering to --
-           PENDING is "still in the queue", FAILED is "stuck and needs a Retry
-           scoring click". SCORED is every other row and is not a separate option
-           here; "Scoring: any" already shows it. -->
-      <select id="fScoring" aria-label="Filter by scoring state" style="width:auto">
-        <option value="ALL">Scoring: any</option>
-        <option value="PENDING">Scoring: pending</option>
-        <option value="FAILED">Scoring: failed</option>
-      </select>
-      <select id="fSort" aria-label="Sort leads" style="width:auto">${Object.entries(SORTS)
-        .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
-      <div class="ds-t-tertiary num" id="resultCount"></div>
+      <span class="w-10 h-10 rounded-lg ${tone === 'hot' ? 'bg-red-50 text-red-700' : 'bg-primary-fixed text-primary'} flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">${esc(icon)}</span></span>
+    </div>`;
+  kpiHost.innerHTML = [
+    kpiC('Leads on file', num(all.length),
+      `${num(openCount)} still open · ${num(all.length - openCount)} finished${leadsCapped ? ` · read stopped at ${num(LEAD_LIMIT)}` : ''}`
+      /* At this size the counts are the whole book, not a sample: said on the
+         tile so the stage tally is not read as a distribution. */
+      + (all.length && all.length <= THIN ? `. That is every lead on file, not a sample — ${plural(all.length, 'one row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so none is printed.` : ''), 'hub'),
+    kpiC(`Over the ${SLA_MINUTES}-minute rule`, measured.length ? num(breached.length) : null,
+      measured.length
+        ? `Of the ${num(measured.length)} ${plural(measured.length, 'lead that carries', 'leads that carry')} a measured first reply. A lead with no figure is not fast — it was never timed.`
+        : 'No lead carries a measured first reply, so nothing can be over the rule — or under it.', 'timer_off', breached.length ? 'hot' : ''),
+    kpiC('First reply timed', `${num(measured.length)} / ${num(all.length)}`,
+      'No average is taken. A null means no measured wait, never a fast one.', 'speed'),
+    kpiC('Active pipeline value', null,
+      `Not summed. ${num(withBudget)} of ${num(all.length)} ${plural(all.length, 'lead carries', 'leads carry')} a budget the customer stated — that is not a figure NEXUS calculated, so it is not added up into one.`, 'payments'),
+  ].join('');
+
+  /* ── Saved views ─────────────────────────────────────────────────────────
+     Named presets over the filters that already exist, remembered PER BROWSER
+     through lib/prefs.js — which only stores on/off switches, so a view is a
+     preset and "Save view" makes the selected one this browser's default. A
+     free-form saved filter combination is not stored anywhere yet and nothing
+     here pretends otherwise. "My leads" needs the signed-in account's staff id
+     (myStaffId(), the key the leads policy matches on); with no id it is not
+     offered rather than offered and empty. */
+  const myId = myStaffId();
+  const VIEWS = [
+    { id: 'all',        label: 'All leads' },
+    ...(myId ? [{ id: 'mine', label: 'My leads' }] : []),
+    { id: 'hot',        label: 'HOT leads' },
+    { id: 'unassigned', label: 'Unassigned' },
+    { id: 'untimed',    label: 'No first reply timed' },
+    { id: 'failed',     label: 'Scoring failed' },
+  ];
+  const viewFlag = id => `nexus.leads.view.${id}`;
+  let currentView = (VIEWS.find(v => v.id !== 'all' && readFlag(viewFlag(v.id))) || VIEWS[0]).id;
+  function applyView(id) {
+    currentView = id;
+    f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.scoring = 'ALL'; f.untimed = false; f.mine = false; f.alert = null;
+    if (id === 'hot') f.status = 'HOT';
+    if (id === 'unassigned') f.rep = '__none';
+    if (id === 'untimed') f.untimed = true;
+    if (id === 'failed') f.scoring = 'FAILED';
+    if (id === 'mine') f.mine = true;
+  }
+  applyView(currentView);
+
+  /* ── Columns ─────────────────────────────────────────────────────────────
+     Which columns show is a per-browser switch, one flag per column. Email is
+     off by default because the column so often holds a routing key rather than
+     an address; Budget and Scoring are off by default to keep the row to the
+     Stitch column set. All three are one click away under Columns, and the
+     drawer always shows them. A FAILED scoring state still reaches the operator
+     through the "Scoring failed" view and the Retry scoring button. */
+  const colFlag = key => `nexus.leads.col.${key}`;
+  const COL_DEFAULT_OFF = new Set(['email', 'budget', 'scoring']);
+  const colOn = key => readFlag(colFlag(key), !COL_DEFAULT_OFF.has(key));
+
+  let layout = readFlag('nexus.leads.board') ? 'board' : 'table';
+  const picked = new Set();
+  let bulkOpen = false;
+
+  /* The stage strip, from the statuses actually in the table (segs), in the
+     same lifecycle order and with the same "no status" bucket. */
+  const stageStrip = segs.filter(([k]) => k !== 'ALL').map(([k, c], i) =>
+    `${i ? '<span class="text-outline-variant">›</span>' : ''}<button type="button" data-stage="${esc(k)}" class="${STAGE_BTN}">${esc(segLabel(k))} (${num(c)})</button>`).join('');
+
+  const headChip = measured.length && breached.length
+    ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-label-numeric-sm font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-error"></span>${num(breached.length)} over the ${SLA_MINUTES}-minute rule</span>`
+    : (all.length && !measured.length
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-label-numeric-sm text-label-numeric-sm font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>No first reply timed on any lead</span>`
+      : '');
+
+  headHost.innerHTML = `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm px-space-md py-space-sm flex flex-col gap-3">
+    <div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="flex items-center gap-2">
+        <span class="font-table-header text-table-header uppercase tracking-wider text-outline">Work</span>
+        <span class="font-table-header text-table-header text-outline-variant">/</span>
+        <span class="font-table-header text-table-header uppercase tracking-wider text-on-surface font-semibold">Leads &amp; intake</span>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center p-0.5 bg-surface-container rounded-lg" role="group" aria-label="Layout">
+          <button type="button" data-layout="table" class="${LAYOUT_BTN.off}"><span class="material-symbols-outlined text-[16px]">view_list</span>Table</button>
+          <button type="button" data-layout="board" class="${LAYOUT_BTN.off}"><span class="material-symbols-outlined text-[16px]">view_kanban</span>Board</button>
+        </div>
+        ${stageStrip ? `<div class="hidden xl:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-low text-on-surface-variant font-label-numeric-sm text-label-numeric-sm flex-wrap" title="${esc(segNote || 'The stages are the statuses actually in the table, so they add up to all leads.')}"><span class="text-outline">Stages:</span>${stageStrip}</div>` : ''}
+      </div>
     </div>
-    ${all.length && all.length <= THIN ? `<div class="ds-cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
-      `Those counts are the whole your leads — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
-      + `${plural(all.length, 'One row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so this screen prints none: every figure on it is a count of the rows above, and the segments are a tally rather than a distribution.`)}</div>` : ''}
-    ${segNote ? `<div class="ds-cell-sub" style="padding:10px 20px 0;white-space:normal">${esc(segNote)}</div>` : ''}
-    <div id="focusNote" style="padding:0 20px"></div>
-    ${notes.length ? `<div style="padding:14px 20px 0">${notes.map(n => `<div class="banner warm">
-      <span class="material-symbols-outlined">warning</span><div>${esc(n)}</div></div>`).join('')}</div>` : ''}
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-baseline gap-3 flex-wrap">
+        <h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Leads Desk</h1>
+        <span class="font-label-numeric-md text-label-numeric-md text-outline"><strong class="text-on-surface font-bold">${num(openCount)}</strong> open ${plural(openCount, 'enquiry', 'enquiries')} of ${num(all.length)}</span>
+        ${headChip}
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <label class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-semibold transition-colors">
+          <span class="material-symbols-outlined text-primary text-[18px]">bookmark</span>
+          <span>View:</span>
+          <select id="fView" aria-label="Saved view" class="bg-transparent font-semibold text-on-surface focus:outline-none cursor-pointer">
+            ${VIEWS.map(v => `<option value="${esc(v.id)}"${v.id === currentView ? ' selected' : ''}>${esc(v.label)}</option>`).join('')}
+          </select>
+        </label>
+        <button type="button" id="saveView" class="${TOOL_BTN}" title="Remembers the selected view as this browser's default. Saving a custom filter combination is not available yet.">
+          <span class="material-symbols-outlined text-[16px] text-outline">save</span>Save view</button>
+        <div class="relative">
+          <button type="button" id="colBtn" class="${TOOL_BTN}" aria-haspopup="true" aria-expanded="false" title="Choose which table columns are shown">
+            <span class="material-symbols-outlined text-[16px] text-outline">view_column</span>Columns</button>
+          <div id="colMenu" class="hidden absolute right-0 top-full mt-1 z-20 w-56 bg-surface-container-lowest rounded-lg shadow-lg border border-outline-variant/40 p-2 flex flex-col gap-1"></div>
+        </div>
+        <div class="h-6 w-px bg-surface-container-high mx-1"></div>
+        <!-- The walk-in and phone-call entry path. It writes nothing itself — it
+             opens a dialog that calls rpc/nexus_lead_record_manual, which walks
+             the same record -> hydrate -> promote path a provider lead walks. -->
+        <button type="button" id="addLead" class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-primary-container text-on-primary hover:bg-primary font-body-md text-body-sm font-semibold shadow-sm transition-colors">
+          <span class="material-symbols-outlined text-[18px]">add_circle</span>Record a lead</button>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2 flex-wrap flex-1">
+        <div class="relative w-full max-w-[260px]">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+          <input type="search" id="q" aria-label="Search leads" class="${FIELD} w-full pl-9" placeholder="Search name, email, phone or vehicle" />
+        </div>
+        <!-- Every option carries an explicit value: without one,
+             HTMLOptionElement.value falls back to whitespace-collapsed text and a
+             source or rep name with a double space can never match. -->
+        <!-- leads.source is the WRITER, so the filter is labelled as the writer. -->
+        <label class="${FILTER_PILL}" title="${esc(WRITER_COLUMN_NOTE)}"><span class="text-outline">Written by:</span>
+          <select id="fSource" aria-label="Filter by which part of NEXUS wrote the row" class="${PILL_SELECT}"><option value="ALL">Any</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></label>
+        <label class="${FILTER_PILL}"><span class="text-outline">Rep:</span>
+          <select id="fRep" aria-label="Filter by assigned rep" class="${PILL_SELECT}"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></label>
+        <!-- NX1005: PENDING is "still in the queue", FAILED is "stuck and needs a
+             Retry scoring click". -->
+        <label class="${FILTER_PILL}"><span class="text-outline">Scoring:</span>
+          <select id="fScoring" aria-label="Filter by scoring state" class="${PILL_SELECT}">
+            <option value="ALL">Any</option><option value="PENDING">Pending</option><option value="FAILED">Failed</option>
+          </select></label>
+        <label class="${FILTER_PILL}"><span class="text-outline">Status:</span>
+          <select id="fStatus" aria-label="Filter by status" class="${PILL_SELECT}">
+            ${segs.map(([k, c]) => `<option value="${esc(k)}">${esc(segLabel(k))} · ${num(c)}</option>`).join('')}
+          </select></label>
+      </div>
+      <div class="flex items-center gap-3 font-label-numeric-sm text-label-numeric-sm text-outline">
+        <label>Sort: <select id="fSort" aria-label="Sort leads" class="${PILL_SELECT}">${Object.entries(SORTS)
+          .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select></label>
+        <span id="resultCount"></span>
+      </div>
+    </div>
+  </div>`;
+
+  card.innerHTML = `
+    <div id="bulkHost"></div>
+    <div id="focusNote"></div>
+    ${notes.map(n => note('warm', 'warning', esc(n))).join('')}
     <div id="leadTable"></div>`;
 
   function actionCell(r) {
     const buttons = [ACTIONS.escalate, ACTIONS.drip, ACTIONS.retryScoring].map(a => {
       /* Only the two n8n-hook actions depend on N8N_BASE being configured; the
-         rpc actions (retryScoring) are a direct database write and are blocked,
-         if at all, only by their own a.blocker(). */
+         rpc action (retryScoring) is a direct database write and is blocked,
+         if at all, only by its own a.blocker(). */
       const blocked = (a.hook && !N8N_BASE)
         ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
         : a.blocker(r);
-      return `<button class="btn sm" data-act="${a.key}" data-id="${esc(r.id)}"
+      /* Icon buttons, so one row stays one row; the label is the button's
+         accessible name and its hover text says what it does or why not. */
+      return `<button type="button" class="${ROW_BTN}" data-act="${a.key}" data-id="${esc(r.id)}"
         aria-label="${esc(a.label)} — ${esc(maskText(r.name || r.email || 'this lead'))}"
-        title="${esc(blocked || a.title)}"${blocked ? ' disabled' : ''}>${esc(a.label)}</button>`;
+        title="${esc(`${a.label}: ${blocked || a.title}`)}"${blocked ? ' disabled' : ''}><span class="material-symbols-outlined text-[18px]">${ACT_ICON[a.key] || 'bolt'}</span></button>`;
     }).join('');
 
     const lines = [];
@@ -1107,41 +1315,33 @@ SCREENS.leads = async host => {
       if (at) lines.push(`<span class="ds-t-success">${esc(a.done)} ${ago(at)} · this session</span>`);
       const past = lastRun(r, a.key);
       if (past) {
-        /* The raw status used to be printed here. It is a label the writer chose
-           and it is sometimes wrong about its own row — Finance Calc and the
-           Master Router both write FAILED on rows whose summary says a step did
-           not land, which is a partial delivery, not a failure. lib/health.js
-           mirrors nexus_outcome_class() and is the only place allowed to decide
-           that; the raw status stays on hover so the row can still be traced. */
+        /* lib/health.js mirrors nexus_outcome_class() and is the only place
+           allowed to say what a run's status means; the raw status stays on
+           hover so the row can still be traced. */
         const w = outcomeWords(outcomeOf(past));
         lines.push(`${esc(past.workflow)} · <span class="t-${esc(w.tone)}" title="${esc(
           `${w.blurb} That run was recorded as ${str(past.status) || '(no status)'}.`)}">${esc(w.label)}</span> · ${ago(past.logged_at)}`);
       }
     }
-    return `<div style="display:flex;gap:6px;justify-content:flex-end">${buttons}</div>
-      ${lines.length ? `<div class="ds-cell-sub" style="text-align:right;margin-top:4px">${lines.join('<br>')}</div>` : ''}`;
+    return `<div class="flex gap-1 justify-end">${buttons}</div>
+      ${lines.length ? `<div class="ds-cell-sub" style="text-align:right">${lines.join('<br>')}</div>` : ''}`;
   }
 
   const cols = [
-    { label:'Status', render: r => pill(r.status || 'NEW', undefined, { verbatim: !!r.status }) },
+    { key: 'status', label: 'Status', render: r => statusTag(r.status || 'NEW', !!r.status) },
     /* Name and phone in one cell, because every alert on this screen resolves to
-       somebody picking up a phone, and a number two columns away is a number
-       nobody reads out. */
-    { label:'Lead', strong: true, render: r =>
-        /* Matched on a real address only. purchase_history is keyed on one, so a
-           `+digits@whatsapp.lead` or an empty string can never be a buyer there,
-           and asking is how a blank comes to equal a blank. */
-        `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' ' + pill('VIP', 'vip', { verbatim: false }) : ''}
-         <div class="ds-cell-sub">${phoneText(r)}</div>` },
-    /* `leads.email` is not always an email. Live on 1 Sep 2026 lead 34's holds
-       `+971547484167@whatsapp.lead`, a key the Master Router synthesises for a
-       lead that arrived over WhatsApp with no address, and lead 35's holds an
-       empty string. Printing the first under a column headed "Email" tells a rep
-       to write to an address that does not exist, and it is the same fault as
-       printing a `@lid` where a name goes, which leadName() above already
-       refuses to do. The value is still shown — it is the key the workflows file
-       this person's messages under — but it is labelled for what it is. */
-    { label:'Email', render: r => {
+       somebody picking up a phone. */
+    { key: 'lead', label: 'Lead', fixed: true, render: r =>
+        /* Matched on a real address only: purchase_history is keyed on one. */
+        `<div class="flex items-center gap-2 min-w-0">
+          <div class="w-7 h-7 rounded-full bg-primary-container text-on-primary font-bold text-[11px] flex items-center justify-center shrink-0">${esc(maskText(initials(r.name)))}</div>
+          <div class="min-w-0">
+            <div class="font-body-md text-body-sm font-semibold text-on-surface flex items-center gap-1.5 whitespace-nowrap">${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ` <span class="${VIP_TAG}" title="A purchase is on file for this email address.">VIP</span>` : ''}</div>
+            <div class="font-label-numeric-sm text-label-numeric-sm text-outline whitespace-nowrap">#${esc(String(r.id))} · ${phoneText(r)}</div>
+          </div></div>` },
+    /* `leads.email` is not always an email: a `+digits@whatsapp.lead` routing
+       key or an empty string are both live. Shown, labelled for what it is. */
+    { key: 'email', label: 'Email', render: r => {
         const shape = keyShape(r.email);
         if (shape === KEY_SHAPE.NONE) return '<span class="ds-t-tertiary" title="The email column on this row is empty.">—</span>';
         if (shape === KEY_SHAPE.EMAIL) return esc(maskText(r.email));
@@ -1149,77 +1349,26 @@ SCREENS.leads = async host => {
           `Not an email address — ${describeKey(r.email)}. The email column on this lead holds a key the workflows file its messages under, not something a person can be written to.`))}">${esc(maskText(str(r.email)))}</span>
           <div class="ds-cell-sub">Not an address</div>`;
       }},
-    { label:'Vehicle interest', render: r => `<span class="ds-t-secondary">${esc(r.vehicle_interest || '—')}</span>` },
-    /* budget_aed is NULL for router-created leads because the Master Router does
-       not capture it. Rendering 0 would understate the pipeline silently. */
-    { label:'Budget', align:'r', render: r => n0(r.budget_aed) == null ? '<span class="ds-t-tertiary">—</span>' : aed(r.budget_aed) },
-    { label:'AI score', align:'r', render: r => {
-        const s = n0(r.ai_score); if (s == null) return '<span class="ds-t-tertiary">—</span>';
-        /* Straight from tone(), because every tone it can return now has a
-           solid colour token behind it. The old three-way ternary painted a WON
-           lead's score bar in the COLD blue. */
-        const c = tone(r.status) || 'cold';
-        return `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
-          <div class="bar" style="width:44px"><i style="width:${s}%;background:var(--${c})"></i></div>
-          <span style="font-weight:500;min-width:22px;text-align:right">${s}</span></div>`;
-      }},
-    /* -- NX1005: what the scoring pipeline itself says about this row --------
-       `scoring_state` is PENDING / SCORED / FAILED, NOT NULL, defaulted
-       PENDING by the column -- a lead this screen has never seen a router
-       webhook update is honestly PENDING, not blank. `score_source` names
-       WHAT scored it (RULES, or one of the AI_SCORE_* words), which is a
-       different question from whether it succeeded. A FAILED row also carries
-       `scoring_attempts` and `scoring_last_error`, both shown here rather than
-       only in the drawer, because "why is this lead stuck" is exactly the
-       question this column exists to answer without a click. */
-    { label:'Scoring', render: r => {
-        const state = up(r.scoring_state) || 'PENDING';
-        const statePill = state === 'SCORED'
-          ? pill(state, 'ok', { verbatim: true })
-          : pill(state, undefined, { verbatim: true });
-        const source = str(r.score_source);
-        const rules = n0(r.rules_score);
-        const attempts = n0(r.scoring_attempts);
-        const err = str(r.scoring_last_error);
-        return `<div>${statePill}</div>`
-          + (source ? `<div class="ds-cell-sub"><span class="chip mono">${esc(source)}</span></div>` : '')
-          + (rules != null ? `<div class="ds-cell-sub">rules_score ${esc(String(rules))}</div>` : '')
-          + (state === 'FAILED'
-              ? `<div class="ds-cell-sub ds-t-danger">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
-                + (err
-                    ? ` -- ${esc(err.length > 90 ? err.slice(0, 90) + '…' : err)}`
-                    : ' -- no error text recorded')
-                + '</div>'
-              : (attempts ? `<div class="ds-cell-sub">${esc(String(attempts))} attempt${attempts === 1 ? '' : 's'}</div>` : ''));
-      }},
+    { key: 'vehicle', label: 'Vehicle interest', render: r => r.vehicle_interest
+        ? `<div class="font-body-md text-body-sm font-semibold text-on-surface">${esc(r.vehicle_interest)}</div>`
+        : '<span class="ds-t-tertiary">—</span>' },
     /* ── Where it came from ──────────────────────────────────────────────
-       This column was headed "Source" and rendered `leads.source`, which is the
-       name of the workflow that wrote the row. Every real lead here reads
-       `nexus-master-router`, so the column has been showing a salesperson the
-       writer and calling it the origin.
-
-       Three cases, kept apart because collapsing any two of them is how the
-       old cell lied:
-
-         · an arrival WAS recorded  -> the platform, with how we know it
-         · no arrival was recorded  -> say exactly that. NOT "unknown platform":
-                                       there is no arrival to have found a
-                                       platform in.
-         · the attribution read failed -> say the question could not be asked.
-                                       Blank would read as "no origin".
-
-       Nothing here maps a workflow name onto a platform, and UNKNOWN renders
-       as UNKNOWN. */
-    { label:'Came from', render: r => {
+       leads.source is the WRITER; the origin lives in the ingestion layer and
+       nexus_lead_attribution() projects it. Three cases kept apart: an arrival
+       recorded, no arrival recorded, and the read failing. Nothing maps a
+       workflow name onto a platform, and UNKNOWN renders as UNKNOWN. */
+    { key: 'source', label: 'Came from', render: r => {
         if (attribErr) {
           return `${pill('Not read', 'unknown', { verbatim: false })}
                   <div class="ds-cell-sub">Where this lead came from could not be read, so nothing is claimed either way.</div>`;
         }
         const a = attribByLead.get(r.id);
         if (!a) {
-          return `${pill('No arrival recorded', 'unknown', { verbatim: false })}
-                  <div class="ds-cell-sub">${esc(ORIGIN_NOT_RECORDED)}</div>
-                  <div class="ds-cell-sub"><span style="font-weight:600">${esc(WRITER_COLUMN_LABEL)}</span> ${esc(r.source || '—')}</div>`;
+          /* The full sentence rides on the hover: it is the same sentence on
+             every such row, and printed in each one it made every row of the
+             table ten lines tall. */
+          return `<span title="${esc(ORIGIN_NOT_RECORDED)}">${pill('No arrival recorded', 'unknown', { verbatim: false })}</span>
+                  <div class="ds-cell-sub"><span class="font-semibold">${esc(WRITER_COLUMN_LABEL)}</span> ${esc(r.source || '—')}</div>`;
         }
         const conf = attributionConfidence(a.ad_platform_confidence);
         const comp = attributionCompleteness(a.attribution_completeness);
@@ -1234,73 +1383,86 @@ SCREENS.leads = async host => {
                  ? `<div class="ds-cell-sub"><span class="ds-t-danger">Test traffic — counted nowhere as business.</span></div>` : '');
       }},
     /* Three columns can name an owner and this cell reads all three, in the same
-       order lib/lead-drawer.js does. Reading only the users embed made a lead
-       owned through the plain `assigned_to` column render "Unassigned" here
-       while the drawer opened from that same row showed the rep by name. */
-    { label:'Assigned', render: r => {
+       order lib/lead-drawer.js does. */
+    { key: 'owner', label: 'Assigned owner', render: r => {
         const name = repOf(r);
         if (!name) {
           return r.assigned_to_id
-            /* An id that the users(id,name) embed did not resolve is not the
-               same fact as no owner at all, and the operator can act on the
-               difference: one needs assigning, the other needs a users row. */
             ? `${pill('Owner not resolved', 'unknown', { verbatim: false })}
                <div class="ds-cell-sub">assigned_to_id ${esc(str(r.assigned_to_id))} is set, but no users row came back for it and assigned_to is empty.</div>`
-            : pill('Unassigned', 'warm', { verbatim: false });
+            : `<span class="inline-flex items-center gap-1 text-error font-body-sm text-body-sm font-semibold"><span class="material-symbols-outlined text-[16px]">warning</span>Unassigned</span>`;
         }
-        return `${esc(name)}${r.users?.name || r.assigned_to_id ? '' : '<div class="ds-cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
+        return `<span class="font-body-sm text-body-sm text-on-surface">${esc(name)}</span>${r.users?.name || r.assigned_to_id ? '' : '<div class="ds-cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
       }},
-    { label:'Age', render: r => `<span class="ds-t-tertiary" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
-    /* An empty response-time cell reads as "answered instantly" to anyone who
-       glances at it. Until 31 Aug the wording here was "Not measured", which was
-       the right shape for the wrong reason — the column then held 0 on every
-       row, so nothing ever reached this branch and every lead rendered as an
-       instant reply. The BEFORE INSERT trigger that produced those zeroes is
-       gone; the AFTER INSERT trigger on communication_logs stamps the column
-       when a reply it can attribute to the lead lands, and nothing else writes
-       it. A null is not a statement about the customer either, though: the
-       trigger declines to measure a reply that predates the lead row, and lead 35
-       was answered 74 seconds before his row existed. So the cell says the wait
-       was never timed, which is the only thing a null actually carries. */
-    { label:'First reply', align:'r', render: r => {
+    /* budget_aed is NULL for router-created leads: rendering 0 would understate
+       the pipeline silently. */
+    { key: 'budget', label: 'Budget', align: 'r', render: r => n0(r.budget_aed) == null ? '<span class="ds-t-tertiary">—</span>' : aed(r.budget_aed) },
+    { key: 'score', label: 'AI score', align: 'r', render: r => {
+        const s = n0(r.ai_score); if (s == null) return '<span class="ds-t-tertiary" title="Not scored">—</span>';
+        const bar = SCORE_BAR[tone(r.status)] || SCORE_BAR.cold;
+        return `<div class="flex items-center gap-2 justify-end">
+          <div class="w-12 h-1.5 rounded-full bg-surface-container overflow-hidden"><div class="h-full rounded-full ${bar}" style="width:${Math.max(0, Math.min(100, s))}%"></div></div>
+          <span class="font-label-numeric-sm text-label-numeric-sm font-semibold min-w-[22px] text-right">${s}</span></div>`;
+      }},
+    /* NX1005: what the scoring pipeline says about this row. A FAILED row's
+       attempts and last error are shown here, because "why is this lead stuck"
+       is exactly the question this column exists to answer without a click. */
+    { key: 'scoring', label: 'Scoring', render: r => {
+        const state = up(r.scoring_state) || 'PENDING';
+        const statePill = state === 'SCORED'
+          ? pill(state, 'ok', { verbatim: true })
+          : pill(state, undefined, { verbatim: true });
+        const source = str(r.score_source);
+        const rules = n0(r.rules_score);
+        const attempts = n0(r.scoring_attempts);
+        const err = str(r.scoring_last_error);
+        return `<div>${statePill}</div>`
+          + (source ? `<div class="ds-cell-sub"><span class="chip mono">${esc(source)}</span></div>` : '')
+          + (rules != null ? `<div class="ds-cell-sub">rules_score ${esc(String(rules))}</div>` : '')
+          + (state === 'FAILED'
+              ? `<div class="ds-cell-sub ds-t-danger">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
+                + (err ? ` -- ${esc(err.length > 90 ? err.slice(0, 90) + '…' : err)}` : ' -- no error text recorded')
+                + '</div>'
+              : (attempts ? `<div class="ds-cell-sub">${esc(String(attempts))} attempt${attempts === 1 ? '' : 's'}</div>` : ''));
+      }},
+    { key: 'age', label: 'Age', align: 'r', render: r => `<span class="ds-t-tertiary" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
+    /* An empty response-time cell reads as "answered instantly". A null here
+       means the wait was never timed — see the file header. */
+    { key: 'reply', label: 'First reply', align: 'r', render: r => {
         const m = respOf(r);
         if (m == null) return `<span class="ds-t-warning" title="${esc(
           'response_time_minutes is null on this row. The trigger on the message history stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
-          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and the attention list cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
+          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and the attention list cannot raise an sla_breach for it either.`)}">Not timed</span>`;
         return `<span class="${m > SLA_MINUTES ? 'ds-t-danger' : 'ds-t-success'}" title="${esc(
           `The minutes between the lead being created and the first outbound whatsapp, email or sms message the message history trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — an allowance for the two clocks involved disagreeing — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
       }},
-    { label:'Actions', align:'r', render: actionCell },
+    { key: 'actions', label: 'Actions', align: 'r', fixed: true, render: actionCell },
   ];
 
   /* One confirm step, then one unambiguous outcome. The dialog stays open on
-     failure with the error verbatim, because "it didn't work" without the
-     reason sends the operator to n8n's execution list to guess. */
+     failure with the error verbatim. */
   function confirmAction(a, lead) {
-    const m = openModal(a.title, `
-      <p class="ds-t-secondary" style="margin:0 0 16px">${esc(a.blurb)}</p>
-      <dl class="kv">
-        <dt>Lead</dt><dd>${leadName(lead)}</dd>
-        <dt>Phone</dt><dd>${phoneText(lead)}</dd>
-        <dt>Email</dt><dd>${(() => {
-          /* The same three states the Email column and the drawer paint. This row
-             printed the raw value, so the dialog that asks an operator to confirm
-             an email-addressed action showed `+971547484167@whatsapp.lead` under
-             the word "Email" with nothing saying it is not one — the exact fault
-             the column above was rewritten to stop, on the last screen before the
-             send. */
-          const shape = keyShape(lead.email);
-          if (shape === KEY_SHAPE.NONE) return '<span class="ds-t-tertiary">No email address on this lead</span>';
-          if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
-          return `<span class="mono ds-t-warning">${esc(maskText(str(lead.email)))}</span>`
-            + `<div class="ds-cell-sub">Not an address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under.</div>`;
-        })()}</dd>
-        <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
-        <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
-        <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="ds-t-tertiary">Not scored</span>' : num(lead.ai_score)}</dd>
-      </dl>`,
-      `<button class="btn primary" id="actGo">${esc(a.confirm)}</button>
-       <button class="btn" id="actCancel">Cancel</button>`);
+    const shape = keyShape(lead.email);
+    const emailHtml = shape === KEY_SHAPE.NONE
+      ? '<span class="ds-t-tertiary">No email address on this lead</span>'
+      : shape === KEY_SHAPE.EMAIL
+        ? esc(maskEmail(lead.email))
+        : `<span class="mono ds-t-warning">${esc(maskText(str(lead.email)))}</span>`
+          + `<div class="ds-cell-sub">Not an address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under.</div>`;
+    const m = openStitchModal({
+      title: a.title,
+      bodyHtml: `<p class="font-body-md text-body-sm text-on-surface-variant mb-space-md">${esc(a.blurb)}</p>
+        <dl class="grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-2 font-body-sm text-body-sm">
+          <dt class="text-outline">Lead</dt><dd>${leadName(lead)}</dd>
+          <dt class="text-outline">Phone</dt><dd>${phoneText(lead)}</dd>
+          <dt class="text-outline">Email</dt><dd>${emailHtml}</dd>
+          <dt class="text-outline">Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
+          <dt class="text-outline">Status</dt><dd>${statusTag(lead.status || 'NEW', !!lead.status)}</dd>
+          <dt class="text-outline">AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="ds-t-tertiary">Not scored</span>' : num(lead.ai_score)}</dd>
+        </dl>`,
+      footHtml: `<button type="button" class="${BTN.secondary}" id="actCancel">Cancel</button>
+        <button type="button" class="${BTN.primary}" id="actGo">${esc(a.confirm)}</button>`,
+    });
 
     const go = m.wrap.querySelector('#actGo');
     const cancel = m.wrap.querySelector('#actCancel');
@@ -1312,8 +1474,7 @@ SCREENS.leads = async host => {
       m.msg('<span class="ds-t-tertiary">Calling the workflow…</span>');
       try {
         /* Two kinds of action share this one confirm step: an n8n webhook
-           (`a.hook`) or a direct database write via PostgREST's rpc/ endpoint
-           (`a.rpc`) -- NX1005's retryScoring is the first of the second kind. */
+           (`a.hook`) or a direct database write via rpc/ (`a.rpc`). */
         const res = a.rpc
           ? await dbWrite('POST', `rpc/${a.rpc}`, a.payload(lead))
           : await n8n(a.hook, a.payload(lead));
@@ -1329,41 +1490,154 @@ SCREENS.leads = async host => {
     });
   }
 
+  const visibleCols = () => cols.filter(c => c.fixed || colOn(c.key));
+
+  function tableHtml(rows) {
+    const vc = visibleCols();
+    const allPicked = rows.length && rows.every(r => picked.has(String(r.id)));
+    return `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm overflow-hidden">
+      <div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+      <thead><tr class="bg-surface-container-low h-9 text-outline border-b border-outline-variant/30">
+        <th class="w-10 px-3 text-center"><input type="checkbox" id="pickAll" aria-label="Select every lead shown" class="${CHECK}"${allPicked ? ' checked' : ''}></th>
+        ${vc.map(c => `<th class="${c.align === 'r' ? TH_R : TH_L}">${esc(c.label)}</th>`).join('')}
+      </tr></thead>
+      <tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm text-on-surface">
+        ${rows.map((r, i) => `<tr class="${picked.has(String(r.id)) ? ROW.on : ROW.off}" data-i="${i}">
+          <td class="px-3 pt-3 align-top text-center"><input type="checkbox" data-pick="${esc(r.id)}" aria-label="Select this lead" class="${CHECK}"${picked.has(String(r.id)) ? ' checked' : ''}></td>
+          ${vc.map(c => `<td class="${c.align === 'r' ? TD_R : TD_L}">${c.render(r)}</td>`).join('')}
+        </tr>`).join('')}
+      </tbody></table></div>
+      <div class="px-space-md py-2.5 bg-surface-container-low border-t border-outline-variant/30 font-label-numeric-sm text-label-numeric-sm text-outline flex items-center justify-between">
+        <span>Showing ${num(rows.length)} of ${num(all.length)} ${plural(all.length, 'lead', 'leads')}</span>
+        <span>Click a row to open the lead</span>
+      </div>
+    </div>`;
+  }
+
+  /* The board groups by the real `leads.status` values, in the same lifecycle
+     order the stage strip uses, with "No status" last. A column per status
+     actually present — nothing invented, and the columns add up to the rows. */
+  function boardHtml(rows) {
+    const groups = segs.filter(([k]) => k !== 'ALL').map(([k]) => [k, rows.filter(l =>
+      k === NO_STATUS ? !str(l.status) : up(l.status) === k)]);
+    return `<div class="flex gap-space-md overflow-x-auto pb-2">${groups.map(([k, ls]) => `
+      <div class="w-72 shrink-0 bg-surface-container-low rounded-xl border border-outline-variant/40 flex flex-col max-h-[640px]">
+        <div class="px-3 py-2.5 flex items-center justify-between border-b border-outline-variant/30">
+          ${k === NO_STATUS ? `<span class="font-table-header text-table-header uppercase text-outline">No status</span>` : statusTag(k)}
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${num(ls.length)}</span>
+        </div>
+        <div class="p-2 flex flex-col gap-2 overflow-y-auto">${ls.length ? ls.map(l => `
+          <div class="bg-surface-container-lowest rounded-lg border border-outline-variant/40 shadow-sm p-3 flex flex-col gap-1.5 cursor-pointer hover:border-primary transition-colors" role="button" tabindex="0" data-card="${esc(l.id)}">
+            <div class="flex items-center justify-between gap-2">
+              <div class="font-body-md text-body-sm font-semibold text-on-surface truncate">${leadName(l)}</div>
+              <span class="font-label-numeric-sm text-label-numeric-sm text-outline">#${esc(String(l.id))}</span>
+            </div>
+            <div class="font-label-numeric-sm text-label-numeric-sm text-outline">${phoneText(l)}</div>
+            ${l.vehicle_interest ? `<div class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc(l.vehicle_interest)}</div>` : ''}
+            <div class="flex items-center justify-between gap-2 pt-1 border-t border-outline-variant/20">
+              <span class="font-body-sm text-body-sm ${repOf(l) ? 'text-on-surface' : 'text-error'}">${esc(repOf(l) || 'Unassigned')}</span>
+              <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${n0(l.ai_score) == null ? 'Not scored' : `Score ${num(l.ai_score)}`} · ${ago(l.created_at)}</span>
+            </div>
+          </div>`).join('') : '<div class="ds-cell-sub" style="padding:8px">No lead in this status matches the filters.</div>'}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  /* Bulk selection. Assigning one owner to several leads is a Stitch section
+     whose backend does not exist — nexus_lead_assign_owner takes one lead — so
+     the preview is shown as COMING SOON with its confirm disabled. Tags and an
+     archive state do not exist in the database at all. */
+  function drawBulk() {
+    const h = $('bulkHost');
+    if (!h) return;
+    if (!picked.size) { h.innerHTML = ''; bulkOpen = false; return; }
+    h.innerHTML = `<div class="px-4 py-2.5 rounded-lg bg-secondary-fixed text-on-secondary-fixed flex items-center justify-between gap-3 flex-wrap shadow-sm">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center justify-center w-5 h-5 rounded bg-primary text-on-primary text-[12px] font-bold">✓</div>
+          <span class="font-label-numeric-md text-label-numeric-md font-bold">${num(picked.size)} ${plural(picked.size, 'lead', 'leads')} selected</span>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button type="button" id="bulkAssign" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-primary font-body-md text-body-sm font-bold shadow-xs hover:bg-surface-container-high transition-colors">
+            <span class="material-symbols-outlined text-[17px]">person_add</span>Assign owner</button>
+          <button type="button" disabled title="Coming soon — NEXUS has no lead tags yet." class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-outline font-body-md text-body-sm font-medium cursor-not-allowed">
+            <span class="material-symbols-outlined text-[17px]">label</span>Apply tag</button>
+          <button type="button" disabled title="Coming soon — a lead has no archived state in the database yet." class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-outline font-body-md text-body-sm font-medium cursor-not-allowed">
+            <span class="material-symbols-outlined text-[17px]">archive</span>Archive</button>
+          <button type="button" id="bulkClear" class="px-2 py-1 text-on-secondary-fixed-variant hover:text-on-secondary-fixed text-body-sm">Clear selection</button>
+        </div>
+      </div>
+      ${bulkOpen ? `<div class="mt-2 p-4 rounded-xl bg-surface-container-lowest border border-outline-variant/40 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div class="flex items-start gap-3.5">
+          <div class="p-2.5 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed shrink-0"><span class="material-symbols-outlined text-[24px]">published_with_changes</span></div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap"><h2 class="font-headline-md text-headline-md text-on-surface">Bulk reassignment preview</h2>${statusChip('coming-soon')}</div>
+            <p class="font-body-md text-body-sm text-outline mt-0.5">${num(picked.size)} ${plural(picked.size, 'lead is', 'leads are')} selected. Reassigning several leads in one step is not built yet. Each lead can be reassigned now from its own drawer (Assign owner), where the change and the reason given are recorded.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 w-full md:w-auto">
+          <select disabled aria-label="Target rep (coming soon)" class="h-9 pl-3 pr-8 rounded-lg bg-surface-container text-body-sm text-outline min-w-[200px]"><option>Select target rep…</option>${reps.map(s => `<option>${esc(s)}</option>`).join('')}</select>
+          <button type="button" disabled class="px-4 py-2 rounded-lg bg-surface-container-high text-outline font-body-md text-body-sm font-bold cursor-not-allowed">Confirm (coming soon)</button>
+          <button type="button" id="bulkDismiss" class="px-3 py-2 rounded-lg text-outline hover:text-on-surface font-body-md text-body-sm">Dismiss</button>
+        </div>
+      </div>` : ''}`;
+    $('bulkAssign')?.addEventListener('click', () => { bulkOpen = true; drawBulk(); });
+    $('bulkDismiss')?.addEventListener('click', () => { bulkOpen = false; drawBulk(); });
+    $('bulkClear')?.addEventListener('click', () => { picked.clear(); bulkOpen = false; draw(); });
+  }
+
+  function syncControls() {
+    const set = (id, v) => { const n = $(id); if (n) n.value = v; };
+    set('fStatus', f.status); set('fSource', f.source); set('fRep', f.rep); set('fScoring', f.scoring);
+    set('fSort', f.sort); set('fView', currentView); set('q', f.q);
+  }
+
   function draw() {
-    /* The screen may have been replaced while a webhook was in flight:
-       confirmAction's continuation calls draw() from an async click handler,
-       where lib/nav.js's generation guard cannot catch a throw, and $('resultCount')
-       is then null. Same class of fault as the superseded drawer in
-       lib/lead-drawer.js — a continuation painting into a screen nobody is
-       looking at — and the same answer: if this card is no longer in the
-       document, there is nothing to repaint. Compared against `false` explicitly
-       so that a host without `isConnected` does not silently disable every draw. */
+    /* The screen may have been replaced while a webhook was in flight: this
+       runs from an async click handler, where lib/nav.js's generation guard
+       cannot catch a throw. If this card is no longer in the document, there is
+       nothing to repaint. */
     if (card.isConnected === false) return;
-    card.querySelectorAll('#segStatus button').forEach(b =>
-      b.classList.toggle('on', b.dataset.v === f.status));
+    headHost.querySelectorAll('[data-layout]').forEach(b => { b.className = b.dataset.layout === layout ? LAYOUT_BTN.on : LAYOUT_BTN.off; });
+    headHost.querySelectorAll('[data-stage]').forEach(b => { b.className = b.dataset.stage === f.status ? STAGE_BTN_ON : STAGE_BTN; });
     const focus = f.alert ? checkByKey.get(f.alert) : null;
     const rows = sorted(filtered());
     $('resultCount').textContent = `${rows.length} of ${all.length} ${plural(all.length, 'lead', 'leads')}`;
 
-    const note = $('focusNote');
-    note.innerHTML = focus
-      ? `<div class="banner info" style="margin-top:14px"><span class="material-symbols-outlined">filter_alt</span>
-         <div style="flex:1">Showing only the ${num(focus.leads.length)} ${plural(focus.leads.length, 'lead', 'leads')} behind
+    const noteHost = $('focusNote');
+    noteHost.innerHTML = focus
+      ? note('info', 'filter_alt', `<div class="flex items-center gap-3 flex-wrap"><div class="flex-1">Showing only the ${num(focus.leads.length)} ${plural(focus.leads.length, 'lead', 'leads')} behind
          “${esc(focus.title)}”. The status, source, rep and search filters were cleared so that set is not hidden by them.</div>
-         <button class="btn sm" id="focusClear">Show all leads</button></div>`
+         <button type="button" class="${BTN.secondary}" id="focusClear">Show all leads</button></div>`)
       : '';
-    note.querySelector('#focusClear')?.addEventListener('click', () => { f.alert = null; draw(); });
-    alertCard.querySelectorAll('[data-focus]').forEach(n =>
-      n.classList.toggle('on', n.dataset.focus === f.alert));
+    noteHost.querySelector('#focusClear')?.addEventListener('click', () => { f.alert = null; draw(); });
+    alertCard.querySelectorAll('[data-focus]').forEach(n => {
+      n.className = n.dataset.focus === f.alert ? ALERT_CARD_ON : ALERT_CARD;
+    });
 
     const host2 = $('leadTable');
-    host2.innerHTML = all.length
-      ? table(cols, rows, {
-          onRow: true,
-          empty: stateEmpty('No leads match these filters', 'Try clearing the search or widening the status filter.', 'search_off'),
-        })
-      : stateEmpty('No leads yet', 'They appear here the moment the router webhook receives one.', 'inbox');
-    wireRows(host2, rows, leadDrawer);
+    host2.innerHTML = !all.length
+      ? emptyState({ icon: 'inbox', title: 'No leads yet', body: 'They appear here the moment a lead is recorded or a provider delivers one.' })
+      : !rows.length
+        ? emptyState({ icon: 'search_off', title: 'No leads match these filters', body: 'Try clearing the search or widening the status filter.' })
+        : layout === 'board' ? boardHtml(rows) : tableHtml(rows);
+
+    host2.querySelectorAll('tbody tr[data-i]').forEach(tr => tr.addEventListener('click', e => {
+      if (e.target.closest('input,button,a,select,label')) return;
+      const lead = rows[Number(tr.dataset.i)];
+      if (lead) leadDrawer(lead);
+    }));
+    host2.querySelectorAll('[data-card]').forEach(n => {
+      const run = () => openLead(n.dataset.card);
+      n.addEventListener('click', run);
+      n.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); } });
+    });
+    host2.querySelectorAll('input[data-pick]').forEach(b => b.addEventListener('change', () => {
+      if (b.checked) picked.add(String(b.dataset.pick)); else picked.delete(String(b.dataset.pick));
+      draw();
+    }));
+    host2.querySelector('#pickAll')?.addEventListener('change', e => {
+      rows.forEach(r => { if (e.target.checked) picked.add(String(r.id)); else picked.delete(String(r.id)); });
+      draw();
+    });
     host2.querySelectorAll('button[data-act]').forEach(b => b.addEventListener('click', ev => {
       /* The row itself opens the drawer; an action button must not do both. */
       ev.stopPropagation();
@@ -1371,15 +1645,27 @@ SCREENS.leads = async host => {
       const a = ACTIONS[b.dataset.act];
       if (lead && a) confirmAction(a, lead);
     }));
+    drawBulk();
+  }
+
+  function drawColMenu() {
+    const menu = $('colMenu');
+    menu.innerHTML = cols.filter(c => !c.fixed).map(c => `<label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-surface-container-low font-body-sm text-body-sm text-on-surface cursor-pointer">
+        <input type="checkbox" data-col="${esc(c.key)}" class="${CHECK}"${colOn(c.key) ? ' checked' : ''}>${esc(c.label)}</label>`).join('')
+      + '<div class="ds-cell-sub" style="padding:4px 8px;white-space:normal">Remembered on this browser.</div>';
+    menu.querySelectorAll('[data-col]').forEach(b => b.addEventListener('change', () => {
+      writeFlag(colFlag(b.dataset.col), b.checked);
+      draw();
+    }));
   }
 
   /* An alert that only describes a problem is a poster. Clicking a check filters
      the table to exactly its leads — and clears the other filters first, because
-     a focus that lands inside a HOT-only or searched view would show a shorter
-     list than the alert just promised, which reads as the alert lying. */
+     a focus inside a HOT-only or searched view would show a shorter list than
+     the alert just promised. */
   function focusCheck(key) {
-    f.alert = key; f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.scoring = 'ALL'; f.q = '';
-    $('q').value = ''; $('fSource').value = 'ALL'; $('fRep').value = 'ALL'; $('fScoring').value = 'ALL';
+    f.alert = key; f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.scoring = 'ALL'; f.q = ''; f.untimed = false; f.mine = false;
+    syncControls();
     draw();
     $('leadTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1391,10 +1677,11 @@ SCREENS.leads = async host => {
 
   alertCard.querySelectorAll('[data-focus]').forEach(n => {
     const run = () => focusCheck(n.dataset.focus);
-    n.addEventListener('click', run);
-    /* Keyboard-operable, because this row is the only route from the alert to
-       the leads it is about. */
+    n.addEventListener('click', e => { if (e.target.closest('[data-stop],[data-lead]')) return; run(); });
+    /* Keyboard-operable: this card is the only route from the alert to the
+       leads it is about. */
     n.addEventListener('keydown', e => {
+      if (e.target !== n) return;
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
     });
   });
@@ -1406,24 +1693,37 @@ SCREENS.leads = async host => {
     });
   });
   alertCard.querySelectorAll('[data-lead]').forEach(b => b.addEventListener('click', ev => {
-    /* The chip sits inside a row that filters the table; opening one lead and
+    /* The chip sits inside a card that filters the table; opening one lead and
        filtering to all of them at once would be two answers to one click. */
     ev.stopPropagation();
     openLead(b.dataset.lead);
   }));
 
-  card.querySelectorAll('#segStatus button').forEach(b => b.addEventListener('click', () => {
-    f.status = b.dataset.v; draw();
+  headHost.querySelectorAll('[data-layout]').forEach(b => b.addEventListener('click', () => {
+    layout = b.dataset.layout; writeFlag('nexus.leads.board', layout === 'board'); draw();
   }));
+  headHost.querySelectorAll('[data-stage]').forEach(b => b.addEventListener('click', () => {
+    f.status = f.status === b.dataset.stage ? 'ALL' : b.dataset.stage; f.alert = null; syncControls(); draw();
+  }));
+  $('fView').addEventListener('change', e => { applyView(e.target.value); syncControls(); draw(); });
+  $('saveView').addEventListener('click', () => {
+    VIEWS.forEach(v => writeFlag(viewFlag(v.id), v.id === currentView && v.id !== 'all'));
+    const b = $('saveView');
+    b.title = `“${(VIEWS.find(v => v.id === currentView) || VIEWS[0]).label}” is now this browser's default view.`;
+    b.innerHTML = '<span class="material-symbols-outlined text-[16px] text-emerald-700">check</span>Saved as default';
+  });
+  $('colBtn').addEventListener('click', () => {
+    const menu = $('colMenu');
+    const open = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !open);
+    $('colBtn').setAttribute('aria-expanded', String(open));
+    if (open) drawColMenu();
+  });
+  $('fStatus').addEventListener('change', e => { f.status = e.target.value; f.alert = null; draw(); });
   $('q').addEventListener('input', e => { f.q = e.target.value; draw(); });
-  /* Reloads the screen on a save rather than splicing the new lead into `all`
-     by hand. The row a salesperson needs to see is the one the DATABASE made —
-     with its real origin, its event id and its promoted state — not a
-     client-side guess at what it probably looks like.
-
-     `host` is emptied first because SCREENS.leads APPENDS its two cards rather
-     than replacing them, so calling it again on a live host would leave the old
-     table sitting above the new one, showing the pre-save state. */
+  /* Reloads the screen on a save rather than splicing the new lead in by hand:
+     the row a salesperson needs is the one the DATABASE made. `host` is emptied
+     first because SCREENS.leads APPENDS its root. */
   $('addLead')?.addEventListener('click', () => manualLeadDialog(() => {
     host.innerHTML = '';
     SCREENS.leads(host);
@@ -1432,5 +1732,13 @@ SCREENS.leads = async host => {
   $('fRep').addEventListener('change', e => { f.rep = e.target.value; draw(); });
   $('fScoring').addEventListener('change', e => { f.scoring = e.target.value; draw(); });
   $('fSort').addEventListener('change', e => { f.sort = e.target.value; draw(); });
+  syncControls();
   draw();
+
+  footHost.innerHTML = trustFooter({
+    source: 'leads · v_needs_attention · communication_logs · whatsapp_contacts · nexus_lead_attribution',
+    asOf: dubaiStamp(readAt),
+    evidence: `${num(all.length)} ${plural(all.length, 'lead', 'leads')} read${leadsCapped ? ` (stopped at ${num(LEAD_LIMIT)})` : ''}`,
+    actor: actorName(),
+  });
 };

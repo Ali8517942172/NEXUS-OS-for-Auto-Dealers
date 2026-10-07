@@ -132,8 +132,8 @@ import { displayName, maskEmail, maskText } from '../lib/privacy.js';
 import { SILENCE_MARKER, silenceCount, splitEvents } from '../lib/comm-events.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, table, wireRows } from '../lib/ui.js';
+import { BTN, comingSoonPanel, emptyState, errorState, skeleton, statusChip, trustFooter } from '../lib/stitch-ui.js';
+import { ME } from '../lib/data.js';
 
 const PROFILE_COLS = 'customer_id,name,email,phone,total_emails,total_slack_messages,last_synced_at';
 const CONTACT_COLS = 'chat_id,phone,push_name,lead_email,message_count,first_seen,last_seen';
@@ -516,6 +516,52 @@ function contactLabel(c) {
   return { name: '', basis: 'Unidentified — no profile name and no phone number was ever stored for this chat' };
 }
 
+/* ── Stitch vocabulary (complete, literal class strings) ───────────────────
+   From customer-360-3-panel-unified-dossier--31a9aa and
+   customer-360-unified-intelligence--dc1622 in design/stitch/. */
+const SECTION = 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm';
+const SEG = {
+  on:  'px-2.5 py-1 rounded-md bg-surface-container-lowest text-primary font-body-sm text-[12px] font-semibold shadow-sm',
+  off: 'px-2.5 py-1 rounded-md text-on-surface-variant hover:text-on-surface font-body-sm text-[12px] font-medium transition-colors disabled:text-outline disabled:cursor-not-allowed',
+};
+const LIST = {
+  on:  'flex items-center gap-3 p-3 rounded-lg bg-secondary-fixed/40 border border-primary/40 cursor-pointer',
+  off: 'flex items-center gap-3 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container border border-transparent cursor-pointer transition-colors',
+};
+const CAT = {
+  on:   'flex items-center gap-2.5 px-3 py-2 rounded-lg bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold',
+  off:  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-on-surface hover:bg-surface-container-low font-body-sm text-body-sm transition-colors',
+  soon: 'flex items-center gap-2.5 px-3 py-2 rounded-lg text-outline bg-surface-container-low/60 font-body-sm text-body-sm',
+};
+const TL_DOT = {
+  ok: 'bg-emerald-600', won: 'bg-emerald-600', hot: 'bg-red-600', warm: 'bg-amber-500', cold: 'bg-sky-600',
+  open: 'bg-violet-600', dead: 'bg-zinc-400', unknown: 'bg-zinc-400', neutral: 'bg-outline',
+};
+const tlItem = (dot, metaHtml, textHtml, subHtml = '') => `<div class="flex gap-3">
+    <div class="flex flex-col items-center pt-1.5"><span class="w-2.5 h-2.5 rounded-full shrink-0 ${dot}"></span><span class="flex-1 w-px bg-outline-variant/50 mt-1"></span></div>
+    <div class="pb-3 min-w-0 flex-1">
+      <div class="flex items-center gap-2 flex-wrap font-label-numeric-sm text-label-numeric-sm text-outline">${metaHtml}</div>
+      <div class="font-body-sm text-body-sm text-on-surface mt-0.5" style="white-space:pre-wrap;word-break:break-word">${textHtml}</div>${subHtml}
+    </div></div>`;
+const NOTE = {
+  info: 'flex items-start gap-2.5 p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-blue-950 font-body-sm text-body-sm',
+  warm: 'flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm',
+  hot:  'flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm',
+};
+const note = (t, icon, html) =>
+  `<div class="${NOTE[t] || NOTE.info}"><span class="material-symbols-outlined text-[18px] shrink-0">${esc(icon)}</span><div class="min-w-0 flex-1">${html}</div></div>`;
+const quiet = (icon, title, body) => `<div class="flex items-start gap-3 p-space-md rounded-lg bg-surface-container-low">
+    <span class="material-symbols-outlined text-[20px] text-outline">${esc(icon)}</span>
+    <div><div class="font-body-md text-body-sm font-semibold text-on-surface">${esc(title)}</div>
+    <p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(body)}</p></div></div>`;
+/* A KPI tile whose sub-line is trusted markup this screen built — every
+   customer figure here carries a provenance sentence with its own tone. */
+const tile = (label, value, subHtml) => `<div class="bg-surface-container-lowest p-space-md rounded-xl border border-outline-variant/40 shadow-sm flex flex-col gap-2 min-w-0">
+    <span class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">${esc(label)}</span>
+    <span class="font-label-numeric-lg text-[1.75rem] leading-none font-bold text-on-surface tracking-tight">${value}</span>
+    <div class="font-body-sm text-[12px] leading-snug text-on-surface-variant" style="white-space:normal">${subHtml}</div></div>`;
+const actorName = () => String((ME && (ME.name || ME.email)) || 'Signed-in user');
+
 SCREENS.customers = async host => {
   /* `.ds-screen` is the class lib/design-system.css gates its handful of
      upgrades to existing chrome behind. It goes on a wrapper this screen
@@ -525,28 +571,48 @@ SCREENS.customers = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
      screens/setup.js, screens/inventory.js and screens/conversations.js. */
-  const root = el('div', 'ds-screen');
+  /* Stitch layout, 7 Oct 2026: `nx-stitch` on a wrapper this screen appends,
+     never on `#screen`. Every read and every provenance sentence below is the
+     one this file already wrote; the panels are the Stitch dossier. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  const readAt = new Date();
+  let activeCat = 'identity';
 
-  const strip = el('div', 'grid g5');
-  strip.innerHTML = stateLoading(2);
+  const head = el('div');
+  head.innerHTML = `<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-sm">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-table-header text-table-header uppercase tracking-wider text-outline">Intelligence</span>
+          <span class="font-table-header text-table-header text-outline-variant">/</span>
+          <span class="font-table-header text-table-header uppercase tracking-wider text-primary font-semibold">Customer 360</span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Customer 360</h1>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-0.5 max-w-3xl">Everyone who enquired or bought, with every key their messages are filed under — and, kept apart below, everyone in the system who is not a customer.</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" class="${BTN.secondary}" disabled title="${esc(NO_SYNC_HOOK)}"><span class="material-symbols-outlined text-[18px]">sync</span>Re-run sync</button>
+        <button type="button" class="${BTN.secondary}" disabled title="Coming soon — merging two records of one person is identity resolution, and no merge path exists yet."><span class="material-symbols-outlined text-[18px]">merge</span>Run deduplication (coming soon)</button>
+      </div>
+    </div>`;
+  root.appendChild(head);
+
+  const strip = el('div', 'grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-space-md');
+  strip.innerHTML = skeleton({ rows: 1 });
   root.appendChild(strip);
 
-  const noteHost = el('div');
-  noteHost.style.marginTop = '16px';
+  const noteHost = el('div', 'flex flex-col gap-2');
   root.appendChild(noteHost);
 
-  const grid = el('div', 'card flush');
-  grid.style.display = 'grid';
-  grid.style.gridTemplateColumns = '340px minmax(0,1fr)';
-  grid.style.minHeight = '620px';
-  grid.innerHTML = stateLoading(6);
+  const grid = el('div');
+  grid.innerHTML = skeleton({ rows: 4 });
   root.appendChild(grid);
 
-  const otherHost = el('div', 'card flush');
-  otherHost.style.marginTop = '16px';
-  otherHost.innerHTML = stateLoading(4);
+  const otherHost = el('div');
+  otherHost.innerHTML = skeleton({ rows: 3 });
   root.appendChild(otherHost);
+  const footHost = el('div');
+  root.appendChild(footHost);
 
   /* Every source is read independently. "The aggregation is down" and "the
      customer list is down" are different events and the screen stays useful
@@ -877,11 +943,11 @@ SCREENS.customers = async host => {
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!spine) {
-    strip.style.display = 'block';
-    strip.innerHTML = stateError('the customer list', dirErr || leadErr || buyErr || 'Unknown error');
+    strip.className = '';
+    strip.innerHTML = errorState({ what: 'the customer list', err: dirErr || leadErr || buyErr || 'Unknown error' });
   } else {
     strip.innerHTML = [
-      kpi('Customers', num(customers.length),
+      tile('Customers', num(customers.length),
         /* spineNote was computed in both branches and rendered in neither, so
            the one sentence that says what the list IS — and, in the fallback
            branch, that it was rebuilt rather than read — was being thrown away
@@ -903,7 +969,7 @@ SCREENS.customers = async host => {
               ? '<span class="t-ok">The one customer on file has a phone number</span>'
               : `<span class="t-ok">All ${num(withPhone)} reachable by phone</span>`}</div>
          ${dirCapped ? CAPPED(DIR_LIMIT) : ''}`),
-      kpi('Recorded purchase value', aed(purchaseValue),
+      tile('Recorded purchase value', aed(purchaseValue),
         buyErr
           ? '<span class="t-warm">The recorded sales could not be read</span>'
           : purchaseRows
@@ -911,7 +977,7 @@ SCREENS.customers = async host => {
                 ? `<div><span class="t-warm">The recorded sales came back at the ${num(SOURCE_LIMIT)}-row read limit, so this is a floor, not the total</span></div>`
                 : ''}`
             : '<span class="t-muted">No purchase recorded against any customer</span>'),
-      kpi('Contacts who are not customers', waErr && !otherList.length ? '—' : num(otherList.length),
+      tile('Contacts who are not customers', waErr && !otherList.length ? '—' : num(otherList.length),
         waErr
           ? '<span class="t-warm">The saved contact details could not be read, so this is incomplete</span>'
           : `<span class="t-muted">${num(contacts.length)} saved contact record${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`
@@ -930,12 +996,12 @@ SCREENS.customers = async host => {
                    none of them is being carried as a customer. */
                 : '<div><span class="t-ok">Nobody in the messaging or aggregation tables is being presented as a customer</span></div>')
             + (waCapped ? CAPPED(CONTACT_LIMIT) : '')),
-      kpi('Unified profiles', profErr ? '—' : num(profiles.length),
+      tile('Unified profiles', profErr ? '—' : num(profiles.length),
         profErr
           ? '<span class="t-warm">The customer profiles could not be read</span>'
           : `<span class="t-muted">${num(withProfile)} of ${num(customers.length)} customer${customers.length === 1 ? '' : 's'} ${withProfile === 1 ? 'has' : 'have'} one${orphanProfiles ? ` · ${num(orphanProfiles)} belong${orphanProfiles === 1 ? 's' : ''} to somebody who is not a customer` : ''}</span>`
             + (profCapped ? CAPPED(PROFILE_LIMIT) : '')),
-      kpi('Last aggregation run', profErr ? '—' : ago(newest),
+      tile('Last aggregation run', profErr ? '—' : ago(newest),
         profErr
           ? '<span class="t-warm">Unknown — the profile table could not be read</span>'
           : newest
@@ -963,25 +1029,25 @@ SCREENS.customers = async host => {
      and "how this job has been doing for thirty days" — and losing one is not a
      reason to withhold the other. */
   if (aggLogErr) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>The Customer 360 aggregation's own run log could not be read (${esc(aggLogErr)}), so this
       screen cannot say whether the run behind each email and Slack figure below completed or went out half-done.
       The figures are shown exactly as the customer profiles holds them, with no claim about how they were
       collected.</div></div>`);
   } else if (aggAmbiguous) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>${esc(String(regRows.length))} rows in the automation register match “360”, so which job writes the email and
       Slack figures on this screen cannot be determined from here. No run is attributed to any figure below.</div></div>`);
   }
   if (healthErr) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>The automation health figures could not be read (${esc(healthErr)}), so how the Customer 360 aggregation has been
       doing over the last thirty days is not stated on this screen — neither well nor badly.</div></div>`);
   } else if (aggHealth && String(aggHealth.health || '').toUpperCase() !== 'HEALTHY') {
     const hw = healthWords(aggHealth.health);
     const eff = n0(aggHealth.effective_runs_30d), succ = n0(aggHealth.successes_30d);
     const parts = n0(aggHealth.partials_30d), fails = n0(aggHealth.failures_30d);
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">rule</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">rule</span>
       <div><strong>The job behind every email and Slack figure on this screen is ${esc(hw.label.toLowerCase())}.</strong>
       ${esc(hw.blurb)} ${eff
         ? `The automation health figures reports ${esc(String(succ))} of ${esc(String(eff))} qualifying run${eff === 1 ? '' : 's'}
@@ -992,13 +1058,13 @@ SCREENS.customers = async host => {
       logged.</div></div>`);
   }
   if (dirErr && spine) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>The customer list could not be read (${esc(dirErr)}), so this list was rebuilt from leads and
       the recorded sales — the two tables that view is defined over. It should match, but it has not been
       confirmed against the view. Nothing from the aggregation tables was used to fill the gap.</div></div>`);
   }
   if (profErr) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>The customer profiles could not be read (${esc(profErr)}), so no email or Slack touch counts and no
       sync times are shown. Identity, leads, purchases and messages below are read live and are current.</div></div>`);
   } else if (profiles.length && !anyTouch) {
@@ -1012,7 +1078,7 @@ SCREENS.customers = async host => {
        answer, and it answers only "when", never "what was collected". */
     const verdict = runHalf ? 'half' : runSuccess === profiles.length ? 'counted' : 'unrecorded';
     const TONE_OF = { half: 'hot', counted: 'info', unrecorded: 'warm' };
-    notes.push(`<div class="banner ${TONE_OF[verdict]}">
+    notes.push(`<div class="${NOTE[TONE_OF[verdict]]}">
       <span class="material-symbols-outlined">${verdict === 'counted' ? 'mark_email_read' : 'sync_problem'}</span>
       <div><strong>${verdict === 'counted'
         ? 'Every email and Slack touch count on this screen is zero — and every run that wrote one logged no step that failed to land.'
@@ -1055,7 +1121,7 @@ SCREENS.customers = async host => {
     const zeroHalf = zeroRuns.filter(z => z.run && outcomeOf(z.run) !== OUTCOME.SUCCESS).length;
     const zeroOk   = zeroRuns.filter(z => z.run && outcomeOf(z.run) === OUTCOME.SUCCESS).length;
     const zeroNone = zeroRuns.length - zeroHalf - zeroOk;
-    notes.push(`<div class="banner ${zeroHalf ? 'hot' : 'warm'}"><span class="material-symbols-outlined">sync_problem</span>
+    notes.push(`<div class="${zeroHalf ? NOTE.hot : NOTE.warm}"><span class="material-symbols-outlined">sync_problem</span>
       <div>${esc(String(zeroProfiles))} of ${esc(String(profiles.length))} profiles report 0 for both emails and Slack
       messages, while others report figures.${zeroHalf
         ? ` <strong>${esc(String(zeroHalf))} of those ${zeroHalf === 1 ? 'zeros was' : 'zeros were'} written by a run that
@@ -1073,12 +1139,12 @@ SCREENS.customers = async host => {
         : ''}
       ${esc(AGG_ZERO_CAUSE)} Each profile below names the run logged beside its write, or says that none was.</div></div>`);
   } else if (!profiles.length) {
-    notes.push(`<div class="banner info"><span class="material-symbols-outlined">schedule</span>
+    notes.push(`<div class="${NOTE.info}"><span class="material-symbols-outlined">schedule</span>
       <div>The nightly Customer 360 aggregation has not written a single profile row, so there are no email or
       Slack touch counts anywhere on this screen. Everything else is read live.</div></div>`);
   }
   if (viewErr) {
-    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+    notes.push(`<div class="${NOTE.warm}"><span class="material-symbols-outlined">warning</span>
       <div>The customer record could not be read (${esc(viewErr)}), so no lifetime value, VIP flag or aggregate count
       comes from it. Where the same figure can be rebuilt from a table this screen reads directly — leads,
       the recorded sales, the message history — the detail pane does that and says so on the figure itself; where it
@@ -1088,53 +1154,58 @@ SCREENS.customers = async host => {
 
   /* ── Customer list ─────────────────────────────────────────────────────── */
   if (!spine) {
-    grid.style.display = 'block';
-    grid.innerHTML = stateError('customers', dirErr || leadErr || buyErr || 'Unknown error');
+    grid.innerHTML = errorState({ what: 'customers', err: dirErr || leadErr || buyErr || 'Unknown error' });
   } else if (!customers.length) {
-    grid.style.display = 'block';
-    grid.innerHTML = stateEmpty(
-      'No customers yet',
+    grid.innerHTML = emptyState({ icon: 'contacts', title: 'No customers yet', body:
       `${spineSource} returned no rows. A person appears here as soon as a lead or a purchase is recorded ` +
       'against their email address. Somebody messaging the WhatsApp number does not make them a customer, ' +
-      'and contacts who have only done that are listed further down this page.',
-      'contacts');
+      'and contacts who have only done that are listed further down this page.' });
   } else {
     renderList();
   }
 
+  /* THE THREE PANELS (customer-360-3-panel-unified-dossier--31a9aa), with the
+     client directory of customer-360-unified-intelligence--dc1622 as the
+     first column: who (directory) → this person and their categories → the
+     category's detail. */
   function renderList() {
+    grid.className = 'grid grid-cols-1 xl:grid-cols-[300px_260px_minmax(0,1fr)] gap-space-md items-start';
     grid.innerHTML = `
-      <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0">
-        <div class="toolbar">
-          <div class="grow">
-            <label class="sr-only" for="cq">Search customers</label>
-            <input type="search" id="cq" placeholder="Search name, email or phone" />
-          </div>
+      <section class="${SECTION} flex flex-col min-w-0">
+        <div class="px-space-md pt-space-md pb-2 flex items-center justify-between">
+          <span class="font-headline-md text-headline-md text-on-surface">Client directory</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${num(customers.length)} ${customers.length === 1 ? 'customer' : 'customers'}</span>
         </div>
-        <div class="toolbar" style="padding-top:0">
-          <div class="seg" id="cSeg" role="group" aria-label="Filter customers">
-            <button type="button" data-f="all" class="on" aria-pressed="true">All ${num(customers.length)}</button>
-            <button type="button" data-f="buyers" aria-pressed="false" ${buyErr || !buyers ? 'disabled' : ''}
+        <div class="px-space-md pb-2">
+          <label class="sr-only" for="cq">Search customers</label>
+          <div class="relative"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[16px]">search</span>
+            <input type="search" id="cq" placeholder="Search name, email or phone" class="w-full h-9 pl-8 pr-3 rounded-lg bg-surface-container-low border border-outline-variant/40 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+        </div>
+        <div class="px-space-md pb-2">
+          <div class="flex items-center p-0.5 bg-surface-container rounded-lg flex-wrap" id="cSeg" role="group" aria-label="Filter customers">
+            <button type="button" data-f="all" class="${SEG.on}" aria-pressed="true">All ${num(customers.length)}</button>
+            <button type="button" data-f="buyers" class="${SEG.off}" aria-pressed="false" ${buyErr || !buyers ? 'disabled' : ''}
               title="${buyErr
                 ? esc('The recorded sales could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
                 : buyers ? 'Customers with at least one row in the recorded sales.'
                          : 'No customer has a purchase recorded, so this filter would come back empty.'}">Buyers ${buyErr ? '—' : num(buyers)}</button>
-            <button type="button" data-f="enquiry" aria-pressed="false" ${buyErr || customers.length === buyers ? 'disabled' : ''}
+            <button type="button" data-f="enquiry" class="${SEG.off}" aria-pressed="false" ${buyErr || customers.length === buyers ? 'disabled' : ''}
               title="${buyErr
                 ? esc('The recorded sales could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
                 : customers.length === buyers ? 'Every customer on file has bought, so this filter would come back empty.'
                                               : 'Customers with a lead on file but no purchase recorded.'}">Enquiries ${buyErr ? '—' : num(customers.length - buyers)}</button>
-            <button type="button" data-f="nophone" aria-pressed="false" ${noPhone ? '' : 'disabled'}
+            <button type="button" data-f="nophone" class="${SEG.off}" aria-pressed="false" ${noPhone ? '' : 'disabled'}
               title="${esc(noPhone ? 'Customers with no phone number on the customer list, the customer record, the customer profiles, the recorded sales or the saved contact details — nothing the dashboard reads can call them.' : 'Every customer has a phone number on at least one source, so there is nothing to filter to.')}">No phone ${num(noPhone)}</button>
           </div>
-          <button class="btn sm" disabled title="${esc(NO_SYNC_HOOK)}">Re-run sync</button>
         </div>
-        <div id="custList" style="overflow-y:auto;flex:1"></div>
-        <div class="ds-cell-sub" style="padding:12px 20px;border-top:1px solid var(--border-subtle);white-space:normal">
-          ${esc(CRM_NOTE)}
+        <div id="custList" class="flex flex-col gap-1.5 px-2 pb-2 overflow-y-auto max-h-[720px]"></div>
+        <div class="px-space-md py-3 border-t border-outline-variant/30 flex flex-col gap-2">
+          <div class="ds-cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div>
+          <button type="button" class="${BTN.secondary}" disabled title="${esc(NO_SYNC_HOOK)}">Re-run sync</button>
         </div>
-      </div>
-      <div id="custPane" style="overflow-y:auto;min-width:0"></div>`;
+      </section>
+      <div class="flex flex-col gap-space-md min-w-0" id="custSide"></div>
+      <div class="flex flex-col gap-space-md min-w-0" id="custPane"></div>`;
   }
 
   let q = '', filter = 'all', selected = null;
@@ -1155,8 +1226,8 @@ SCREENS.customers = async host => {
   function drawList() {
     const rows = visible();
     const foot = collapsed
-      ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-           <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+      ? `<div class="flex items-start gap-2 p-2">
+           <span class="material-symbols-outlined text-[18px] text-outline">info</span>
            <div class="ds-cell-sub" style="white-space:normal">${esc(String(collapsed))} further
            ${collapsed === 1 ? 'row' : 'rows'} from ${esc(spineSource)} shared an email address with a customer
            above and ${collapsed === 1 ? 'was' : 'were'} collapsed into it, because leads and purchases are keyed
@@ -1184,10 +1255,10 @@ SCREENS.customers = async host => {
                 ? '<span class="t-muted">no purchase on file</span>'
                 : `<span class="t-muted">${esc(String(c.leads.length))} enquir${c.leads.length === 1 ? 'y' : 'ies'}, no purchase</span>`;
           const ph = phoneOf(c);
-          return `<div class="list-item${c.key === selected ? ' on' : ''}" role="button" tabindex="0" data-k="${esc(c.key)}">
-            <div class="avatar">${esc(initials(nameOf(c)))}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nameOf(c))}
+          return `<div class="${c.key === selected ? LIST.on : LIST.off}" role="button" tabindex="0" data-k="${esc(c.key)}">
+            <div class="w-10 h-10 rounded-full bg-primary-container text-on-primary font-bold text-[12px] flex items-center justify-center shrink-0">${esc(initials(nameOf(c)))}</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-body-md text-body-sm font-semibold text-on-surface truncate">${esc(nameOf(c))}
                 ${c.view && c.view.is_vip
                   ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>'
                   : ''}</div>
@@ -1196,13 +1267,13 @@ SCREENS.customers = async host => {
                 : '<span class="t-warm">No phone on any source</span>'}
                 · ${esc(maskText(c.email || 'No email on the directory row'))}</div>
             </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div class="ds-cell-sub num">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
+            <div class="text-right shrink-0">
+              <div class="font-label-numeric-sm text-label-numeric-sm font-semibold">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
               <div class="ds-cell-sub">${basis}</div>
             </div>
           </div>`;
         }).join('')
-      : stateEmpty('No match', 'No customer matches this search and filter.', 'search_off')) + foot;
+      : emptyState({ icon: 'search_off', title: 'No match', body: 'No customer matches this search and filter.' })) + foot;
 
     $('custList').querySelectorAll('[data-k]').forEach(n => {
       const openIt = () => open(n.dataset.k);
@@ -1218,10 +1289,11 @@ SCREENS.customers = async host => {
     const c = customers.find(x => x.key === key);
     if (!c) return;
     selected = key;
-    $('custList').querySelectorAll('[data-k]').forEach(n => n.classList.toggle('on', n.dataset.k === key));
+    $('custList').querySelectorAll('[data-k]').forEach(n => { n.className = n.dataset.k === key ? LIST.on : LIST.off; });
 
     const pane = $('custPane');
-    pane.innerHTML = stateLoading(5);
+    pane.innerHTML = skeleton({ rows: 4 });
+    $('custSide').innerHTML = skeleton({ rows: 3 });
     const email = c.email;
     const qs = email ? likePattern(email) : null;
 
@@ -1308,12 +1380,12 @@ SCREENS.customers = async host => {
     if (selected !== key) return;
 
     const v = c.view || {};
-    const noEmailNote = '<div class="ds-cell-sub" style="margin-top:8px">This directory row carries no email address, and leads and purchases are keyed on email — so neither can be matched to it. Messages are read separately, under every key this person is filed under.</div>';
+    const noEmailNote = '<div class="ds-cell-sub">This directory row carries no email address, and leads and purchases are keyed on email — so neither can be matched to it. Messages are read separately, under every key this person is filed under.</div>';
     const section = (title, res, empty, body, nullNote) => {
-      if (res.err) return `<div class="section"><div class="label-caps">${esc(title)}</div>${stateError(title.toLowerCase(), res.err, 'x')}</div>`;
-      if (res.rows == null) return `<div class="section"><div class="label-caps">${esc(title)}</div>${nullNote || noEmailNote}</div>`;
-      if (!res.rows.length) return `<div class="section"><div class="label-caps">${esc(title)}</div><div class="ds-cell-sub" style="margin-top:8px">${esc(empty)}</div></div>`;
-      return `<div class="section"><div class="label-caps">${esc(title)}</div>${body(res.rows)}</div>`;
+      if (res.err) return errorState({ what: title.toLowerCase(), err: res.err, retry: 'x' });
+      if (res.rows == null) return nullNote || noEmailNote;
+      if (!res.rows.length) return `<div class="ds-cell-sub">${esc(empty)}</div>`;
+      return body(res.rows);
     };
 
     const ph = phoneOf(c);
@@ -1652,231 +1724,342 @@ SCREENS.customers = async host => {
     }
 
     const waHtml = waErr
-      ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The saved contact details could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
+      ? `<div class="ds-cell-sub" style="white-space:normal">The saved contact details could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
       : c.contacts.length
-        ? `<div style="margin-top:8px">${c.contacts.map(w => {
+        ? `<div class="flex flex-col gap-2">${c.contacts.map(w => {
             const lab = contactLabel(w);
-            return `<div class="list-item" style="cursor:default;align-items:flex-start">
-              <span class="material-symbols-outlined t-muted" style="font-size:18px">chat</span>
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${lab.name ? esc(maskText(lab.name)) : '<span class="t-muted">No name captured on this chat</span>'}</div>
+            return `<div class="flex items-start gap-3 p-3 rounded-lg bg-surface-container-low">
+              <span class="material-symbols-outlined text-[18px] text-outline">chat</span>
+              <div class="flex-1 min-w-0">
+                <div class="font-body-sm text-body-sm font-semibold">${lab.name ? esc(maskText(lab.name)) : '<span class="t-muted">No name captured on this chat</span>'}</div>
                 <div class="ds-cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by the email on the lead record.</div>
                 <div class="ds-cell-sub mono" style="word-break:break-all">${esc(str(w.chat_id) || 'no chat id')}</div>
               </div>
-              <div style="text-align:right;flex-shrink:0">
+              <div class="text-right shrink-0">
                 <div class="ds-cell-sub">${str(w.phone) ? `<span class="mono">${esc(maskText(str(w.phone)))}</span>` : '<span class="t-muted">no phone stored</span>'}</div>
                 <div class="ds-cell-sub">${waCount(w)} · ${esc(ago(w.last_seen))}</div>
               </div>
             </div>`;
           }).join('')}</div>`
-        : '<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">No the saved contact details row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
+        : '<div class="ds-cell-sub" style="white-space:normal">No saved contact details row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
 
-    pane.innerHTML = `
-      <div class="card-head">
-        <div class="avatar" style="width:40px;height:40px;font-size:14px">${esc(initials(nameOf(c)))}</div>
-        <div style="flex:1;min-width:0">
-          <div class="card-title">${esc(nameOf(c))}
-            ${v.is_vip ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>' : ''}
-            ${buyErr ? '' : c.purchases.length ? pill('Buyer', 'ok', { verbatim: false }) : '<span class="chip">Enquiry — no purchase on file</span>'}</div>
-          <div class="card-sub">${ph.phone
-            ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="t-muted">· ${esc(ph.from)}</span>`
-            : '<span class="t-warm">No phone number on any source</span>'}
-            · ${esc(maskText(c.email || 'No email on the directory row'))}</div>
-        </div>
-        ${leads.rows && leads.rows.length
-          ? `<button class="btn sm" data-act="lead">Open ${leads.rows.length === 1 ? 'this lead' : 'newest lead'}</button>`
-          : ''}
-      </div>
-      <div style="padding:20px">
-        <div class="grid g4">
-          ${kpi('Lifetime value', ltvValue, ltvSub)}
-          ${kpi('Leads', num(leadCount), leadSub)}
-          ${kpi('Best AI score', num(bestScore), scoreSub)}
-          ${kpi('Messages logged', msgDisplay, msgSub)}
-        </div>
+    /* ── Panel 2: this person, and their categories ──────────────────────── */
+    const isBuyer = !buyErr && c.purchases.length;
+    const purchCount = purch.rows ? purch.rows.length : null;
+    const interests = [...new Set((leads.rows || []).map(l => str(l.vehicle_interest)).filter(Boolean))];
+    /* Journey: the rows this pane already holds, in one time order — a lead
+       arriving, a purchase, a message. Nothing is inferred between them. */
+    const journey = [
+      ...(leads.rows || []).map(l => ({ at: l.created_at, kind: 'Lead', icon: 'person_add', text: `Lead #${str(l.id)} created${l.vehicle_interest ? ` — asked about ${str(l.vehicle_interest)}` : ''}`, sub: str(l.status) ? `Status ${str(l.status)}` : '' })),
+      ...(purch.rows || []).map(x => ({ at: x.purchase_date, kind: 'Purchase', icon: 'handshake', text: `Bought ${str(x.vehicle) || 'a vehicle with no name recorded'}${n0(x.amount_aed) == null ? '' : ` · ${aed(x.amount_aed)}`}`, sub: x.deal_id ? `Deal ${String(x.deal_id)}` : '' })),
+      ...(comms.rows || []).map(m => ({ at: m.created_at, kind: str(m.channel) || 'message', icon: norm(m.direction) === 'inbound' ? 'south_west' : 'north_east', text: String(m.message || '').slice(0, 200), sub: str(m.direction) })),
+    ].filter(e => e.at).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 
-        <div class="section" style="margin-top:24px">
-          <div class="label-caps">Why this person is a customer</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Directory</dt><dd>${dirErr
-              ? '<span class="t-warm">Rebuilt from leads and the recorded sales — The customer list could not be read</span>'
-              : 'In the customer list <span class="t-ok">· leads UNION the recorded sales</span>'}</dd>
-            <dt>Leads on file</dt><dd>${leads.err
-              ? `<span class="t-warm">Could not be read — ${esc(leads.err)}</span>`
-              : leads.rows == null
-                ? '<span class="t-muted">Cannot be matched without an email address</span>'
-                : `${esc(String(leads.rows.length))}${foreignNote(leads)}`}</dd>
-            <dt>Purchases on file</dt><dd>${purch.err
-              ? `<span class="t-warm">Could not be read — ${esc(purch.err)}</span>`
-              : purch.rows == null
-                ? '<span class="t-muted">Cannot be matched without an email address</span>'
-                : `${esc(String(purch.rows.length))}${foreignNote(purch)}`}</dd>
-            <dt>Directory row</dt><dd>${c.id
-              ? `<span class="mono">${esc(c.id)}</span> <span class="ds-cell-sub">· their id in the customer list</span>`
-              : '<span class="t-muted">Rebuilt from leads and the recorded sales — there is no directory row behind it</span>'}</dd>
-            <dt>Underlying records</dt><dd>${dirErr
-              ? '<span class="t-muted">Not available — the view that reports it could not be read</span>'
-              : c.sourceRecords == null
-                ? '<span class="t-muted">The customer list returned no source_records value for this address</span>'
-                : n0(c.sourceRecords) != null
-                  ? `${num(c.sourceRecords)} <span class="ds-cell-sub">source_records, as the customer list counts them</span>`
-                  : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="ds-cell-sub">source_records, exactly as the customer list reports it</span>`}</dd>
-            <dt>Last seen</dt><dd>${c.lastSeen
-              ? `${esc(ago(c.lastSeen))} <span class="ds-cell-sub">· the newest last_seen_at on this address</span>`
-              : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
-            <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(maskText(c.email || '—'))}</dd>
-            <dt>Message keys</dt><dd>${commsFilter.ok
-              ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
-                 <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
-              : `<span class="t-warm">None</span>
-                 <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
-            <dt>Phone</dt><dd>${ph.phone
-              ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="ds-cell-sub">· found on ${esc(ph.from)}</span>`
-              : `<span class="t-warm">Not recorded</span>
-                 <div class="ds-cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
-            <dt>Source system</dt><dd>NEXUS <span class="t-muted">· not your CRM</span>
-              <div class="ds-cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div></dd>
-          </dl>
-        </div>
+    const CATS = [
+      { k: 'identity', icon: 'badge', label: 'Identity', badge: v.is_vip ? 'VIP' : (isBuyer ? 'Buyer' : 'Enquiry') },
+      { k: 'leads', icon: 'person_search', label: 'Leads', badge: leads.rows ? `${num(leads.rows.length)}` : '—' },
+      { k: 'conversations', icon: 'forum', label: 'Conversations', badge: msgDisplay },
+      { k: 'vehicles', icon: 'directions_car', label: 'Vehicles & garage', badge: `${num(purchCount == null ? 0 : purchCount)} owned · ${num(interests.length)} asked` },
+      { k: 'appointments', icon: 'event', label: 'Appointments & test drives', badge: 'Open' },
+      { k: 'deals', icon: 'contract', label: 'Deals & contracts', badge: purchCount == null ? '—' : num(purchCount) },
+      { k: 'service', icon: 'build', label: 'Service & aftersales', badge: 'Needs DMS', soon: true },
+      { k: 'revenue', icon: 'payments', label: 'Revenue', badge: ltvValue },
+      { k: 'journey', icon: 'timeline', label: 'Journey timeline', badge: `${num(journey.length)} events` },
+      { k: 'audit', icon: 'receipt_long', label: 'Aggregation record', badge: `${num(custRuns.length)} runs` },
+    ];
+    if (!CATS.some(x => x.k === activeCat)) activeCat = 'identity';
 
-        <div class="section">
-          <div class="label-caps">WhatsApp channel</div>
-          ${waHtml}
-        </div>
-
-        <div class="section">
-          <div class="label-caps">Unified profile · the customer profiles</div>
-          ${profErr
-            ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The profile table could not be read (${esc(profErr)}).</div>`
-            : c.profile
-              ? `<dl class="kv" style="margin-top:8px">
-                   <dt>Customer ID</dt><dd class="mono">${esc(c.profile.customer_id == null ? '—' : String(c.profile.customer_id))}</dd>
-                   <dt>Email touches</dt><dd>${touchCell(c.profile.total_emails, c.profile.last_synced_at, custRun)}</dd>
-                   <dt>Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at, custRun)}</dd>
-                   <dt>Last synced</dt><dd>${esc(ago(c.profile.last_synced_at))}${c.profile.last_synced_at
-                     ? ` <span class="ds-cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
-                          ? 'after the mail connection was restored'
-                          : 'before the mail connection was restored'}</span>`
-                     : ' <span class="t-muted">(the row exists but carries no timestamp, so which run wrote it is unknown)</span>'}</dd>
-                   <dt>Run that wrote it</dt><dd>${aggLogErr
-                     ? `<span class="t-warm">Unknown — the aggregation's log could not be read (${esc(aggLogErr)})</span>`
-                     : !aggReg
-                       ? '<span class="t-muted">Unknown — no entry in the automation register identifies the aggregation</span>'
-                       : custRun
-                         ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone, { verbatim: false })}
-                            <span class="ds-cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this row’s last_synced_at · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} in all name this customer</span>
-                            <div class="ds-cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
-                         : custLatestRun
-                           ? `<span class="t-warm">Not recorded</span>
-                              <div class="ds-cell-sub" style="white-space:normal">No the activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
-                           : `<span class="t-warm">No the activity log row names this customer</span>
-                              <div class="ds-cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
-                   <dt>Name on profile</dt><dd>${esc(maskText(str(c.profile.name) || '—'))}</dd>
-                   <dt>Phone on profile</dt><dd>${str(c.profile.phone)
-                     ? `<span class="mono">${esc(maskText(str(c.profile.phone)))}</span>`
-                     : '<span class="t-muted">None on this profile row</span>'}</dd>
-                 </dl>
-                 <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
-              : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
-                ? `<div class="ds-cell-sub" style="white-space:normal">The nightly job has written no customer profile for this customer.
-                     The customer record carries the same two counters for them and they are shown here — but it records no time of
-                     collection, so when these were counted, and therefore whether they predate the mail connection being restored, cannot be told from it.</div>
-                   <dl class="kv" style="margin-top:8px">
-                     <dt>Email touches</dt><dd>${touchCell(v.total_emails, null, custRun)}</dd>
-                     <dt>Slack messages</dt><dd>${touchCell(v.total_slack_messages, null, custRun)}</dd>
-                   </dl>
-                   <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
-                : noSource('The nightly Customer 360 aggregation has not written a row for this customer, and the customer record reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}
-        </div>
-
-        ${section('Purchase history', purch, 'No purchase recorded for this customer.', rows => `
-          ${rows.map(x => {
-            const vehicle = str(x.vehicle);
-            const rowPhone = str(x.phone);
-            return `<div class="quote" style="margin-top:8px">
-              <strong>${vehicle
-                ? esc(vehicle)
-                : '<span class="t-muted">No vehicle recorded on this purchase</span>'}</strong>${n0(x.amount_aed) == null ? '' : ' · ' + aed(x.amount_aed)}
-              <div class="ds-cell-sub">${x.purchase_date
-                ? `${esc(dubaiDate(x.purchase_date, str(x.purchase_date)))} · ${esc(ago(x.purchase_date))}`
-                : 'No purchase date recorded'}${x.deal_id ? ` · deal ${esc(String(x.deal_id))}` : ''}</div>
-              <div class="ds-cell-sub">Recorded as ${esc(maskText(str(x.customer_name) || nameOf(c)))} ·
-                ${rowPhone
-                  ? `<span class="mono">${esc(rowPhone)}</span>`
-                  : '<span class="t-muted">no phone on this purchase row</span>'}</div>
-            </div>`;
-          }).join('')}
-          ${purchTotal == null ? '' : `<div class="ds-cell-sub num" style="margin-top:10px">${esc(String(rows.length))} purchase${rows.length === 1 ? '' : 's'} · ${aed(purchTotal)} total</div>`}
-          <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(NO_INVENTORY_LINK)}</div>`)}
-
-        ${section('Leads', leads, 'No lead recorded for this customer.', rows => `
-          <div class="timeline" style="margin-top:8px">${rows.map(l => `
-            <div class="tl-item"><span class="tl-dot" style="background:var(--${tone(l.status) || 'neutral'})"></span>
-              <div class="tl-body">
-                <div class="tl-meta">${esc(ago(l.created_at))}${l.source ? ' · ' + esc(l.source) : ''}${n0(l.ai_score) == null ? '' : ' · score ' + num(l.ai_score)}
-                  · ${str(l.phone)
-                       ? `<span class="mono">${esc(maskText(str(l.phone)))}</span>`
-                       : '<span class="t-muted">no phone on this lead</span>'}
-                  · ${n0(l.response_time_minutes) == null
-                       /* Shown, not omitted. This column was a permanent 0 for
-                          every lead until it was repaired on 1 Sep 2026 (read
-                          today: 34 → 1, 35 → NULL, 38 → 4), which is why nothing
-                          on this screen read it.
-
-                          The wording is lib/lead-drawer.js's, and that module
-                          has since rejected "not measured" — it blames the
-                          instrument, and lead 35 was in fact answered 74 seconds
-                          before his lead row existed, which the trigger declines
-                          to stamp. What a null supports is that nothing was
-                          timed. A dash would read as instant, so there is not
-                          one. */
-                       ? '<span class="t-warm" title="nexus_mark_first_response stamps this column for the first reply it can attribute to the lead. It has not stamped this one — usually because nothing has gone back since the lead row was created, sometimes because the conversation started before the lead existed, which it will not measure. Either way there is no measured wait here, and it is not a fast reply.">no first reply timed</span>'
-                       : `${esc(mins(l.response_time_minutes))} to first reply ${Number(l.response_time_minutes) > 5
-                            ? '<span class="t-hot">· breaches the 5-minute rule</span>'
-                            : '<span class="t-ok">· within SLA</span>'}`}</div>
-                <div>${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW', undefined, { verbatim: !!l.status })}</div>
-                ${n0(l.budget_aed) == null ? '' : `<div class="ds-cell-sub">Budget ${aed(l.budget_aed)}</div>`}
-              </div></div>`).join('')}</div>`)}
-
-        ${section('Recent messages', comms,
-          `No message is logged under any of the ${commsFilter.keys.length} key${commsFilter.keys.length === 1 ? '' : 's'} this customer is filed under${commsFilter.patterns.length ? ', nor under any WhatsApp address ending in the last nine digits of their number' : ''}.`,
-          rows => `
-          <div class="timeline" style="margin-top:8px">${rows.slice(0, 10).map(m => `
-            <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
-              <div class="tl-meta"><span class="chip">${esc(str(m.channel) || 'unknown channel')}</span> ${esc(str(m.direction))} · ${esc(ago(m.created_at))}</div>
-              <div style="white-space:pre-wrap">${esc(String(m.message || '').slice(0, 240))}</div></div></div>`).join('')}</div>
-          <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} rows read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}${events && events.internalCount
-            /* This list is EVENTS, and the figure above is MESSAGES, so the two
-               will not tally whenever an internal note is among the rows — said
-               here rather than left for the reader to notice. It used to call
-               every row in this list a message, which is the same conflation the
-               count itself was making until 2 Sep 2026. */
-            ? `${esc(String(events.count))} of the rows read here ${events.count === 1 ? 'is a message' : 'are messages'} and ${esc(String(events.internalCount))} ${events.internalCount === 1 ? 'is one of the dealership’s own internal notes' : 'are the dealership’s own internal notes'}, listed here because the read returned them and not counted in the figure above. `
-            : ''}These come from the message history and are counted independently of the aggregation's email and Slack figures above.
-          ${esc(commsFilter.note)} ${esc(identKeyLine)}</div>
-          ${ident.ambiguity.length
-            ? ident.ambiguity.map(a => `<div class="banner warm" style="margin-top:10px"><span class="material-symbols-outlined">warning</span>
-                <div>${esc(a.message)}</div></div>`).join('')
-            : ''}`,
-          comms.noKey
-            ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(commsFilter.note)} No read was issued: a query with no key would have matched every message in the table rather than none, and returning that as this customer's history is the failure this section exists to avoid.</div>`
-            : undefined)}
+    const tileHtml = (label, value, subHtml) => `<div class="p-3 rounded-lg bg-surface-container-low flex flex-col gap-1 min-w-0">
+        <span class="font-table-header text-table-header uppercase tracking-wider text-outline">${esc(label)}</span>
+        <span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">${value}</span>
+        <div class="font-body-sm text-[12px] leading-snug text-on-surface-variant" style="white-space:normal">${subHtml}</div>
       </div>`;
 
-    /* This was labelled "Open in Leads" and wired to `go('leads')`. lib/nav.js:84
-       takes a screen id and nothing else — there is no payload channel and no
-       hash parameter — so it landed the operator on an unfiltered Leads screen
-       with the customer to find all over again, while the label promised a deep
-       link the app cannot perform. The record is the drawer, this screen already
-       holds the lead row, and conversations.js, overview.js, leads.js and
-       campaigns.js all open it exactly this way, so it now opens the record
-       instead of changing screen.
-       Rows are ordered created_at.desc, so [0] is the newest lead. */
-    const leadBtn = pane.querySelector('[data-act="lead"]');
+    $('custSide').innerHTML = `
+      <section class="${SECTION} p-space-md flex flex-col gap-3">
+        <div class="flex items-start gap-3">
+          <div class="w-12 h-12 rounded-lg bg-primary-container text-on-primary font-bold flex items-center justify-center shrink-0">${esc(initials(nameOf(c)))}</div>
+          <div class="min-w-0 flex-1">
+            <div class="font-headline-md text-headline-md text-on-surface leading-tight">${esc(nameOf(c))}</div>
+            <div class="flex items-center gap-1.5 flex-wrap mt-1">
+              ${v.is_vip ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>' : ''}
+              ${buyErr ? '' : c.purchases.length ? pill('Buyer', 'ok', { verbatim: false }) : '<span class="chip">Enquiry — no purchase on file</span>'}
+            </div>
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5 font-body-sm text-body-sm">
+          <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-outline">call</span>${ph.phone
+            ? `<span class="font-label-numeric-sm">${esc(maskText(ph.phone))}</span> <span class="ds-cell-sub">· ${esc(ph.from)}</span>`
+            : '<span class="t-warm">No phone number on any source</span>'}</div>
+          <div class="flex items-center gap-2 min-w-0"><span class="material-symbols-outlined text-[16px] text-outline">mail</span><span class="truncate">${esc(maskText(c.email || 'No email on the directory row'))}</span></div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          ${leads.rows && leads.rows.length
+            ? `<button type="button" class="${BTN.primary}" data-act="lead"><span class="material-symbols-outlined text-[18px]">open_in_new</span>Open ${leads.rows.length === 1 ? 'this lead' : 'newest lead'}</button>`
+            : ''}
+          <button type="button" class="${BTN.secondary}" data-act="conv"><span class="material-symbols-outlined text-[18px]">forum</span>Conversations</button>
+        </div>
+      </section>
+      <section class="${SECTION} py-2">
+        <div class="px-space-md py-2 flex items-center justify-between"><span class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Categories</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-primary">${CATS.length} modules</span></div>
+        <div class="flex flex-col px-2 gap-0.5" role="tablist" aria-label="Customer categories">
+          ${CATS.map(x => `<button type="button" role="tab" data-cat="${x.k}" aria-selected="${x.k === activeCat}" class="${x.k === activeCat ? CAT.on : (x.soon ? CAT.soon : CAT.off)}">
+            <span class="material-symbols-outlined text-[18px]">${x.icon}</span><span class="flex-1 text-left">${esc(x.label)}</span>
+            ${x.soon ? statusChip('coming-soon', 'Needs DMS') : `<span class="font-label-numeric-sm text-[11px] ${x.k === activeCat ? 'text-on-primary' : 'text-outline'}">${x.badge}</span>`}</button>`).join('')}
+        </div>
+      </section>
+      <section class="${SECTION} p-space-md flex flex-col gap-2">
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Financial &amp; relationship footprint</div>
+        <div class="grid grid-cols-1 gap-2">
+          ${tileHtml('Lifetime value', ltvValue, ltvSub)}
+          ${tileHtml('Leads', num(leadCount), leadSub)}
+          ${tileHtml('Best AI score', num(bestScore), scoreSub)}
+          ${tileHtml('Messages logged', msgDisplay, msgSub)}
+        </div>
+      </section>`;
+
+    /* ── Panel 3: the category's detail ────────────────────────────────────── */
+    const KV = 'grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-2 font-body-sm text-body-sm';
+    const identityHtml = `
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Why this person is a customer</div>
+        <dl class="${KV}">
+          <dt class="text-outline">Directory</dt><dd>${dirErr
+            ? '<span class="t-warm">Rebuilt from leads and the recorded sales — The customer list could not be read</span>'
+            : 'In the customer list <span class="t-ok">· leads UNION the recorded sales</span>'}</dd>
+          <dt class="text-outline">Leads on file</dt><dd>${leads.err
+            ? `<span class="t-warm">Could not be read — ${esc(leads.err)}</span>`
+            : leads.rows == null
+              ? '<span class="t-muted">Cannot be matched without an email address</span>'
+              : `${esc(String(leads.rows.length))}${foreignNote(leads)}`}</dd>
+          <dt class="text-outline">Purchases on file</dt><dd>${purch.err
+            ? `<span class="t-warm">Could not be read — ${esc(purch.err)}</span>`
+            : purch.rows == null
+              ? '<span class="t-muted">Cannot be matched without an email address</span>'
+              : `${esc(String(purch.rows.length))}${foreignNote(purch)}`}</dd>
+          <dt class="text-outline">Directory row</dt><dd>${c.id
+            ? `<span class="mono">${esc(c.id)}</span> <span class="ds-cell-sub">· their id in the customer list</span>`
+            : '<span class="t-muted">Rebuilt from leads and the recorded sales — there is no directory row behind it</span>'}</dd>
+          <dt class="text-outline">Underlying records</dt><dd>${dirErr
+            ? '<span class="t-muted">Not available — the view that reports it could not be read</span>'
+            : c.sourceRecords == null
+              ? '<span class="t-muted">The customer list returned no source_records value for this address</span>'
+              : n0(c.sourceRecords) != null
+                ? `${num(c.sourceRecords)} <span class="ds-cell-sub">source_records, as the customer list counts them</span>`
+                : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="ds-cell-sub">source_records, exactly as the customer list reports it</span>`}</dd>
+          <dt class="text-outline">Last seen</dt><dd>${c.lastSeen
+            ? `${esc(ago(c.lastSeen))} <span class="ds-cell-sub">· the newest last_seen_at on this address</span>`
+            : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
+          <dt class="text-outline">Email key</dt><dd class="mono" style="word-break:break-all">${esc(maskText(c.email || '—'))}</dd>
+          <dt class="text-outline">Message keys</dt><dd>${commsFilter.ok
+            ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
+               <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
+            : `<span class="t-warm">None</span>
+               <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
+          <dt class="text-outline">Phone</dt><dd>${ph.phone
+            ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="ds-cell-sub">· found on ${esc(ph.from)}</span>`
+            : `<span class="t-warm">Not recorded</span>
+               <div class="ds-cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
+          <dt class="text-outline">Source system</dt><dd>NEXUS <span class="t-muted">· not your CRM</span>
+            <div class="ds-cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div></dd>
+        </dl>
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">WhatsApp channel</div>
+        ${waHtml}
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Unified profile · the customer profiles</div>
+        ${profErr
+          ? `<div class="ds-cell-sub" style="white-space:normal">The profile table could not be read (${esc(profErr)}).</div>`
+          : c.profile
+            ? `<dl class="${KV}">
+                 <dt class="text-outline">Customer ID</dt><dd class="mono">${esc(c.profile.customer_id == null ? '—' : String(c.profile.customer_id))}</dd>
+                 <dt class="text-outline">Email touches</dt><dd>${touchCell(c.profile.total_emails, c.profile.last_synced_at, custRun)}</dd>
+                 <dt class="text-outline">Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at, custRun)}</dd>
+                 <dt class="text-outline">Last synced</dt><dd>${esc(ago(c.profile.last_synced_at))}${c.profile.last_synced_at
+                   ? ` <span class="ds-cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
+                        ? 'after the mail connection was restored'
+                        : 'before the mail connection was restored'}</span>`
+                   : ' <span class="t-muted">(the row exists but carries no timestamp, so which run wrote it is unknown)</span>'}</dd>
+                 <dt class="text-outline">Name on profile</dt><dd>${esc(maskText(str(c.profile.name) || '—'))}</dd>
+                 <dt class="text-outline">Phone on profile</dt><dd>${str(c.profile.phone)
+                   ? `<span class="mono">${esc(maskText(str(c.profile.phone)))}</span>`
+                   : '<span class="t-muted">None on this profile row</span>'}</dd>
+               </dl>
+               <div class="ds-cell-sub" style="white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))} Which run wrote it is under Aggregation record.</div>`
+            : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
+              ? `<div class="ds-cell-sub" style="white-space:normal">The nightly job has written no customer profile for this customer.
+                   The customer record carries the same two counters for them and they are shown here — but it records no time of
+                   collection, so when these were counted, and therefore whether they predate the mail connection being restored, cannot be told from it.</div>
+                 <dl class="${KV}">
+                   <dt class="text-outline">Email touches</dt><dd>${touchCell(v.total_emails, null, custRun)}</dd>
+                   <dt class="text-outline">Slack messages</dt><dd>${touchCell(v.total_slack_messages, null, custRun)}</dd>
+                 </dl>
+                 <div class="ds-cell-sub" style="white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
+              : quiet('link_off', 'No data source yet', 'The nightly Customer 360 aggregation has not written a row for this customer, and the customer record reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}`;
+
+    const purchaseList = rows => `<div class="flex flex-col gap-2">${rows.map(x => {
+        const vehicle = str(x.vehicle);
+        const rowPhone = str(x.phone);
+        return `<div class="p-3 rounded-lg bg-surface-container-low flex items-start gap-3">
+          <span class="w-9 h-9 rounded-lg bg-surface-container-lowest text-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">directions_car</span></span>
+          <div class="flex-1 min-w-0">
+            <div class="font-body-md text-body-sm font-semibold">${vehicle ? esc(vehicle) : '<span class="t-muted">No vehicle recorded on this purchase</span>'}</div>
+            <div class="ds-cell-sub">${x.purchase_date
+              ? `${esc(dubaiDate(x.purchase_date, str(x.purchase_date)))} · ${esc(ago(x.purchase_date))}`
+              : 'No purchase date recorded'}${x.deal_id ? ` · deal ${esc(String(x.deal_id))}` : ''}</div>
+            <div class="ds-cell-sub">Recorded as ${esc(maskText(str(x.customer_name) || nameOf(c)))} ·
+              ${rowPhone ? `<span class="mono">${esc(maskText(rowPhone))}</span>` : '<span class="t-muted">no phone on this purchase row</span>'}</div>
+          </div>
+          <div class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface shrink-0">${n0(x.amount_aed) == null ? '<span class="ds-t-tertiary">—</span>' : aed(x.amount_aed)}</div>
+        </div>`;
+      }).join('')}
+      ${purchTotal == null ? '' : `<div class="ds-cell-sub num">${esc(String(rows.length))} purchase${rows.length === 1 ? '' : 's'} · ${aed(purchTotal)} total</div>`}
+      <div class="ds-cell-sub" style="white-space:normal">${esc(NO_INVENTORY_LINK)}</div></div>`;
+
+    const leadsHtml = section('Leads', leads, 'No lead recorded for this customer.', rows => `
+        <div class="flex flex-col">${rows.map(l => tlItem(TL_DOT[tone(l.status)] || TL_DOT.neutral,
+          `${esc(ago(l.created_at))}${l.source ? ' · ' + esc(l.source) : ''}${n0(l.ai_score) == null ? '' : ' · score ' + num(l.ai_score)}
+            · ${str(l.phone) ? `<span class="mono">${esc(maskText(str(l.phone)))}</span>` : '<span class="t-muted">no phone on this lead</span>'}
+            · ${n0(l.response_time_minutes) == null
+                 /* The wording is lib/lead-drawer.js's: a null means nothing was
+                    timed, never a fast reply. */
+                 ? '<span class="t-warm" title="nexus_mark_first_response stamps this column for the first reply it can attribute to the lead. It has not stamped this one — usually because nothing has gone back since the lead row was created, sometimes because the conversation started before the lead existed, which it will not measure. Either way there is no measured wait here, and it is not a fast reply.">no first reply timed</span>'
+                 : `${esc(mins(l.response_time_minutes))} to first reply ${Number(l.response_time_minutes) > 5
+                      ? '<span class="t-hot">· breaches the 5-minute rule</span>'
+                      : '<span class="t-ok">· within SLA</span>'}`}`,
+          `${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW', undefined, { verbatim: !!l.status })}`,
+          n0(l.budget_aed) == null ? '' : `<div class="ds-cell-sub">Budget ${aed(l.budget_aed)}</div>`)).join('')}</div>`);
+
+    const messagesHtml = section('Recent messages', comms,
+        `No message is logged under any of the ${commsFilter.keys.length} key${commsFilter.keys.length === 1 ? '' : 's'} this customer is filed under${commsFilter.patterns.length ? ', nor under any WhatsApp address ending in the last nine digits of their number' : ''}.`,
+        rows => `
+        <div class="flex flex-col">${rows.slice(0, 10).map(m => tlItem(TL_DOT.neutral,
+          `<span class="chip">${esc(str(m.channel) || 'unknown channel')}</span> ${esc(str(m.direction))} · ${esc(ago(m.created_at))}`,
+          esc(String(m.message || '').slice(0, 240)))).join('')}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} rows read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}${events && events.internalCount
+          /* This list is EVENTS and the figure is MESSAGES, so the two will not
+             tally whenever an internal note is among the rows — said here. */
+          ? `${esc(String(events.count))} of the rows read here ${events.count === 1 ? 'is a message' : 'are messages'} and ${esc(String(events.internalCount))} ${events.internalCount === 1 ? 'is one of the dealership’s own internal notes' : 'are the dealership’s own internal notes'}, listed here because the read returned them and not counted in the message figure. `
+          : ''}These come from the message history and are counted independently of the aggregation's email and Slack figures.
+        ${esc(commsFilter.note)} ${esc(identKeyLine)}</div>
+        ${ident.ambiguity.length ? ident.ambiguity.map(a => note('warm', 'warning', esc(a.message))).join('') : ''}`,
+        comms.noKey
+          ? `<div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)} No read was issued: a query with no key would have matched every message in the table rather than none, and returning that as this customer's history is the failure this section exists to avoid.</div>`
+          : undefined);
+
+    const auditHtml = `
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Run that wrote the profile</div>
+        <div class="font-body-sm text-body-sm">${aggLogErr
+          ? `<span class="t-warm">Unknown — the aggregation's log could not be read (${esc(aggLogErr)})</span>`
+          : !aggReg
+            ? '<span class="t-muted">Unknown — no entry in the automation register identifies the aggregation</span>'
+            : custRun
+              ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone, { verbatim: false })}
+                 <span class="ds-cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this profile’s last_synced_at</span>
+                 <div class="ds-cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
+              : custLatestRun
+                ? `<span class="t-warm">Not recorded</span>
+                   <div class="ds-cell-sub" style="white-space:normal">No activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced its figures is not on record. The newest run naming this customer is older than the profile row and did not write it.</div>`
+                : `<span class="t-warm">No activity log row names this customer</span>
+                   <div class="ds-cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under.</div>`}</div>
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Every run naming this customer</div>
+        ${custRuns.length ? `<div class="flex flex-col">${custRuns.slice(0, 20).map(r => {
+            const w = outcomeWords(outcomeOf(r));
+            return tlItem(TL_DOT[w.tone] || TL_DOT.neutral,
+              `<span class="t-${esc(w.tone)}">${esc(w.label)}</span> · ${esc(dubaiStamp(r.logged_at))} · ${esc(ago(r.logged_at))}`,
+              esc(maskText(str(r.summary) || 'The run logged no summary.')));
+          }).join('')}</div>`
+          : '<div class="ds-cell-sub">No Customer 360 aggregation run on record names this customer. Only the aggregation’s own rows are read on this screen; the per-lead audit trail is on the lead drawer’s Timeline.</div>'}`;
+
+    const DETAIL = {
+      identity: { title: 'Identity', sub: 'Why this person is on the customer list, every key they are filed under, and the unified profile', html: identityHtml },
+      leads: { title: 'Leads', sub: 'Every lead on file under this address', html: leadsHtml },
+      conversations: { title: 'Conversations', sub: 'The newest messages under every key this person is filed under', html: messagesHtml },
+      vehicles: { title: 'Vehicles & garage', sub: 'What they bought, and what they asked about',
+        html: `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Asked about</div>
+          ${interests.length ? `<div class="flex flex-wrap gap-1.5">${interests.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>`
+            : `<div class="ds-cell-sub">${leads.rows ? 'No lead of theirs names a vehicle.' : 'Not knowable — no lead could be read for this customer.'}</div>`}
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Bought</div>
+          ${section('Purchase history', purch, 'No purchase recorded for this customer.', purchaseList)}` },
+      appointments: { title: 'Appointments & test drives', sub: 'Showroom visits attached to this customer’s leads', html: `<div data-cust-appts>${skeleton({ rows: 2 })}</div>` },
+      deals: { title: 'Deals & contracts', sub: 'Every recorded sale under this address', html: section('Purchase history', purch, 'No purchase recorded for this customer.', purchaseList) },
+      service: { title: 'Service & aftersales', sub: '', html: comingSoonPanel({ icon: 'build', title: 'Service & aftersales history',
+        body: 'Workshop visits, repair orders and service-due dates for the vehicles this customer owns.',
+        prerequisite: 'Your DMS connected. NEXUS has no service, repair-order or appointment-in-workshop table to read.' }) },
+      revenue: { title: 'Revenue', sub: 'What this customer has spent, from recorded purchases only',
+        html: `<div class="p-space-md rounded-lg bg-surface-container-low"><div class="font-table-header text-table-header uppercase tracking-wider text-outline">Lifetime value · recorded purchases</div>
+            <div class="font-label-numeric-lg text-[1.75rem] font-bold text-on-surface">${ltvValue}</div><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${ltvSub}</div></div>
+          ${comingSoonPanel({ icon: 'percent', title: 'Gross margin per customer', body: 'What the dealership made on this customer, not only what they paid.',
+            prerequisite: 'A cost on each purchase row; purchase_history records the sale price and nothing about cost.' })}` },
+      journey: { title: 'Journey timeline', sub: 'Leads, purchases and messages in one time order — nothing inferred between them',
+        html: journey.length ? `<div class="flex flex-col">${journey.slice(0, 40).map(e => tlItem(TL_DOT.neutral,
+            `<span class="material-symbols-outlined text-[14px]">${esc(e.icon)}</span> <span class="chip">${esc(e.kind)}</span> ${esc(dubaiStamp(e.at))}`,
+            esc(maskText(e.text)), e.sub ? `<div class="ds-cell-sub">${esc(e.sub)}</div>` : '')).join('')}</div>
+            ${journey.length > 40 ? `<div class="ds-cell-sub">Showing the newest 40 of ${num(journey.length)} events.</div>` : ''}`
+          : quiet('timeline', 'Nothing dated to place on a timeline', 'No lead, purchase or message for this customer came back with a date on this read.') },
+      audit: { title: 'Aggregation record', sub: 'What the nightly Customer 360 job logged about this customer', html: auditHtml },
+    };
+
+    const paintDetail = () => {
+      const d = DETAIL[activeCat] || DETAIL.identity;
+      pane.innerHTML = `<section class="${SECTION}">
+          <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-2">
+            <div class="min-w-0"><div class="font-headline-md text-headline-md text-on-surface">Category detail: ${esc(d.title)}</div>
+              ${d.sub ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(d.sub)}</div>` : ''}</div>
+          </div>
+          <div class="p-space-md flex flex-col gap-3">${d.html}</div>
+        </section>
+        ${comingSoonPanel({ icon: 'bolt', title: 'Next best action for this customer',
+          body: 'A recommended next step for this person, with the evidence behind it.',
+          prerequisite: 'Per-customer recommendations from the action engine; today recommendations exist per lead and per unit, on Money Leaks and the Action Center.' })}`;
+      pane.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', () => open(key)));
+      if (activeCat === 'appointments') paintAppointments();
+    };
+
+    /* Visits attached to this customer's leads, read through the same accessor
+       the Appointments screen uses. That accessor answers a WINDOW — the next
+       few days plus anything still open or unresolved — so this list is not
+       the customer's whole history, and says so. */
+    const paintAppointments = async () => {
+      const box = pane.querySelector('[data-cust-appts]');
+      if (!box) return;
+      const ids = new Set((leads.rows || []).map(l => String(l.id)));
+      if (!ids.size) {
+        box.innerHTML = `<div class="ds-cell-sub" style="white-space:normal">${leads.rows ? 'No lead is on file for this customer, and every visit belongs to a lead.' : 'No lead could be matched to this customer, so no visit can be attached to them.'}</div>`;
+        return;
+      }
+      let rows;
+      try { rows = await db('rpc/nexus_appointment_status?p_days=7') || []; }
+      catch (e) { box.innerHTML = errorState({ what: 'this customer’s visits', err: e }); return; }
+      if (selected !== key || !box.isConnected) return;
+      const mine = rows.filter(r => r.lead_id != null && ids.has(String(r.lead_id)));
+      box.innerHTML = (mine.length
+        ? `<div class="flex flex-col gap-2">${mine.map(r => `<div class="p-3 rounded-lg bg-surface-container-low flex items-start justify-between gap-3">
+            <div><div class="font-body-sm text-body-sm font-semibold">${r.starts_at ? esc(dubaiStamp(r.starts_at)) : 'No time proposed yet'}</div>
+              <div class="ds-cell-sub">${esc(str(r.vehicle_model) || 'No vehicle attached')} · ${esc(str(r.assigned_to_name) || 'No salesperson assigned')}</div>
+              ${str(r.evidence) ? `<div class="ds-cell-sub" style="white-space:normal">${esc(str(r.evidence))}</div>` : ''}</div>
+            ${pill(str(r.state) || 'NO STATE', undefined, { verbatim: true })}</div>`).join('')}</div>`
+        : '<div class="ds-cell-sub">No visit in the diary window is attached to this customer’s leads.</div>')
+        + '<div class="ds-cell-sub" style="white-space:normal">Read from the diary window (yesterday to seven days ahead, plus anything still requested, offered or unresolved). An older, closed visit is not listed here — that is the window, not an absence.</div>';
+    };
+
+    paintDetail();
+    $('custSide').querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+      activeCat = b.dataset.cat;
+      $('custSide').querySelectorAll('[data-cat]').forEach(x => {
+        const on = x.dataset.cat === activeCat;
+        const cat = CATS.find(y => y.k === x.dataset.cat);
+        x.className = on ? CAT.on : (cat && cat.soon ? CAT.soon : CAT.off);
+        x.setAttribute('aria-selected', String(on));
+      });
+      paintDetail();
+    }));
+
+    /* The record is the lead drawer, opened with the lead row this screen
+       already holds — lib/nav.js go() takes a screen id and nothing else, so a
+       "deep link" into Leads cannot be performed. Rows are created_at.desc, so
+       [0] is the newest lead. */
+    const leadBtn = $('custSide').querySelector('[data-act="lead"]');
     if (leadBtn) leadBtn.addEventListener('click', () => leadDrawer(leads.rows[0]));
-    /* stateError() renders its own Retry; re-running open() is exactly the
-       retry, since each section re-reads on every open. */
-    pane.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', () => open(key)));
+    $('custSide').querySelector('[data-act="conv"]')?.addEventListener('click', () => go('conversations'));
   }
 
   if (spine && customers.length) {
@@ -1886,7 +2069,7 @@ SCREENS.customers = async host => {
         filter = b.dataset.f;
         $('cSeg').querySelectorAll('button').forEach(x => {
           const on = x === b;
-          x.classList.toggle('on', on);
+          x.className = on ? SEG.on : SEG.off;
           x.setAttribute('aria-pressed', String(on));
         });
         drawList();
@@ -1934,35 +2117,49 @@ SCREENS.customers = async host => {
     { label: 'Last seen', align: 'r', render: o => esc(ago(o.lastSeen)) },
   ];
 
-  otherHost.innerHTML = `
-    <div class="card-head">
-      <div>
-        <div class="card-title">Contacts who are not customers</div>
-        <div class="card-sub">Everyone who appears in the saved contact details, the customer profiles or the customer record
+  /* dc1622's "Omnichannel inquiries pending identity resolution" table, with
+     this screen's honest heading: these rows are NOT customers, and nothing
+     here merges or promotes them — no merge path exists, so the Stitch "Merge"
+     and "Promote to file" buttons are not offered. Rows open Conversations. */
+  const TH = 'px-4 py-2.5 font-table-header text-table-header uppercase tracking-wider text-outline';
+  const otherTable = otherSorted.length
+    ? `<div class="overflow-x-auto"><table class="w-full border-collapse">
+        <thead><tr class="bg-surface-container-low border-b border-outline-variant/30">${otherCols.map(c2 =>
+          `<th class="${TH} ${c2.align === 'r' ? 'text-right' : 'text-left'}">${esc(c2.label)}</th>`).join('')}</tr></thead>
+        <tbody class="divide-y divide-outline-variant/20">${otherSorted.map((o, i) => `<tr class="hover:bg-surface-container-low cursor-pointer transition-colors" data-oi="${i}">${otherCols.map(c2 =>
+          `<td class="px-4 py-2.5 align-top font-body-sm text-body-sm ${c2.align === 'r' ? 'text-right' : 'text-left'}">${c2.render(o)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`
+    : `<div class="p-space-md">${emptyState({ icon: 'done_all', title: 'Nothing outside the customer list',
+        body: 'Every row in the saved contact details, the customer profiles and the customer record matches a customer in the directory, so nothing is being presented as a customer that is not one. A row appears here the moment somebody messages the WhatsApp number, or the nightly job writes a profile, for an address with no lead and no purchase behind it.' })}</div>`;
+
+  otherHost.innerHTML = `<section class="${SECTION}">
+    <div class="px-space-md py-3 border-b border-outline-variant/30 flex items-start justify-between gap-3 flex-wrap">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md text-on-surface">Contacts who are not customers</span>
+          <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-label-numeric-sm text-label-numeric-sm font-semibold">${num(otherList.length)} not in the customer list</span></div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Everyone who appears in the saved contact details, the customer profiles or the customer record
         and not in the customer list above. Most are people who messaged the owner's WhatsApp number and have
-        neither a lead nor a purchase. They are listed so nobody has to guess where a name came from, and none
-        of them has a lifetime value or can be actioned from here. Read the reason on each row before treating
+        neither a lead nor a purchase. None of them has a lifetime value or can be actioned from here. Read the reason on each row before treating
         it as a stranger: ${otherWithLead
           ? `<strong>${esc(String(otherWithLead))} of these ${otherWithLead === 1 ? 'rows has' : 'rows have'} a lead on file</strong> and ${otherWithLead === 1 ? 'is' : 'are'} here because
              v_customer_directory and v_customer_360 require <span class="mono">leads.email &lt;&gt; ''</span> — a
              database defect that loses a real customer from this screen, not a finding about the person`
-          : 'tonight every one of them is a contact with no lead and no purchase behind it'}. Rows open Conversations.</div>
+          : 'every one of them is a contact with no lead and no purchase behind it'}. Rows open Conversations.</div>
       </div>
+      <button type="button" class="${BTN.secondary}" disabled title="Coming soon — there is no merge path that files a contact under a customer.">Merge (coming soon)</button>
     </div>
-    <div class="pbody">${allOtherSourcesDown
-      ? stateError('the contact directory', waErr)
-      : `${waErr ? `<div class="banner warm" style="margin-bottom:12px"><span class="material-symbols-outlined">warning</span>
-          <div>The saved contact details could not be read (${esc(waErr)}), so WhatsApp-only contacts are missing from this list.</div></div>` : ''}
-        ${table(otherCols, otherSorted, {
-          /* Marks the rows clickable; wireRows() below is what binds them. */
-          onRow: true,
-          empty: stateEmpty('Nothing outside the customer list',
-            'Every row in the saved contact details, the customer profiles and the customer record matches a customer in the directory, so nothing is being presented as a customer that is not one. '
-            + 'A row appears here the moment somebody messages the WhatsApp number, or the nightly job writes a profile, for an address with no lead and no purchase behind it — which is how thirteen people from a personal phone book once ended up on this screen.',
-            'done_all'),
-        })}`}</div>`;
+    ${allOtherSourcesDown
+      ? `<div class="p-space-md">${errorState({ what: 'the contact directory', err: waErr })}</div>`
+      : `${waErr ? `<div class="px-space-md pt-space-md">${note('warm', 'warning', `The saved contact details could not be read (${esc(waErr)}), so WhatsApp-only contacts are missing from this list.`)}</div>` : ''}${otherTable}`}
+  </section>`;
+  otherHost.querySelectorAll('tr[data-oi]').forEach(tr => tr.addEventListener('click', () => go('conversations')));
 
-  wireRows(otherHost, otherSorted, () => go('conversations'));
+  footHost.innerHTML = trustFooter({
+    source: 'v_customer_directory · v_customer_360 · customer_360_profiles · whatsapp_contacts · leads · purchase_history',
+    asOf: dubaiStamp(readAt),
+    evidence: spine ? `${num(customers.length)} ${customers.length === 1 ? 'customer' : 'customers'} · ${num(otherList.length)} non-customer ${otherList.length === 1 ? 'contact' : 'contacts'}` : 'The customer list could not be read',
+    actor: actorName(),
+  });
 };
 
 /* ==========================================================================

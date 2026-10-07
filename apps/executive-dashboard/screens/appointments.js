@@ -83,15 +83,14 @@
    Nothing here filters by dealership. The database refuses another
    dealership's rows; this file does not hide them. */
 
-import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { ME, db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { loadSubscription, isReadOnly } from '../lib/subscription.js';
-import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
-import { maskText } from '../lib/privacy.js';
-import { openModal } from '../lib/modal.js';
+import { ago, dubaiDate, dubaiStamp, esc, n0 } from '../lib/format.js';
+import { leadDrawer, bookVisitDialog } from '../lib/lead-drawer.js';
+import { displayName, maskPhone } from '../lib/privacy.js';
+import { BTN, comingSoonPanel, emptyState, errorState, kpiTile, openStitchDrawer, openStitchModal, skeleton, statusChip, trustFooter } from '../lib/stitch-ui.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
@@ -103,6 +102,55 @@ const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 const chip  = t => `<span class="chip">${esc(t)}</span>`;
+
+/* ── Stitch vocabulary (complete, literal class strings) ───────────────────
+   Copied from the appointments-* exports in design/stitch/. The dialogs keep
+   lib/modal.js's contract through openStitchModal(), which returns the same
+   { wrap, close, msg }; this one-line adapter keeps their call sites intact. */
+const openModal = (title, bodyHtml, footHtml) => openStitchModal({ title, bodyHtml, footHtml });
+const FIELD = 'w-full h-9 px-3 rounded-lg bg-surface-container-low border border-outline-variant/50 font-body-sm text-body-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary';
+const ACT_BTN = {
+  attend:  'inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-body-sm text-[12px] font-semibold hover:bg-emerald-100 transition-colors disabled:text-outline disabled:bg-surface-container-low disabled:border-outline-variant disabled:cursor-not-allowed',
+  no_show: 'inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-body-sm text-[12px] font-semibold hover:bg-rose-100 transition-colors disabled:text-outline disabled:bg-surface-container-low disabled:border-outline-variant disabled:cursor-not-allowed',
+  cancel:  'inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-body-sm text-[12px] font-semibold hover:bg-surface-container transition-colors disabled:text-outline disabled:cursor-not-allowed',
+  offer:   'inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container-lowest text-primary border border-outline-variant font-body-sm text-[12px] font-semibold hover:bg-surface-container transition-colors disabled:text-outline disabled:cursor-not-allowed',
+  confirm: 'inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary text-on-primary font-body-sm text-[12px] font-semibold hover:bg-primary-container transition-colors disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed',
+};
+const NOTE = {
+  info: 'flex items-start gap-2.5 p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-blue-950 font-body-sm text-body-sm',
+  warm: 'flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm',
+  hot:  'flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm',
+};
+const note = (t, icon, html) =>
+  `<div class="${NOTE[t] || NOTE.info}"><span class="material-symbols-outlined text-[18px] shrink-0">${esc(icon)}</span><div class="min-w-0 flex-1">${html}</div></div>`;
+/* The six words, each with its own chip. Icon + word, never colour alone. */
+const STATE_CHIP = {
+  REQUESTED: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700',
+  OFFERED:   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-amber-50 text-amber-800',
+  CONFIRMED: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700',
+  ATTENDED:  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-sky-50 text-sky-700',
+  NO_SHOW:   'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700',
+  CANCELLED: 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-600',
+  OTHER:     'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-700',
+};
+const STATE_DOT = {
+  REQUESTED: 'w-1.5 h-1.5 rounded-full bg-slate-500', OFFERED: 'w-1.5 h-1.5 rounded-full bg-amber-500',
+  CONFIRMED: 'w-1.5 h-1.5 rounded-full bg-emerald-600', ATTENDED: 'w-1.5 h-1.5 rounded-full bg-sky-600',
+  NO_SHOW: 'w-1.5 h-1.5 rounded-full bg-rose-600', CANCELLED: 'w-1.5 h-1.5 rounded-full bg-zinc-400', OTHER: 'w-1.5 h-1.5 rounded-full bg-zinc-400',
+};
+const stateChip = s => {
+  const k = STATE[up(s)] ? up(s) : 'OTHER';
+  return `<span class="${STATE_CHIP[k]}"${k === 'OTHER' ? ' title="This screen does not recognise that state, so it is shown exactly as the database returned it."' : ''}><span class="${STATE_DOT[k]}"></span>${esc(str(s) || 'NO STATE RECORDED')}</span>`;
+};
+const SLOT_BAR = { CONFIRMED: 'w-1 self-stretch rounded-full bg-primary', OFFERED: 'w-1 self-stretch rounded-full bg-amber-400', REQUESTED: 'w-1 self-stretch rounded-full bg-slate-300', ATTENDED: 'w-1 self-stretch rounded-full bg-sky-500', NO_SHOW: 'w-1 self-stretch rounded-full bg-rose-500', CANCELLED: 'w-1 self-stretch rounded-full bg-zinc-300', OTHER: 'w-1 self-stretch rounded-full bg-zinc-300' };
+const TAB = {
+  on:  'px-3 py-1 rounded-md bg-surface-container-lowest text-primary font-body-sm text-body-sm font-semibold shadow-sm',
+  off: 'px-3 py-1 rounded-md text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm font-medium transition-colors',
+};
+const SECTION = 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm';
+const TH = 'px-3 py-2.5 font-table-header text-table-header uppercase tracking-wider text-outline text-left';
+const TD = 'px-3 py-2.5 align-top font-body-sm text-body-sm text-on-surface';
+const actorName = () => String((ME && (ME.name || ME.email)) || 'Signed-in user');
 
 /* A null is not a zero and is never printed as one — "no figure was returned"
    and "nothing is on the diary" are different facts, and only the second is a
@@ -171,8 +219,8 @@ onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
 const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
+  ? `<button type="button" class="${BTN.secondary}" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button type="button" class="${BTN.secondary}" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
 const wireGo = card => {
   card.querySelectorAll('[data-go]').forEach(b => {
     if (b.disabled) return;
@@ -214,7 +262,7 @@ const actionsCell = (r, mode) => {
     ? ' title="This dealership\u2019s subscription is in a read-only state, so nothing here can be written until it is resolved."'
     : '';
   return `<div style="display:flex;gap:6px;flex-wrap:wrap">${list.map(([action, label]) =>
-    `<button class="btn sm" data-appt-id="${esc(r.appointment_id)}" data-appt-action="${action}"${ro ? ' disabled' : ''}${roTitle}>${esc(label)}</button>`
+    `<button type="button" class="${ACT_BTN[action] || ACT_BTN.offer}" data-appt-id="${esc(r.appointment_id)}" data-appt-action="${action}"${ro ? ' disabled' : ''}${roTitle}>${esc(label)}</button>`
   ).join('')}</div>`;
 };
 
@@ -226,7 +274,7 @@ async function staffSelectHtml(selectedId) {
   try {
     const users = await db('users?select=id,name,status&order=name') || [];
     if (!users.length) return '<span class="t-muted">No staff accounts to offer.</span>';
-    return `<select id="apSales" style="width:100%"><option value="">Unassigned</option>${users.map(u =>
+    return `<select id="apSales" class="${FIELD}"><option value="">Unassigned</option>${users.map(u =>
       `<option value="${esc(u.id)}"${u.id === selectedId ? ' selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`
     ).join('')}</select>`;
   } catch (e) {
@@ -240,12 +288,12 @@ function offerDialog(row) {
       replaces any times previously offered on this visit \u2014 nexus_appointment_offer_slots' own rule, not this
       dialog's.</div>
     <label class="ds-cell-sub" for="apSlot1" style="display:block">Slot 1</label>
-    <input id="apSlot1" type="datetime-local" style="width:100%">
+    <input id="apSlot1" type="datetime-local" class="${FIELD}">
     <label class="ds-cell-sub" for="apSlot2" style="display:block;margin-top:8px">Slot 2 (optional)</label>
-    <input id="apSlot2" type="datetime-local" style="width:100%">
+    <input id="apSlot2" type="datetime-local" class="${FIELD}">
     <label class="ds-cell-sub" for="apSlot3" style="display:block;margin-top:8px">Slot 3 (optional)</label>
-    <input id="apSlot3" type="datetime-local" style="width:100%">
-  `, `<button class="btn primary" id="apGo">Offer</button><button class="btn" id="apCancel">Cancel</button>`);
+    <input id="apSlot3" type="datetime-local" class="${FIELD}">
+  `, `<button type="button" class="${BTN.secondary}" id="apCancel">Cancel</button><button type="button" class="${BTN.primary}" id="apGo">Offer</button>`);
   const $$ = id => m.wrap.querySelector(id);
   $$('#apCancel').addEventListener('click', () => m.close());
   $$('#apGo').addEventListener('click', async () => {
@@ -278,11 +326,11 @@ function confirmDialog(row) {
       double-booking constraint still applies: a salesperson or resource already booked over this time is refused,
       in nexus_appointment_confirm's own words, below.</div>
     <label class="ds-cell-sub" for="apWhen" style="display:block">When</label>
-    <input id="apWhen" type="datetime-local" style="width:100%">
+    <input id="apWhen" type="datetime-local" class="${FIELD}">
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
       <div style="flex:1;min-width:160px">
         <label class="ds-cell-sub" for="apDuration" style="display:block">Duration (minutes)</label>
-        <input id="apDuration" type="number" min="5" step="5" value="45" style="width:100%">
+        <input id="apDuration" type="number" min="5" step="5" value="45" class="${FIELD}">
       </div>
       <div style="flex:1;min-width:220px">
         <label class="ds-cell-sub" for="apSalesWrap" style="display:block">Salesperson (optional)</label>
@@ -292,14 +340,14 @@ function confirmDialog(row) {
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
       <div style="flex:1;min-width:160px">
         <label class="ds-cell-sub" for="apLocation" style="display:block">Location (optional)</label>
-        <input id="apLocation" type="text" maxlength="120" style="width:100%">
+        <input id="apLocation" type="text" maxlength="120" class="${FIELD}">
       </div>
       <div style="flex:1;min-width:160px">
         <label class="ds-cell-sub" for="apResource" style="display:block">Resource (optional)</label>
-        <input id="apResource" type="text" maxlength="120" style="width:100%" placeholder="bay, desk, demo car">
+        <input id="apResource" type="text" maxlength="120" class="${FIELD}" placeholder="bay, desk, demo car">
       </div>
     </div>
-  `, `<button class="btn primary" id="apGo">Confirm</button><button class="btn" id="apCancel">Cancel</button>`);
+  `, `<button type="button" class="${BTN.secondary}" id="apCancel">Cancel</button><button type="button" class="${BTN.primary}" id="apGo">Confirm</button>`);
   const $$ = id => m.wrap.querySelector(id);
   $$('#apCancel').addEventListener('click', () => m.close());
   staffSelectHtml(row.assigned_to_id).then(html => { $$('#apSalesWrap').innerHTML = html; });
@@ -335,8 +383,8 @@ function outcomeDialog(kind, row) {
     <div class="ds-cell-sub" style="margin-bottom:12px">Recorded as a human's own account of what happened. NEXUS never
       infers this from the clock \u2014 see "The clock is not a witness" at the top of this screen.</div>
     <label class="ds-cell-sub" for="apReason" style="display:block">Reason / note (optional)</label>
-    <input id="apReason" type="text" maxlength="400" style="width:100%">
-  `, `<button class="btn primary" id="apGo">${esc(label)}</button><button class="btn" id="apCancel">Cancel</button>`);
+    <input id="apReason" type="text" maxlength="400" class="${FIELD}">
+  `, `<button type="button" class="${BTN.secondary}" id="apCancel">Cancel</button><button type="button" class="${BTN.primary}" id="apGo">${esc(label)}</button>`);
   const $$ = id => m.wrap.querySelector(id);
   $$('#apCancel').addEventListener('click', () => m.close());
   $$('#apGo').addEventListener('click', async () => {
@@ -358,8 +406,8 @@ function cancelDialog(row) {
     <div class="ds-cell-sub" style="margin-bottom:12px">nexus_appointment_cancel refuses a cancel with no reason given,
       in its own words \u2014 this dialog does not duplicate that check client-side.</div>
     <label class="ds-cell-sub" for="apReason" style="display:block">Reason</label>
-    <input id="apReason" type="text" maxlength="400" style="width:100%" placeholder="e.g. customer asked to cancel">
-  `, `<button class="btn primary" id="apGo">Cancel visit</button><button class="btn" id="apBack">Back</button>`);
+    <input id="apReason" type="text" maxlength="400" class="${FIELD}" placeholder="e.g. customer asked to cancel">
+  `, `<button type="button" class="${BTN.secondary}" id="apBack">Back</button><button type="button" class="${BTN.destructive}" id="apGo">Cancel visit</button>`);
   const $$ = id => m.wrap.querySelector(id);
   $$('#apBack').addEventListener('click', () => m.close());
   $$('#apGo').addEventListener('click', async () => {
@@ -381,7 +429,7 @@ function openApptAction(kind, row, mode) {
     const m = openModal('Read-only subscription',
       '<div class="ds-cell-sub">This dealership\u2019s subscription is in a read-only state, so nothing on this '
       + 'appointment can be written until it is resolved.</div>',
-      '<button class="btn" id="apClose">Close</button>');
+      `<button type="button" class="${BTN.secondary}" id="apClose">Close</button>`);
     m.wrap.querySelector('#apClose').addEventListener('click', () => m.close());
     return;
   }
@@ -390,21 +438,6 @@ function openApptAction(kind, row, mode) {
   if (kind === 'attend' || kind === 'no_show') return outcomeDialog(kind, row);
   if (kind === 'cancel') return cancelDialog(row);
 }
-
-/* Reads the rows and the subscription mode the render pass stashed on the
-   card (`card.__apptRows` / `card.__apptMode`) — the same pattern
-   lib/ui.js's own comment on panel() names for a caller that needs state
-   `render` computed, rather than re-deriving it from the DOM. */
-const wireApptActions = card => {
-  const rows = card.__apptRows || [];
-  card.querySelectorAll('[data-appt-action]').forEach(btn => {
-    if (btn.disabled) return;
-    btn.addEventListener('click', () => {
-      const row = rows.find(r => str(r.appointment_id) === btn.dataset.apptId);
-      if (row) openApptAction(btn.dataset.apptAction, row, card.__apptMode);
-    });
-  });
-};
 
 /* ══════════════════════════════════════════════════════════════════════════
    The read
@@ -435,339 +468,389 @@ const whenCell = r => {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
-   SCREEN
-   ══════════════════════════════════════════════════════════════════════════ */
+   SCREEN — Stitch layout, 7 Oct 2026
+   ══════════════════════════════════════════════════════════════════════════
+   design/stitch/appointments-showroom-visits-contextual-drawer--5a2c6d.html is
+   the layout (header, state tabs, list/calendar switch, the diary table and the
+   per-visit drawer). From --43862a: the six-word tiles, "Passed, and nobody has
+   said what happened" with its row actions, and "What this screen cannot tell
+   you". From --a539b3: the calendar-sync banner, the day timeline and the three
+   side panels — bay capacity, consultant roster and no-show prevention — each of
+   which has no backing data and is shown COMING SOON with the reason.
+
+   Every count still comes from nexus_appointment_status(), every booking claim
+   from its own `counts_as_booked`, and the clock still produces exactly one
+   thing: `awaiting_outcome`. */
+const dayKey = r => (r.starts_at ? dubaiDate(r.starts_at, '') : '');
+
+/* The per-visit drawer: what the row says, in the order a visit happens. The
+   journey is built from the row's own timestamps — requested, offered,
+   confirmed, starts, closed — and a stamp the row does not carry is not drawn. */
+function apptDrawer(r, mode, onAct) {
+  const steps = [
+    r.requested_at ? ['Requested', r.requested_at, 'A customer asked to come in.'] : null,
+    Array.isArray(r.offered_slots) && r.offered_slots.length
+      ? ['Times offered', null, r.offered_slots.map(t => dubaiStamp(t)).join(' · ')] : null,
+    r.confirmed_at ? ['Confirmed', r.confirmed_at, 'The customer agreed to one time.'] : null,
+    r.starts_at ? ['Slot', r.starts_at, r.ends_at ? `Ends ${dubaiStamp(r.ends_at)}` : 'No end time recorded.'] : null,
+    r.closed_at ? [`Closed as ${str(r.state)}`, r.closed_at, str(r.evidence) || 'No explanation recorded.'] : null,
+  ].filter(Boolean);
+  const list = ACTIONS_BY_STATE[up(r.state)] || [];
+  const ro = !!(mode && mode.readOnly);
+  const d = openStitchDrawer({
+    icon: 'event',
+    title: displayName(str(r.customer_name) || 'No customer name recorded', r.lead_id),
+    sub: `Appointment ${str(r.appointment_id).slice(0, 8)} · ${str(r.channel) || 'no channel'}`,
+    bodyHtml: `
+      <div class="bg-surface-container-lowest rounded-lg border border-outline-variant/40 p-space-md flex flex-col gap-2">
+        <div class="flex items-center gap-2 flex-wrap">${stateChip(r.state)}
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${isBooked(r) ? 'The database counts this as booked.' : 'The database does NOT count this as booked.'}</span></div>
+        <div class="font-body-sm text-body-sm text-on-surface">${str(r.state_meaning) ? esc(str(r.state_meaning)) : 'The state lookup returned no meaning for this word.'}</div>
+        ${str(r.evidence) ? `<div class="ds-cell-sub" style="white-space:normal">${esc(str(r.evidence))}</div>` : ''}
+        ${isAwaiting(r) ? note('warm', 'help', 'The slot has ended and no person has said what happened. NEXUS does not decide this from the clock.') : ''}
+        ${isUnprotected(r) ? note('hot', 'warning', 'No salesperson and no resource are attached, so nothing in the database stops this slot being double-booked.') : ''}
+      </div>
+      <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Customer context</div>
+      <div class="bg-surface-container-lowest rounded-lg border border-outline-variant/40 p-space-md grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-2 font-body-sm text-body-sm">
+        <span class="text-outline">Customer</span><span>${esc(displayName(str(r.customer_name) || 'No customer name recorded', r.lead_id))}</span>
+        <span class="text-outline">Lead</span><span>${r.lead_id != null ? `#${esc(String(r.lead_id))}` : 'No lead attached'}</span>
+        <span class="text-outline">Channel</span><span>${esc(str(r.channel) || '—')}</span>
+        <span class="text-outline">Expected by</span><span>${esc(str(r.assigned_to_name) || 'No salesperson assigned')}</span>
+        <span class="text-outline">Where</span><span>${esc(str(r.location) || 'No location recorded')}${str(r.resource) ? ` · ${esc(str(r.resource))}` : ''}</span>
+      </div>
+      <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Vehicle</div>
+      <div class="bg-surface-container-lowest rounded-lg border border-outline-variant/40 p-space-md font-body-sm text-body-sm">
+        ${str(r.vehicle_model) ? `<div class="font-semibold">${esc(str(r.vehicle_model))}</div>` : '<div class="text-outline">No vehicle is attached to this visit.</div>'}
+        ${str(r.inventory_id) ? `<div class="ds-cell-sub">Stock ${esc(str(r.inventory_id))}</div>` : ''}
+      </div>
+      ${comingSoonPanel({ icon: 'checklist', title: 'Vehicle prep status',
+        body: 'Fuel, trade plate, key location and valet checks for the car this customer is coming to see.',
+        prerequisite: 'A prep checklist per unit; nothing in the database records one today.' })}
+      <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Visit journey</div>
+      <div class="bg-surface-container-lowest rounded-lg border border-outline-variant/40 p-space-md flex flex-col gap-3">
+        ${steps.length ? steps.map(([label, at, sub]) => `<div class="flex gap-3">
+          <span class="w-2.5 h-2.5 rounded-full bg-primary mt-1.5 shrink-0"></span>
+          <div class="min-w-0 flex-1"><div class="flex items-center justify-between gap-2"><span class="font-body-sm text-body-sm font-semibold">${esc(label)}</span>
+            ${at ? `<span class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(dubaiStamp(at))}</span>` : ''}</div>
+            <div class="ds-cell-sub" style="white-space:normal">${esc(sub)}</div></div></div>`).join('')
+          : '<div class="ds-cell-sub">This visit carries no timestamps beyond its state.</div>'}
+      </div>`,
+    footHtml: `<div class="flex items-center gap-2 flex-wrap">
+        ${r.lead_id != null ? `<button type="button" class="${BTN.secondary}" data-open-lead="${esc(String(r.lead_id))}"><span class="material-symbols-outlined text-[18px]">person</span>Open lead</button>` : ''}
+        ${list.map(([action, label]) => `<button type="button" class="${action === 'attend' || action === 'confirm' ? BTN.primary : BTN.secondary}" data-drawer-act="${action}"${ro ? ' disabled title="This dealership’s subscription is in a read-only state."' : ''}>${esc(label)}</button>`).join('')}
+      </div>
+      ${list.length ? '' : `<div class="ds-cell-sub">${STATE[up(r.state)] ? `No further action — this visit is already ${esc(str(r.state))}.` : 'This screen does not recognise this state, so it offers no action on it rather than guessing one.'}</div>`}
+      <div class="ds-cell-sub" data-drawer-msg></div>`,
+  });
+  d.querySelectorAll('[data-drawer-act]').forEach(b => b.addEventListener('click', () => onAct(b.dataset.drawerAct, r)));
+  d.querySelector('[data-open-lead]')?.addEventListener('click', async e => {
+    const b = e.currentTarget; b.disabled = true;
+    try {
+      const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(b.dataset.openLead)}&limit=1`);
+      if (rows && rows.length) leadDrawer(rows[0]);
+      else d.querySelector('[data-drawer-msg]').innerHTML = '<span class="t-warm">That lead is not readable now — it may have been removed.</span>';
+    } catch (err) {
+      d.querySelector('[data-drawer-msg]').innerHTML = `<span class="t-hot">The lead could not be read — ${esc(err.message || String(err))}</span>`;
+    } finally { b.disabled = false; }
+  });
+}
+
+/* "Schedule appointment". A visit always belongs to a lead in this database
+   (nexus_my_appointment_request takes p_lead_id), so the button picks the lead
+   first and then opens the same Book visit dialog the lead drawer uses — one
+   write path, not a second. */
+async function scheduleDialog() {
+  const m = openStitchModal({
+    title: 'Schedule an appointment',
+    bodyHtml: `<div class="flex flex-col gap-3">
+      <p class="font-body-sm text-body-sm text-on-surface-variant">Every visit belongs to a lead. Pick the lead, then choose the time on the next step. A walk-in who is not a lead yet is recorded on Record a Lead first.</p>
+      <input type="search" data-pick-q class="${FIELD}" placeholder="Search leads by name or number" aria-label="Search leads">
+      <div data-pick-list class="flex flex-col gap-1 max-h-[320px] overflow-y-auto"><div class="ds-cell-sub">Loading leads…</div></div>
+    </div>`,
+    footHtml: `<button type="button" class="${BTN.secondary}" data-pick-cancel>Cancel</button>`,
+  });
+  m.wrap.querySelector('[data-pick-cancel]').addEventListener('click', m.close);
+  let leads = [];
+  try {
+    leads = await db('leads?select=*,users(id,name)&order=created_at.desc&limit=200') || [];
+  } catch (e) {
+    m.wrap.querySelector('[data-pick-list]').innerHTML = `<span class="t-hot">Your leads could not be read (${esc(e.message || String(e))}), so there is nothing to book a visit for from here.</span>`;
+    return;
+  }
+  const draw = qx => {
+    const qq = String(qx || '').trim().toLowerCase();
+    const rows = leads.filter(l => !qq || `${l.name || ''} ${l.phone || ''} ${l.id}`.toLowerCase().includes(qq)).slice(0, 50);
+    const box = m.wrap.querySelector('[data-pick-list]');
+    box.innerHTML = rows.length ? rows.map(l => `<button type="button" data-pick-lead="${esc(String(l.id))}" class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg hover:bg-surface-container-low text-left">
+        <span class="font-body-sm text-body-sm font-semibold text-on-surface">${esc(displayName(l.name, l.id))}</span>
+        <span class="font-label-numeric-sm text-label-numeric-sm text-outline">#${esc(String(l.id))}${l.phone ? ` · ${esc(maskPhone(l.phone))}` : ''}</span></button>`).join('')
+      : '<div class="ds-cell-sub">No lead matches.</div>';
+    box.querySelectorAll('[data-pick-lead]').forEach(b => b.addEventListener('click', async () => {
+      const lead = leads.find(l => String(l.id) === b.dataset.pickLead);
+      if (!lead) return;
+      await loadSubscription();
+      if (isReadOnly()) { m.msg('<span class="t-hot">This dealership’s subscription is in a read-only state, so a visit cannot be booked until it is resolved.</span>'); return; }
+      m.close();
+      bookVisitDialog(lead);
+    }));
+  };
+  draw('');
+  m.wrap.querySelector('[data-pick-q]').addEventListener('input', e => draw(e.target.value));
+}
+
 SCREENS.appointments = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto another screen and restyle one nobody converted. A wrapper
-     cannot leak — go() removes it with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* `nx-stitch` on a wrapper this screen appends, never on `#screen`. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
-
   resetReads();
+  const readAt = new Date();
 
-  /* Throws on failure, so the panels that report on the diary get the standard
-     unread card rather than inventing an empty one. An empty diary and an
-     unread diary are opposite facts and this screen makes both. */
-  const load = () => readAppointments();
+  root.innerHTML = `
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-space-sm">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-table-header text-table-header uppercase tracking-wider text-outline">Work</span>
+          <span class="font-table-header text-table-header text-outline-variant">/</span>
+          <span class="font-table-header text-table-header uppercase tracking-wider text-primary font-semibold">Calendar &amp; visits</span>
+          <span data-head-chip></span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Appointments</h1>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-0.5 max-w-3xl">Every showroom visit on record, and which of six different things is actually true of it. Asked, offered and agreed are three different words, and only the third is a booking.</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${linkBtn('leads', 'Open Leads')}
+        <button type="button" class="${BTN.primary}" data-schedule><span class="material-symbols-outlined text-[18px]">add_circle</span>Schedule appointment</button>
+      </div>
+    </div>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50/30 p-space-md flex items-start gap-3">
+      <span class="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">sync_disabled</span></span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-body-lg font-semibold text-indigo-950">Not connected — there is no calendar sync</span>${statusChip('planned')}</div>
+        <p class="font-body-sm text-body-sm text-indigo-900 mt-0.5">This diary lives in NEXUS and nowhere else. Nothing is synchronised to Google, Outlook or a showroom kiosk, and NEXUS sends no confirmation or reminder about any visit — a salesperson who never opens this screen has no way of knowing a customer is coming.</p>
+      </div>
+      <button type="button" disabled class="px-3 py-1.5 rounded-lg bg-surface-container-high text-outline font-body-sm text-body-sm font-semibold cursor-not-allowed shrink-0" title="Calendar integration is planned, not built.">Connect calendar (planned)</button>
+    </div>
+    <div data-tiles>${skeleton({ rows: 2 })}</div>
+    <div data-awaiting></div>
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-space-md items-start">
+      <div data-diary>${skeleton({ rows: 4 })}</div>
+      <div class="flex flex-col gap-space-md">
+        ${comingSoonPanel({ icon: 'garage', title: 'Floor bay capacity', body: 'How many bays, desks and demo cars are free at each hour.', prerequisite: 'A capacity model — nothing here knows how many customers the showroom can take at once or how long a test drive occupies a car.' })}
+        ${comingSoonPanel({ icon: 'badge', title: 'Consultant roster', body: 'Who is on the floor, with a client, or off duty right now.', prerequisite: 'A staff roster or shift record; the users table carries no presence or rota.' })}
+        ${comingSoonPanel({ icon: 'notifications_active', title: 'No-show prevention', body: 'Confirmation pings to customers who have not confirmed close to their slot.', prerequisite: 'A reminder workflow and an approved WhatsApp template; NEXUS sends nothing about visits today.' })}
+      </div>
+    </div>
+    <div data-limits></div>
+    <div data-foot></div>`;
+  const q = s => root.querySelector(s);
+  q('[data-schedule]').addEventListener('click', scheduleDialog);
+  wireGo(root);
 
-  /* NX1005: P2 alone also needs to know whether this dealership's subscription
-     is read-only, to decide whether the "Act on it" buttons are live. Bundled
-     into one load rather than a second panel-level read, so a failure of
-     EITHER half shows P2 as unread rather than half-drawn. loadSubscription()
-     never throws (see lib/subscription.js) — a failed or missing read resolves
-     to isReadOnly() === false — so this can only reject if readAppointments()
-     itself does. */
-  const loadDiary = () => Promise.all([readAppointments(), loadSubscription()])
-    .then(([rows]) => ({ rows, mode: { readOnly: isReadOnly() } }));
+  let rows = null, readErr = null, mode = { readOnly: false };
+  try {
+    const [r] = await Promise.all([readAppointments(), loadSubscription()]);
+    rows = Array.isArray(r) ? r : [];
+    mode = { readOnly: isReadOnly() };
+  } catch (e) { readErr = e; }
+  if (!root.isConnected) return;
 
-  /* The same read, and this one never throws. It is for the last panel, whose
-     entire job is to state what this screen cannot tell you: handing it a
-     "couldn't load" card would silence the one panel still true when the read
-     fails. */
-  const loadSoft = () => settle(readAppointments());
+  const act = (kind, r) => openApptAction(kind, r, mode);
 
-  /* ────────────────────────────────────────────────────────────────────────
-     P1 · The six words, counted separately
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Every showroom visit, counted by the word it is actually in',
-    sub: 'Six separate figures, never added together and never rolled into a booking rate. Somebody who asked a '
-       + 'question and somebody who agreed to a time on Saturday are opposite facts, and only one of them is a booking',
-    actions: linkBtn('leads', 'Open Leads') + ' ' + linkBtn('conversations', 'Open Conversations'),
-    load,
-    render: rows => {
-      const all = Array.isArray(rows) ? rows : [];
-      const unrecognised = all.filter(r => !STATE[up(r.state)]);
+  if (readErr) {
+    q('[data-tiles]').innerHTML = errorState({ what: 'the appointment diary', err: readErr });
+    q('[data-diary]').innerHTML = '';
+  } else {
+    const all = rows;
+    const unrecognised = all.filter(r => !STATE[up(r.state)]);
+    const booked = all.filter(isBooked);
+    const attended = all.filter(isAttended);
+    const awaiting = all.filter(isAwaiting);
+    const risky = all.filter(isUnprotected);
 
-      /* "Booked" is the database's column, not this file's opinion. */
-      const booked   = all.filter(isBooked);
-      const attended = all.filter(isAttended);
-      const awaiting = all.filter(isAwaiting);
+    q('[data-head-chip]').innerHTML = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>${count(all.length)} on record · ${count(booked.length)} counted as booked</span>`;
 
-      const TONE_WHEN_PRESENT = {
-        REQUESTED: 't-warm', OFFERED: 't-warm', CONFIRMED: 't-ok',
-        ATTENDED: 't-ok',   NO_SHOW: 't-hot',  CANCELLED: '',
-      };
-      const BLURB = {
-        REQUESTED: ['A customer asked to come in and no time has been proposed. Nothing is in anyone’s diary and this '
-                  + 'is not a booking. Every one of these is waiting on somebody here.',
-                    'Nobody is waiting on us for a time to be offered.'],
-        OFFERED:   ['Times were proposed and the customer has not agreed to any of them. This is not a booking either '
-                  + '— the diary entry exists on our side only.',
-                    'Nothing is sitting with a customer waiting for them to pick a time.'],
-        CONFIRMED: ['The customer agreed to one specific time. This is the only state that is a booking, and it is '
-                  + 'still a promise: nobody has walked in yet.',
-                    'Nobody has agreed to a time. There is no booking in this window at all.'],
-        ATTENDED:  ['A human recorded that the customer walked in. This is the only figure on the screen that '
-                  + 'describes somebody who was actually in the showroom.',
-                    'Nobody has been recorded as walking in. That is not a statement that nobody came — only that no '
-                  + 'human has said one did.'],
-        NO_SHOW:   ['A human recorded that the customer did not walk in. Recorded, not inferred — the clock never '
-                  + 'produces this word.',
-                    'No visit has been called a no-show by anybody.'],
-        CANCELLED: ['Called off, by the customer or by the dealership. The reason is in the row’s own words below, '
-                  + 'and it is not counted as a booking.',
-                    'Nothing in this window has been called off.'],
-      };
+    /* ── P1 · The six words, counted separately ─────────────────────────── */
+    const BLURB = {
+      REQUESTED: ['A customer asked to come in and no time has been proposed. This is not a booking — every one is waiting on somebody here.', 'Nobody is waiting on us for a time to be offered.'],
+      OFFERED:   ['Times were proposed and the customer has not agreed to any. Not a booking either.', 'Nothing is sitting with a customer waiting for them to pick a time.'],
+      CONFIRMED: ['The customer agreed to one specific time. The only state that is a booking — and still a promise.', 'Nobody has agreed to a time. There is no booking in this window at all.'],
+      ATTENDED:  ['A person recorded that the customer walked in — the only figure describing somebody who was actually here.', 'Nobody has been recorded as walking in. That is not a statement that nobody came.'],
+      NO_SHOW:   ['A person recorded that the customer did not walk in. Recorded, never inferred from the clock.', 'No visit has been called a no-show by anybody.'],
+      CANCELLED: ['Called off, by the customer or the dealership. Not counted as a booking.', 'Nothing in this window has been called off.'],
+    };
+    const tile = s => {
+      const n = isState(all, s).length;
+      return `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm p-space-md flex flex-col gap-2">
+        <div class="flex items-center justify-between">${stateChip(s)}</div>
+        <div class="font-label-numeric-lg text-[2rem] leading-none font-bold text-on-surface">${count(n)}</div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant pt-2 border-t border-outline-variant/30">${esc(BLURB[s][n ? 0 : 1])}</p>
+      </div>`;
+    };
+    q('[data-tiles]').innerHTML = `<div class="flex flex-col gap-space-md">
+      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-space-md">${STATES.map(tile).join('')}</div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+        ${kpiTile({ label: 'Counted as booked by the database', value: count(booked.length), sub: 'Read from the accessor’s own counts_as_booked — true for CONFIRMED, ATTENDED and NO_SHOW. Never re-decided here.' })}
+        ${kpiTile({ label: 'Recorded by a person as having walked in', value: count(attended.length), sub: 'counts_as_attended is true for ATTENDED alone. Nothing sets it automatically.' })}
+        ${kpiTile({ label: 'Passed, and nobody has said what happened', value: count(awaiting.length), sub: awaiting.length ? 'Neither attended nor no-shows — listed below, and this screen will not guess.' : 'No confirmed slot has passed without somebody recording the outcome.' })}
+      </div>
+      ${unrecognised.length ? note('hot', 'report', `<strong>Some visits came back in a state this screen does not recognise.</strong> ${esc(count(unrecognised.length))} of ${esc(count(all.length))} ${plural(all.length, 'entry carries', 'entries carry')} a word that is none of the six. They are listed at face value and counted in none of the six figures.`) : ''}
+      ${note('info', 'schedule', `<strong>The window is ${esc(String(WINDOW_DAYS))} days, and three kinds of row ignore it.</strong> Counts cover visits starting between yesterday and ${esc(String(WINDOW_DAYS))} days from now. On top of that the accessor always returns everything still REQUESTED or OFFERED, and every confirmed slot that passed with no outcome, however old — so a forgotten visit appears here rather than ageing out of view.`)}
+    </div>`;
 
-      const tiles = STATES.map(s => {
-        const n = isState(all, s).length;
-        return kpi(s, count(n), muted(esc(BLURB[s][n ? 0 : 1])), n ? TONE_WHEN_PRESENT[s] : '');
-      }).join('');
+    /* ── P3 · The rows the clock cannot answer ─────────────────────────────
+       Separated out deliberately: mixed into the diary these look like ordinary
+       confirmed bookings and get counted as though the customer came. */
+    q('[data-awaiting]').innerHTML = (risky.length ? note('hot', 'warning', `<strong>${esc(count(risky.length))} confirmed ${plural(risky.length, 'visit has', 'visits have')} neither a salesperson nor a resource attached.</strong> The database reports that per row as slot_is_protected = false: the double-booking constraint only bites when one is named, so these slots can be booked over without anything refusing it.`) : '')
+      + (awaiting.length ? `<section class="rounded-xl border border-amber-200 overflow-hidden shadow-sm bg-surface-container-lowest ${risky.length ? 'mt-space-md' : ''}">
+        <div class="px-space-md py-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-start gap-3"><span class="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center"><span class="material-symbols-outlined text-[18px]">pending_actions</span></span>
+            <div><div class="font-headline-md text-body-lg font-semibold text-amber-950">Passed, and nobody has said what happened</div>
+            <div class="font-body-sm text-body-sm text-amber-900">Confirmed slots whose end time is behind us with no outcome recorded. A person calls it ATTENDED or NO_SHOW; until they do, this screen says only that nobody has.</div></div></div>
+          <span class="px-2.5 py-1 rounded-full bg-amber-700 text-white font-label-numeric-sm text-label-numeric-sm font-bold">${count(awaiting.length)} unresolved</span>
+        </div>
+        <div class="divide-y divide-outline-variant/20">${awaiting.map(r => `
+          <div class="px-space-md py-3 flex items-start gap-4 flex-wrap">
+            <div class="min-w-[180px]"><span class="inline-flex px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-label-numeric-sm text-[11px] font-bold uppercase">Unresolved</span>
+              <div class="font-label-numeric-sm text-label-numeric-sm font-semibold mt-1">${r.starts_at ? esc(dubaiStamp(r.starts_at)) : 'No time recorded'}</div>
+              ${r.ends_at ? `<div class="font-label-numeric-sm text-[11px] text-red-700">Ended ${esc(ago(r.ends_at))}</div>` : ''}</div>
+            <div class="flex-1 min-w-[220px]"><div class="font-body-md text-body-sm font-semibold">${esc(displayName(str(r.customer_name) || 'No customer name recorded', r.lead_id))}</div>
+              <div class="ds-cell-sub">${esc(str(r.vehicle_model) || 'No vehicle attached')} · ${esc(str(r.assigned_to_name) ? `Rep: ${str(r.assigned_to_name)}` : 'No salesperson assigned, so there is no obvious person to ask')}</div>
+              <div class="ds-cell-sub">${r.confirmed_at ? `Agreed ${esc(dubaiStamp(r.confirmed_at))}` : 'No confirmation time is recorded, although the row is CONFIRMED.'}</div></div>
+            <div class="flex items-center gap-2 flex-wrap">${actionsCell(r, mode)}</div>
+          </div>`).join('')}</div>
+      </section>` : '');
 
-      const bookedTile = kpi('Counted as booked by the database', count(booked.length),
-        muted('This figure is read out of the accessor’s own `counts_as_booked` column — true for CONFIRMED, ATTENDED '
-          + 'and NO_SHOW, false for REQUESTED and OFFERED. It is not re-decided here, so a visit nobody agreed to can '
-          + 'never be counted as one, whatever a later edit to this screen does.'),
-        booked.length ? 't-ok' : '');
-
-      const attendedTile = kpi('Recorded by a human as having walked in', count(attended.length),
-        muted('`counts_as_attended` is true for ATTENDED alone. Nothing in NEXUS sets that state automatically: a '
-          + 'confirmed slot stays CONFIRMED until a person says what happened, however long ago it was.'),
-        attended.length ? 't-ok' : '');
-
-      const awaitingTile = kpi('Passed, and nobody has said what happened', count(awaiting.length),
-        muted(awaiting.length
-          ? 'The slot has ended and no human has called it. These are neither attended nor no-shows, and this screen '
-            + 'will not guess. They are listed separately below.'
-          : 'No confirmed slot has passed without somebody recording the outcome.'),
-        awaiting.length ? 't-hot' : '');
-
-      const odd = unrecognised.length
-        ? `<div class="banner hot" style="margin-top:12px">
-             <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold('Some visits came back in a state this screen does not recognise.')}
-               ${muted(esc(count(unrecognised.length)) + ' of ' + esc(count(all.length))
-                 + ` ${plural(all.length, 'entry', 'entries')} carries a word that is none of the six. They are listed `
-                 + 'below at face value and are counted in none of the six figures above. They are reported rather '
-                 + 'than dropped: a visit nobody can account for is exactly the one worth naming.')}</div></div>`
-        : '';
-
-      const rule = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">info</span>
-          <div>${bold('Asked, offered and agreed are three different things, and only the third is a booking.')}
-            ${muted('REQUESTED means a customer asked and nothing has been proposed. OFFERED means we proposed times '
-              + 'and they have not picked one. CONFIRMED means they agreed to a specific time — and even that is a '
-              + 'promise rather than a visit, until a human records ATTENDED or NO_SHOW. Nothing on this page is '
-              + 'averaged into a rate, because a rate would make all six of those read as fractions of the same '
-              + 'thing.')}</div></div>`;
-
-      const windowLine = `<div class="banner info" style="margin-top:12px">
-          <span class="material-symbols-outlined" style="font-size:20px">schedule</span>
-          <div>${bold('The window is ' + esc(String(WINDOW_DAYS)) + ' days, and three kinds of row ignore it.')}
-            ${muted('These counts cover visits starting between yesterday and '
-              + esc(String(WINDOW_DAYS)) + ' days from now. On top of that the accessor always returns everything '
-              + 'still REQUESTED or OFFERED, and every confirmed slot that has passed with no outcome recorded, '
-              + 'however old — so a visit forgotten in March appears here rather than ageing quietly out of view.')}
-          </div></div>`;
-
-      return `<div class="grid g3">${tiles}</div>`
-        + `<div class="grid g3" style="margin-top:12px">${bookedTile}${attendedTile}${awaitingTile}</div>`
-        + odd + rule + windowLine;
-    },
-  }).then(wireGo);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P2 · The diary itself
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Every visit on record, and what is actually true of it',
-    sub: 'In the order the accessor returns them — by the time they are for, or by the time they were asked for when '
-       + 'no time exists yet. Every line carries the database’s own account, in words, of what state it is in, and '
-       + 'NX1005’s own write actions where the row’s state allows one',
-    load: loadDiary,
-    render: ({ rows, mode }, card) => {
-      const all = Array.isArray(rows) ? rows : [];
-      card.__apptRows = all;
-      card.__apptMode = mode;
+    /* ── P2 · The diary ───────────────────────────────────────────────────── */
+    let filter = 'ALL', view = 'list';
+    const tabs = [['ALL', all.length], ...STATES.map(s => [s, isState(all, s).length])];
+    const drawDiary = () => {
+      const shown = filter === 'ALL' ? all : isState(all, filter);
+      const head = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-center p-0.5 bg-surface-container rounded-lg flex-wrap" role="group" aria-label="Filter by state">
+            ${tabs.map(([k, n]) => `<button type="button" data-ftab="${k}" class="${filter === k ? TAB.on : TAB.off}">${esc(k === 'ALL' ? 'All' : k.replace('_', '-').toLowerCase().replace(/^./, c => c.toUpperCase()))} (${count(n)})</button>`).join('')}
+          </div>
+          <div class="flex items-center p-0.5 bg-surface-container rounded-lg" role="group" aria-label="Layout">
+            <button type="button" data-view="list" class="${view === 'list' ? TAB.on : TAB.off}"><span class="material-symbols-outlined text-[16px] align-middle">view_list</span> List</button>
+            <button type="button" data-view="day" class="${view === 'day' ? TAB.on : TAB.off}"><span class="material-symbols-outlined text-[16px] align-middle">calendar_view_day</span> By day</button>
+          </div>
+        </div>`;
+      let bodyHtml;
       if (!all.length) {
-        return stateEmpty('No showroom visit is on record for this dealership',
-          'The accessor returned nothing. That is not a failure and it is not an all-clear either. It means one of '
-          + 'two things this screen cannot tell apart: either no visit has ever been written to this database, or '
-          + 'you are signed in with no dealership membership, in which case the accessor deliberately returns no '
-          + 'rows rather than somebody else’s diary. Nothing is being ruled out about customers who arranged to come '
-          + 'in by phone, by WhatsApp or at the door without anybody recording it here.',
-          'event_busy');
-      }
-      return table([
-        { label: 'When', strong: true, render: r => wrap(whenCell(r)) },
-        { label: 'State', render: r => {
-            const s = stateOf(r);
-            const label = str(r.state) || 'NO STATE RECORDED';
-            return `<div>${pill(label, s.tone, { verbatim: true })}</div>`
-              + (STATE[up(r.state)]
-                  ? muted(str(r.state_meaning)
-                      ? esc(str(r.state_meaning))
-                      : 'The state lookup returned no meaning for this word.')
-                  : muted('This screen does not recognise that word, so it is shown exactly as the database returned '
-                      + 'it and is counted in none of the figures above.'))
-              + (isBooked(r)
-                  ? muted('The database counts this as booked.')
-                  : muted('The database does NOT count this as booked.'));
-          } },
-        { label: 'Customer', render: r => wrap(
-            bold(esc(maskText(str(r.customer_name) || 'No customer name recorded')))
-            + muted([str(r.channel) ? 'via ' + str(r.channel) : '', str(r.tenant_name)]
-                .filter(Boolean).map(chip).join(' ')
-              || 'No channel and no dealership name came back on this row.')) },
-        { label: 'Vehicle', render: r => wrap(str(r.vehicle_model)
-            ? esc(str(r.vehicle_model))
-            : muted(str(r.inventory_id)
-                ? 'Stock ' + esc(str(r.inventory_id)) + ', with no model recorded against it.'
-                : 'No vehicle is attached to this visit. That is not a smaller visit — it is a visit nobody tied to '
-                  + 'a car, so nothing here can say what they came to see.')) },
-        { label: 'Who is expecting them', render: r => {
+        bodyHtml = `<div class="p-space-md">${emptyState({ icon: 'event_busy', title: 'No showroom visit is on record for this dealership',
+          body: 'The accessor returned nothing. Either no visit has ever been written to this database, or you are signed in with no dealership membership, in which case it deliberately returns no rows rather than somebody else’s diary.' })}</div>`;
+      } else if (!shown.length) {
+        bodyHtml = `<div class="p-space-md">${emptyState({ icon: 'filter_alt_off', title: 'No visit is in this state', body: 'Pick All to see every visit on record.' })}</div>`;
+      } else if (view === 'day') {
+        /* Grouped by the Dubai calendar day of the slot; a visit with no time yet
+           is grouped under its own heading rather than dated by the clock. */
+        const groups = new Map();
+        shown.forEach(r => { const k = dayKey(r) || 'No time yet'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+        bodyHtml = `<div class="p-space-md flex flex-col gap-space-md">${[...groups.entries()].map(([day, rs]) => `
+          <div class="flex gap-3">
+            <div class="w-28 shrink-0 font-label-numeric-sm text-label-numeric-sm text-outline pt-2">${esc(day)}</div>
+            <div class="flex-1 flex flex-col gap-2 border-l border-outline-variant/40 pl-3">${rs.map(r => {
+              const k = STATE[up(r.state)] ? up(r.state) : 'OTHER';
+              return `<div class="flex gap-3 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container cursor-pointer transition-colors" role="button" tabindex="0" data-appt-open="${esc(str(r.appointment_id))}">
+                <span class="${SLOT_BAR[k]}"></span>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">${stateChip(r.state)}<span class="font-label-numeric-sm text-label-numeric-sm font-semibold">${r.starts_at ? esc(dubaiStamp(r.starts_at)) : 'No time proposed'}</span>${str(r.location) ? `<span class="ds-cell-sub">· ${esc(str(r.location))}</span>` : ''}</div>
+                  <div class="font-body-md text-body-md font-semibold text-on-surface mt-1">${esc(displayName(str(r.customer_name) || 'No customer name recorded', r.lead_id))}</div>
+                  <div class="ds-cell-sub">${esc(str(r.vehicle_model) || 'No vehicle attached')}</div>
+                </div>
+                <div class="text-right font-body-sm text-body-sm text-on-surface-variant shrink-0">${esc(str(r.assigned_to_name) || 'Nobody assigned')}</div>
+              </div>`;
+            }).join('')}</div>
+          </div>`).join('')}</div>`;
+      } else {
+        bodyHtml = `<div class="overflow-x-auto"><table class="w-full border-collapse">
+          <thead><tr class="bg-surface-container-low border-b border-outline-variant/30">
+            <th class="${TH}">Time slot</th><th class="${TH}">Customer</th><th class="${TH}">Vehicle</th><th class="${TH}">State</th>
+            <th class="${TH}">Who is expecting them</th><th class="${TH}">Act on it</th>
+          </tr></thead>
+          <tbody class="divide-y divide-outline-variant/20">${shown.map(r => {
+            const k = STATE[up(r.state)] ? up(r.state) : 'OTHER';
             const who = str(r.assigned_to_name);
             const res = str(r.resource);
-            if (who || res) {
-              return wrap(bold(esc(who || 'No salesperson assigned'))
-                + muted(res ? 'Resource: ' + esc(res) : 'No resource (bay, desk or demo car) is attached.'));
-            }
-            return wrap(isUnprotected(r)
-              ? hot('Nobody. No salesperson and no resource are attached, so nothing in the database stops this slot '
-                  + 'being double-booked.')
-              : muted('No salesperson and no resource are attached. The database does not treat this row as being at '
-                  + 'risk of a double booking.'));
-          } },
-        { label: 'Where', render: r => wrap(str(r.location)
-            ? esc(str(r.location))
-            : muted('No location recorded.')) },
-        { label: 'What this means', render: r => wrap(str(r.evidence)
-            ? esc(str(r.evidence))
-            : warm('The database recorded no explanation for this visit’s state, so none is being invented here.')) },
-        { label: 'Act on it', render: r => actionsCell(r, mode) },
-      ], all);
-    },
-  }).then(card => { wireGo(card); wireApptActions(card); });
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P3 · The rows the clock cannot answer
-     ──────────────────────────────────────────────────────────────────────
-     Separated out deliberately. Mixed into the diary these look like ordinary
-     confirmed bookings and get counted as though the customer came. They are
-     the single most likely source of a fake attendance number in this product,
-     which is why they get their own panel and their own words. */
-  panel(root, {
-    title: 'Passed, and nobody has said what happened',
-    sub: 'Confirmed slots whose end time is behind us with no outcome recorded. NEXUS does not decide this from the '
-       + 'clock — a person calls it ATTENDED or NO_SHOW, and until they do, this screen says only that nobody has',
-    load,
-    render: rows => {
-      const all = Array.isArray(rows) ? rows : [];
-      const open = all.filter(isAwaiting);
-      const risky = all.filter(isUnprotected);
-
-      const riskBanner = risky.length
-        ? `<div class="banner hot" style="margin-top:12px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold(esc(count(risky.length)) + ' confirmed '
-                 + plural(risky.length, 'visit has', 'visits have')
-                 + ' neither a salesperson nor a resource attached.')}
-               ${muted('The database reports that per row as `slot_is_protected = false`: the double-booking '
-                 + 'constraint only bites when a salesperson or a resource is named, so these slots can be booked '
-                 + 'over without anything refusing it. They are marked in the diary above.')}</div></div>`
-        : '';
-
-      if (!open.length) {
-        return riskBanner + stateEmpty('No confirmed slot has passed without an outcome',
-          'Either nothing confirmed has finished yet, or a person has already recorded what happened to everything '
-          + 'that has. This is not a claim that everybody turned up — it is a claim that nothing is sitting '
-          + 'unanswered.',
-          'task_alt');
+            return `<tr class="hover:bg-surface-container-low cursor-pointer transition-colors" data-appt-open="${esc(str(r.appointment_id))}">
+              <td class="${TD}"><div class="flex gap-2"><span class="${SLOT_BAR[k]}"></span><div style="white-space:normal">${whenCell(r)}</div></div></td>
+              <td class="${TD}"><div class="font-semibold">${esc(displayName(str(r.customer_name) || 'No customer name recorded', r.lead_id))}</div>
+                <div class="ds-cell-sub">${[str(r.channel) ? 'via ' + str(r.channel) : '', r.lead_id != null ? `lead #${r.lead_id}` : ''].filter(Boolean).map(esc).join(' · ') || 'No channel recorded'}</div></td>
+              <td class="${TD}" style="white-space:normal">${str(r.vehicle_model) ? esc(str(r.vehicle_model)) : muted(str(r.inventory_id) ? 'Stock ' + esc(str(r.inventory_id)) + ', no model recorded.' : 'No vehicle attached — nothing here can say what they came to see.')}</td>
+              <td class="${TD}"><div>${stateChip(r.state)}</div>${muted(isBooked(r) ? 'Counted as booked.' : 'Not counted as booked.')}</td>
+              <td class="${TD}" style="white-space:normal">${who || res
+                ? `<div class="font-semibold">${esc(who || 'No salesperson assigned')}</div>${muted(res ? 'Resource: ' + esc(res) : 'No resource attached.')}`
+                : (isUnprotected(r) ? hot('Nobody — no salesperson and no resource, so nothing stops a double booking.') : muted('No salesperson and no resource attached.'))}</td>
+              <td class="${TD}"><div class="flex gap-1.5 flex-wrap">${actionsCell(r, mode)}</div></td>
+            </tr>`;
+          }).join('')}</tbody></table></div>`;
       }
+      q('[data-diary]').innerHTML = `<section class="${SECTION}">
+        <div class="px-space-md pt-3 pb-1"><div class="font-headline-md text-headline-md text-on-surface">Every visit on record, and what is actually true of it</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">In the accessor’s order — by the time they are for, or by when they were asked for when no time exists yet. Click a visit for its detail.</div></div>
+        ${head}${bodyHtml}
+        <div class="px-space-md py-2.5 bg-surface-container-low border-t border-outline-variant/30 font-label-numeric-sm text-label-numeric-sm text-outline">Showing ${count(shown.length)} of ${count(all.length)} visits read</div>
+      </section>`;
+      q('[data-diary]').querySelectorAll('[data-ftab]').forEach(b => b.addEventListener('click', () => { filter = b.dataset.ftab; drawDiary(); }));
+      q('[data-diary]').querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { view = b.dataset.view; drawDiary(); }));
+      q('[data-diary]').querySelectorAll('[data-appt-open]').forEach(n => {
+        const open = e => {
+          if (e && e.target.closest('button[data-appt-action]')) return;
+          const r = all.find(x => str(x.appointment_id) === n.dataset.apptOpen);
+          if (r) apptDrawer(r, mode, act);
+        };
+        n.addEventListener('click', open);
+        n.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      });
+      wireActions(q('[data-diary]'));
+    };
+    /* The action buttons, wherever they are drawn. A click on one never also
+       opens the drawer. */
+    const wireActions = box => box.querySelectorAll('[data-appt-action]').forEach(btn => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const r = all.find(x => str(x.appointment_id) === btn.dataset.apptId);
+        if (r) act(btn.dataset.apptAction, r);
+      });
+    });
+    drawDiary();
+    wireActions(q('[data-awaiting]'));
+  }
 
-      return riskBanner + table([
-        { label: 'The slot', strong: true, render: r => wrap(whenCell(r)) },
-        { label: 'Customer', render: r => wrap(esc(maskText(str(r.customer_name) || 'No customer name recorded'))) },
-        { label: 'Agreed on', render: r => wrap(r.confirmed_at
-            ? bold(esc(dubaiStamp(r.confirmed_at))) + muted(esc(ago(r.confirmed_at)))
-            : muted('No confirmation time is recorded, although the row is CONFIRMED.')) },
-        { label: 'Who was expecting them', render: r => wrap(str(r.assigned_to_name)
-            ? esc(str(r.assigned_to_name))
-            : muted('No salesperson assigned, so there is no obvious person to ask what happened.')) },
-        { label: 'What this means', render: r => wrap(str(r.evidence)
-            ? esc(str(r.evidence))
-            : warm('The database recorded no explanation, so none is being invented here.')) },
-      ], open);
-    },
-  }).then(wireGo);
+  /* ── P4 · The limits of this screen ───────────────────────────────────────
+     Fixed rows, true whether or not the read succeeded. */
+  {
+    const all = rows;
+    const risky = all ? all.filter(isUnprotected) : null;
+    const awaiting = all ? all.filter(isAwaiting) : null;
+    const limits = [
+      ['edit_calendar', 'Nothing books itself.', 'Every row here was written by a person, through this screen or the lead drawer. No workflow and no channel writes to the diary automatically, so a customer who asked for a visit anywhere else does not appear until somebody records it.'],
+      ['sync_disabled', 'There is no calendar anywhere.', 'Nothing is synchronised to Google, Outlook or a showroom diary. A confirmed slot lives in this database and nowhere else.'],
+      ['notifications_off', 'Nobody is reminded of anything.', 'NEXUS sends no confirmation, reminder or follow-up about any visit. A CONFIRMED chip is not evidence that the customer still remembers.'],
+      ['garage', 'There is no capacity model.', 'Nothing here knows how many customers the showroom can take at once or who is rostered on. Twenty visits in one hour render as calmly as two.'],
+      ['lock_open', 'A visit with no salesperson and no resource is outside the double-booking constraint.',
+        risky == null ? 'The diary could not be read on this visit, so no count is stated.'
+          : risky.length ? `${count(risky.length)} of the ${count(all.length)} ${plural(all.length, 'row', 'rows')} read ${plural(risky.length, 'is', 'are')} in exactly that position.` : 'No row read on this visit is in that position.'],
+      ['person_check', 'Attendance is only ever what a person wrote down.',
+        awaiting == null ? 'The diary could not be read on this visit.'
+          : awaiting.length ? `${count(awaiting.length)} ${plural(awaiting.length, 'slot is', 'slots are')} waiting on somebody right now.` : 'Nothing is waiting on somebody right now.'],
+    ];
+    q('[data-limits]').innerHTML = `<section class="${SECTION}">
+      <div class="px-space-md py-3 flex items-center gap-2 border-b border-outline-variant/30"><span class="material-symbols-outlined text-primary">info</span>
+        <span class="font-headline-md text-headline-md text-on-surface">What this screen cannot tell you</span></div>
+      ${readErr ? `<div class="px-space-md pt-space-md">${note('warm', 'warning', '<strong>The appointment diary could not be read on this visit.</strong> The limits below are true regardless. The panels above are unread rather than empty — no visit is being confirmed and none is being written off.')}</div>` : ''}
+      <div class="p-space-md grid grid-cols-1 md:grid-cols-3 gap-space-md">${limits.map(([icon, t, why]) => `
+        <div class="p-space-md rounded-lg bg-surface-container-low">
+          <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px] text-outline">${esc(icon)}</span><span class="font-body-md text-body-sm font-semibold text-on-surface">${esc(t)}</span></div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">${esc(why)}</p>
+        </div>`).join('')}</div>
+    </section>`;
+  }
 
-  /* ────────────────────────────────────────────────────────────────────────
-     P4 · The limits of this screen
-     ──────────────────────────────────────────────────────────────────────
-     Fixed rows. They are true whether or not the read above succeeded, which is
-     why this panel takes the soft load: a screen whose job is to state what it
-     cannot tell you must not go blank at exactly the moment it knows least. */
-  panel(root, {
-    title: 'What this screen cannot tell you',
-    sub: 'Six things outside what the database can answer. They are listed because a dashboard that only shows what '
-       + 'it knows reads as though it knows everything',
-    load: loadSoft,
-    render: ({ v, err }) => {
-      const all = err ? null : (Array.isArray(v) ? v : []);
-      const risky = all ? all.filter(isUnprotected) : null;
-      const awaiting = all ? all.filter(isAwaiting) : null;
-
-      const rows = [
-        { limit: 'Nothing books itself. Every row here was written by a person, through this screen or the lead drawer.',
-          why: 'NX995 built the write path — request, offer, confirm, attend, cancel — granted to service_role alone. '
-             + 'NX1005 (21 Sep 2026) put tenant-scoped wrappers in front of it so a signed-in dealer can call it '
-             + 'directly — "Book visit" on a lead, and the Act on it buttons above — but no workflow and no channel '
-             + 'writes to it automatically. So this diary only ever contains what somebody put in it deliberately, '
-             + 'and a customer who asked for a visit through any channel does NOT appear here until a person opens '
-             + 'this product and writes the row themselves.' },
-        { limit: 'There is no calendar anywhere.',
-          why: 'Nothing on this page is synchronised to Google, Outlook or any showroom diary. A confirmed slot lives '
-             + 'in this database and nowhere else, so a salesperson who never opens this screen has no way of knowing '
-             + 'the customer is coming.' },
-        { limit: 'Nobody is reminded of anything.',
-          why: 'NEXUS sends no confirmation, no reminder and no follow-up about any visit on this page. A customer '
-             + 'who agreed to Saturday has heard nothing from this system since, and a CONFIRMED pill is not '
-             + 'evidence that they still remember.' },
-        { limit: 'There is no capacity model.',
-          why: 'Nothing here knows how many customers the showroom can take at once, how long a test drive really '
-             + 'occupies a car, or who is rostered on. Twenty confirmed visits in one hour would render exactly as '
-             + 'calmly as two.' },
-        { limit: 'A confirmed visit with no salesperson and no resource is outside the double-booking constraint.',
-          why: 'The constraint that stops two customers being promised the same slot only applies when a salesperson '
-             + 'or a resource is attached to the row. With neither, nothing refuses an overlap. The accessor reports '
-             + 'that per row as `slot_is_protected`, and it is surfaced above rather than left implicit. '
-             + (risky == null
-                  ? 'The diary could not be read on this visit, so no count of those rows is being stated here.'
-                  : risky.length
-                    ? `${esc(String(risky.length))} of the ${esc(String(all.length))} ${plural(all.length, 'row', 'rows')} read on this visit `
-                      + `${plural(risky.length, 'is', 'are')} in exactly that position.`
-                    : 'No row read on this visit is in that position.') },
-        { limit: 'Attendance is only ever what a human wrote down.',
-          why: 'ATTENDED and NO_SHOW are set by a person. This screen will never promote a passed slot into either, '
-             + 'and a passed slot with no outcome is reported as a question rather than an answer. '
-             + (awaiting == null
-                  ? 'The diary could not be read on this visit, so no count of those rows is being stated here.'
-                  : awaiting.length
-                    ? `${esc(String(awaiting.length))} ${plural(awaiting.length, 'slot is', 'slots are')} waiting on somebody `
-                      + 'right now.'
-                    : 'Nothing is waiting on somebody right now.') },
-      ];
-
-      const head = err
-        ? `<div class="banner warm">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('The appointment diary could not be read on this visit.')}
-               ${muted(esc(str(err.message) || 'No reason was given.')
-                 + ' The six limits below are true regardless, so they are still shown. The panels above are unread '
-                 + 'rather than empty — no visit is being confirmed and none is being written off.')}</div></div>`
-        : '';
-
-      return head + table([
-        { label: 'What it cannot tell you', strong: true, render: r => wrap(esc(r.limit)) },
-        { label: 'Why', render: r => wrap(esc(r.why)) },
-      ], rows);
-    },
-  }).then(wireGo);
+  q('[data-foot]').innerHTML = trustFooter({
+    source: `nexus_appointment_status(p_days => ${WINDOW_DAYS})`,
+    asOf: dubaiStamp(readAt),
+    evidence: readErr ? 'The diary could not be read' : `${count(rows.length)} ${plural(rows.length, 'visit', 'visits')} read`,
+    actor: actorName(),
+  });
 };
