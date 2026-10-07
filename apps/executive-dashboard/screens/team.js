@@ -212,7 +212,7 @@ import { SCREENS, go } from '../lib/nav.js';
    what pipeline means; see DB_PIPELINE_NOTE for the sentence that says so. */
 import { CAP_NOTE, DB_PIPELINE_NOTE, LEAD_LIMIT, isOpenLead, sumBudget } from '../lib/pipeline.js';
 import { closeDrawer, wireRows } from '../lib/ui.js';
-import { BTN, actor, bannerClass, kpi, openDrawer, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/admin-kit.js';
+import { BTN, actor, bannerClass, openDrawer, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/admin-kit.js';
 import { sectionHeader, trustFooter } from '../lib/stitch-ui.js';
 
 /* Leads are read to answer three questions the view cannot: which leads have no
@@ -383,6 +383,19 @@ const statusPill = r => {
   return pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined, { verbatim: true });
 };
 
+/* The Stitch metric strip (team-showroom-roster-access--bcd2c2, under the
+   header): label and value on one line, on a low surface. The sentence each
+   figure carries is kept beneath it, clamped to two lines, and in full on
+   hover — it is the half of the tile that says what the number is not. */
+const METRIC_VAL = { '': 'text-on-surface', 't-hot': 'text-red-700', 't-warm': 'text-amber-700', 't-ok': 'text-emerald-700' };
+function metric(label, value, subHtml, cls = '') {
+  const tip = String(subHtml || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return `<div class="flex flex-col gap-1 px-3 py-2.5 rounded-lg bg-surface-container-low min-w-0" title="${esc(tip)}">
+    <div class="flex items-baseline justify-between gap-3"><span class="font-label-numeric-sm text-label-numeric-sm uppercase tracking-wider text-on-surface-variant truncate">${esc(label)}</span>
+      <span class="font-label-numeric-md text-label-numeric-md font-bold ${METRIC_VAL[cls] || METRIC_VAL['']} whitespace-nowrap">${value}</span></div>
+    <div class="font-body-sm text-[12px] leading-snug text-on-surface-variant line-clamp-2">${subHtml}</div></div>`;
+}
+
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 SCREENS.team = async host => {
   /* `.ds-screen` is the class lib/design-system.css gates its handful of
@@ -413,7 +426,7 @@ SCREENS.team = async host => {
      the team" is a fact; "a rep is holding nothing while a HOT lead has no
      owner" is a job, and the job must not be the thing you scroll past. */
   const alertHost = el('div'); root.appendChild(alertHost);
-  const strip = el('div', 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-space-md'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const strip = el('div', 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-space-sm'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
   const body = el('div', 'flex flex-col gap-space-md'); root.appendChild(body);
 
   /* allSettled, not catch(() => []): a directory that failed to read and a
@@ -687,7 +700,7 @@ SCREENS.team = async host => {
           : 'weighted average';
 
     strip.innerHTML = [
-      kpi('Team members', num(roster.length),
+      metric('Team members', num(roster.length),
         usersErr
           ? '<span class="text-amber-700">Directory unreadable — counted from the performance view</span>'
           /* "0 pending invite" beside a roster of one is a count of a thing that
@@ -702,7 +715,7 @@ SCREENS.team = async host => {
          nothing — so that is what these say now. Wording the narrow fact as a
          product limit sent an owner out of the product for a job the product
          does. */
-      kpi('Awaiting an invite', num(pending.length),
+      metric('Awaiting an invite', num(pending.length),
         pending.length
           ? '<span class="text-amber-700">A seat is recorded but no account exists — the invitation mail goes out from the Team card on Settings, which an owner opens</span>'
           : '<span class="text-emerald-700">Nobody is waiting on an invitation</span>'
@@ -714,7 +727,7 @@ SCREENS.team = async host => {
          neither. Where the column has been stamped on nothing the figure is
          withheld rather than printed with a caveat under it: "3 / 3 · 100.0%"
          with an explanation beside it is still read as 100%. */
-      kpi('Within the 5-minute rule',
+      metric('Within the 5-minute rule',
         (timingTrusted && measuredTot) ? `${num(withinTot ?? 0)} / ${num(measuredTot)}` : '—',
         !timingTrusted
           ? `<span class="text-amber-700" title="${esc(NO_TIMING)}">Nobody can be scored against the 5-minute rule yet</span>`
@@ -737,7 +750,7 @@ SCREENS.team = async host => {
          DISQUALIFIED leads as money in play; it no longer does, and the reason
          now is that this figure can be attributed to named leads and can
          disclose its own truncation. */
-      kpi('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
+      metric('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
         !leads
           ? `<span class="text-on-surface-variant">Leads could not be read, so open pipeline could not be summed. ${esc(DB_PIPELINE_NOTE)}</span>`
           : pipelineTot == null
@@ -752,7 +765,7 @@ SCREENS.team = async host => {
                  lib/pipeline.js, so one truncation cannot be disclosed in two
                  strengths on two screens showing the same rule. */
               + (leadsCapped ? `<div class="text-amber-700">${esc(CAP_NOTE(num(LEAD_LIMIT)))}</div>` : '')),
-      kpi('Unassigned leads', leads ? num(unassigned.length) : '—',
+      metric('Unassigned leads', leads ? num(unassigned.length) : '—',
         !leads
           ? `<span class="text-on-surface-variant">Leads could not be read</span>`
           : unassigned.length
@@ -1090,21 +1103,47 @@ SCREENS.team = async host => {
     return `<span class="text-on-surface-variant" title="${esc(a.source === 'view' ? 'This alert carries no timestamp.' : 'This is a standing condition computed from the current rows; nothing records when it started.')}">no start time</span>`;
   };
 
+  /* The Stitch attention card (team-showroom-roster-access--bcd2c2: "SLA
+     Breaches", "Stale Invitation", "Unassigned Leads"): a left rule in the
+     severity's colour, an icon tile, the title and its chip, the detail, and
+     the action at the foot. The detail is clamped to four lines with a "Read
+     all" toggle rather than cut: every sentence in it was written to be read. */
+  const CARD_TONE = {
+    hot:     'relative rounded-xl bg-surface-container-lowest shadow-sm p-space-md flex flex-col gap-2 border-l-4 border-red-600',
+    warm:    'relative rounded-xl bg-surface-container-lowest shadow-sm p-space-md flex flex-col gap-2 border-l-4 border-amber-500',
+    cold:    'relative rounded-xl bg-surface-container-lowest shadow-sm p-space-md flex flex-col gap-2 border-l-4 border-sky-600',
+    ok:      'relative rounded-xl bg-surface-container-lowest shadow-sm p-space-md flex flex-col gap-2 border-l-4 border-emerald-600',
+    unknown: 'relative rounded-xl bg-surface-container-lowest shadow-sm p-space-md flex flex-col gap-2 border-l-4 border-outline',
+  };
+  const TILE_TONE = {
+    hot: 'w-9 h-9 rounded-lg bg-red-50 text-red-700 flex items-center justify-center shrink-0',
+    warm: 'w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0',
+    cold: 'w-9 h-9 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center shrink-0',
+    ok: 'w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0',
+    unknown: 'w-9 h-9 rounded-lg bg-surface-container text-outline flex items-center justify-center shrink-0',
+  };
+  const DETAIL = { clamp: 'font-body-sm text-body-sm text-on-surface-variant line-clamp-4', full: 'font-body-sm text-body-sm text-on-surface-variant' };
   const alertItem = (a, i) => {
     const clickable = typeof a.act === 'function';
-    return `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors"${clickable ? ` role="button" tabindex="0" data-alert="${i}"` : ' style="cursor:default"'}>
-      <span class="material-symbols-outlined ${toneText(tone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
-          ${a.source === 'view' ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+    const t = CARD_TONE[tone(a.sev)] ? tone(a.sev) : 'unknown';
+    return `<div class="${CARD_TONE[t]}">
+      <div class="flex items-start gap-3">
+        <div class="${TILE_TONE[t]}"><span class="material-symbols-outlined text-[20px]" aria-hidden="true">${esc(a.icon)}</span></div>
+        <div class="min-w-0 flex-1">
+          <div class="font-headline-md text-body-lg font-semibold text-on-surface leading-snug">${a.titleHtml}</div>
+          <div class="flex items-center gap-1.5 flex-wrap mt-1">${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
+            ${a.source === 'view' ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}</div>
         </div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${a.detailHtml}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${waitedHtml(a)}
-        ${clickable ? `<div class="text-on-surface-variant">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
-      ${a.noHook ? `<button class="${BTN.secondary}" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
-      ${clickable ? '<span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+      <div class="${DETAIL.clamp}" data-alert-detail="${i}">${a.detailHtml}</div>
+      <button type="button" class="${BTN.tertiary} self-start" data-alert-more="${i}">Read all</button>
+      <div class="mt-auto pt-2 border-t border-outline-variant/30 flex items-center justify-between gap-2 font-body-sm text-body-sm">
+        <span class="text-on-surface-variant">${waitedHtml(a)}</span>
+        <span class="flex items-center gap-2">
+          ${a.noHook ? `<button type="button" class="${BTN.secondary}" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
+          ${clickable ? `<button type="button" class="${BTN.tertiary}" data-alert="${i}">${esc(a.actLabel || 'Open')}<span class="material-symbols-outlined text-[16px]">arrow_forward</span></button>` : ''}
+        </span>
+      </div>
     </div>`;
   };
 
@@ -1154,21 +1193,22 @@ SCREENS.team = async host => {
           <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${notesHtml}</div>
         </div></div></div>`;
   } else {
-    alertHost.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm">
-      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div style="min-width:0">
+    alertHost.innerHTML = `<div class="flex flex-col gap-space-sm">
+      <div class="flex items-end justify-between gap-space-sm px-1"><div class="min-w-0">
         <div class="font-headline-md text-headline-md text-on-surface">Needs attention · ${num(alerts.length)}</div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc(CHECKED)}</div></div></div>
-      <div>${alerts.map(alertItem).join('')}</div>
-      <div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
-        <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${notesHtml}</div></div></div>`;
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(CHECKED)}</div></div></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-space-md items-start">${alerts.map(alertItem).join('')}</div>
+      <div class="flex items-start gap-3 px-space-md py-3 rounded-lg bg-surface-container-low">
+        <span class="material-symbols-outlined text-outline text-[18px]" aria-hidden="true">info</span>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${notesHtml}</div></div></div>`;
     const fire = i => { const a = alerts[Number(i)]; if (a && typeof a.act === 'function') a.act(); };
-    alertHost.querySelectorAll('[data-alert]').forEach(node => {
-      node.addEventListener('click', () => fire(node.dataset.alert));
-      node.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(node.dataset.alert); }
-      });
-    });
+    alertHost.querySelectorAll('[data-alert]').forEach(node => node.addEventListener('click', () => fire(node.dataset.alert)));
+    alertHost.querySelectorAll('[data-alert-more]').forEach(b => b.addEventListener('click', () => {
+      const d = alertHost.querySelector(`[data-alert-detail="${b.dataset.alertMore}"]`);
+      const open = d.className === DETAIL.clamp;
+      d.className = open ? DETAIL.full : DETAIL.clamp;
+      b.textContent = open ? 'Show less' : 'Read all';
+    }));
   }
 
   if (!users && !perf) return;   /* the strip already carries the failure */
@@ -1264,6 +1304,7 @@ SCREENS.team = async host => {
     { label: 'Name', strong: true, sort: 'name', render: r => `<div style="display:flex;align-items:center;gap:10px">
         <div class="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-label-numeric-sm text-label-numeric-sm font-bold shrink-0">${esc(initials(r.name))}</div>
         <div><div>${esc(r.name || 'Unnamed')}</div>
+          <div class="font-label-numeric-sm text-[12px] text-outline">${r.email ? esc(r.email) : 'No email on file'}</div>
           ${r.unlinked ? '<div class="font-body-sm text-body-sm text-amber-700 mt-0.5">Not in the user directory</div>' : ''}
         </div></div>` },
     /* Contact, spelled out rather than implied. The phone line is the point of
@@ -1271,9 +1312,7 @@ SCREENS.team = async host => {
        and a rep is the one kind of person this dashboard cannot do that for. The
        dash is rendered with the reason on it so nobody reads it as "this rep did
        not give us their number" — the column does not exist to be empty. */
-    { label: 'Contact', render: r => `
-        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${r.email ? esc(r.email) : '<span class="text-on-surface-variant">No email on file</span>'}</div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Phone <span class="text-on-surface-variant" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
+    { label: 'Contact', render: r => `        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 whitespace-nowrap" title="${esc(NO_STAFF_PHONE)}">Phone \u2014 none recorded</div>
         <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${r.slack
           ? `Slack <span class="font-label-numeric-sm">${esc(r.slack)}</span>`
           : r.unlinked
@@ -1351,6 +1390,7 @@ SCREENS.team = async host => {
        anything, because a `users` row at pending_invite has a NULL email (that
        is why nobody was ever invited) and a control that looked like it knew
        the address would be inventing one. */
+    { label: 'Action', align: 'r', render: () => '<span class="material-symbols-outlined text-outline text-[20px]" aria-hidden="true">chevron_right</span>' },
     ...(pending.length ? [{ label: 'Access', align: 'r', render: r => isPending(r)
         ? `<button class="${BTN.secondary}" data-goaccess aria-label="Give ${esc(r.name || 'this team member')} access to NEXUS"
              title="${esc(NO_INVITE)}">Give access</button>`
@@ -1819,51 +1859,52 @@ SCREENS.team = async host => {
       list = stateEmpty('No access records came back',
         'The read succeeded and returned nobody — not even the account you are signed in as, which should always appear. Nothing has been changed; report this rather than acting on it.', 'help');
     } else {
-      list = `<div>${rows.map(r => {
+      /* The Stitch "Who Has Access" table: one row per login, the role and the
+         staff-record link as inline controls, the approval state, and the
+         action at the end. A removal being confirmed opens a full-width row
+         under its own. */
+      const TH = 'py-3 px-4 text-left align-bottom';
+      list = `<div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+        <thead><tr class="bg-surface-container-low border-b border-outline-variant/30 text-outline font-table-header text-table-header uppercase">
+          <th class="${TH}">User</th><th class="${TH}">Email</th><th class="${TH}">Role</th><th class="${TH}">Staff record</th><th class="${TH}">Last sign-in</th><th class="${TH}">Approver</th><th class="py-3 px-4 text-right align-bottom">Actions</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm text-on-surface">${rows.map(r => {
         const n = acLeadsFor(r.staff_user_id);
         const confirming = acConfirm === r.auth_user_id;
-        return `<div style="padding:14px 20px;border-top:1px solid var(--line)">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-            <div style="flex:2;min-width:220px">
-              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">· you</span>' : ''}</div>
-              <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${esc(r.email || 'no address on the account')}</div>
-              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
-                ? `last signed in ${esc(ago(r.last_sign_in_at))}`
-                : 'has never signed in'}</div>
-            </div>
-            <div style="flex:2;min-width:240px">${acRoleCell(r, mayManage, mayOwner)}</div>
-            <div style="flex:2;min-width:240px">${acStaffCell(r, mayManage)}</div>
-            <div style="flex:1;min-width:150px">
+        return `<tr class="hover:bg-surface-container-low transition-colors align-top">
+          <td class="py-3 px-4"><div class="font-semibold">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="font-body-sm text-body-sm text-on-surface-variant">· you</span>' : ''}</div>
+            <div class="font-body-sm text-[12px] text-outline">Added ${esc(dubaiStamp(r.member_since))}</div></td>
+          <td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm">${esc(r.email || 'no address on the account')}</td>
+          <td class="py-3 px-4 min-w-[220px]">${acRoleCell(r, mayManage, mayOwner)}</td>
+          <td class="py-3 px-4 min-w-[220px]">${acStaffCell(r, mayManage)}</td>
+          <td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm whitespace-nowrap">${r.last_sign_in_at ? esc(ago(r.last_sign_in_at)) : '<span class="text-on-surface-variant">Never signed in</span>'}</td>
+          <td class="py-3 px-4 min-w-[150px]">
               ${/* NULL is not false. No inventory_action_policy row means nobody
                     has STATED who may approve, which is a different answer from
                     "this person may not". */''}
               ${r.is_approver === true
-                ? `${pill('Can approve', 'ok')}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">by their account role</div>`
+                ? `${pill('Can approve', 'ok')}<div class="font-body-sm text-[12px] text-on-surface-variant">by their account role</div>`
                 : r.is_approver === false
                   ? '<span class="text-on-surface-variant">Not an approver</span>'
-                  : `<span class="text-on-surface-variant">Not stated</span><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
-            </div>
-            <div style="flex:0 0 auto">
+                  : '<span class="text-on-surface-variant" title="This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.">Not stated</span>'}</td>
+          <td class="py-3 px-4 text-right">
               ${mayManage && !confirming
-                ? `<button class="${BTN.tertiary}" data-acrevoke="${esc(r.auth_user_id)}">Remove access</button>`
-                : mayManage ? '' : '<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">—</span>'}
-            </div>
-          </div>
-          ${confirming ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:10px">
+                ? `<button type="button" class="${BTN.tertiary}" data-acrevoke="${esc(r.auth_user_id)}"><span class="material-symbols-outlined text-[16px]">person_remove</span>Remove access</button>`
+                : mayManage ? '' : '<span class="text-on-surface-variant">—</span>'}</td>
+        </tr>
+        ${confirming ? `<tr><td colspan="7" class="px-4 pb-3"><div class="${bannerClass('hot')}">
             <span class="material-symbols-outlined">warning</span>
-            <div style="white-space:normal">
-              <div style="font-weight:500">Remove ${esc(r.email || r.staff_name || 'this account')} from ${esc(r.tenant_name || 'this dealership')}?</div>
-              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
-              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${n == null
+            <div>
+              <div class="font-semibold">Remove ${esc(r.email || r.staff_name || 'this account')} from ${esc(r.tenant_name || 'this dealership')}?</div>
+              <div class="mt-1.5">${esc(REVOKE_MEANS)}</div>
+              <div class="mt-1.5">${n == null
                 ? 'They are not linked to a staff record, so no lead on this screen is filed against them.'
                 : `${num(n)} of the ${num((leads || []).length)} leads read on this screen ${n === 1 ? 'is' : 'are'} assigned to their staff record and will stay assigned${leadsCapped ? ', and that read is capped so there may be more' : ''}.`}</div>
-              <div style="margin-top:10px">
-                <button class="${BTN.secondary}" data-acrevokeyes="${esc(r.auth_user_id)}">Confirm removal</button>
-                <button class="${BTN.tertiary}" data-acrevokeno>Cancel</button>
+              <div class="mt-2.5 flex gap-2">
+                <button type="button" class="${BTN.destructive}" data-acrevokeyes="${esc(r.auth_user_id)}">Confirm removal</button>
+                <button type="button" class="${BTN.secondary}" data-acrevokeno>Cancel</button>
               </div>
-            </div></div>` : ''}
-        </div>`;
-      }).join('')}</div>`;
+            </div></div></td></tr>` : ''}`;
+      }).join('')}</tbody></table></div>`;
     }
 
     /* Pending is its own list because a pending person is NOT a member: they

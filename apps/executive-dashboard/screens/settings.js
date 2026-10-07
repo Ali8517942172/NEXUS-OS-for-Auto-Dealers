@@ -80,7 +80,7 @@
 import { HOOK, ME, SESSION, canInviteTeam, db, edgeFn, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
-import { ago, clock, dubaiTime, esc, n0, num, pct, tone } from '../lib/format.js';
+import { ago, clock, dubaiTime, esc, initials, n0, num, pct, tone } from '../lib/format.js';
 import { HEALTH_WORDS, OUTCOME, healthWords, outcomeOf, outcomeWords } from '../lib/health.js';
 import { renderIntegrations } from '../lib/integrations.js';
 import { NAV, SCREENS, flatNav, go } from '../lib/nav.js';
@@ -782,7 +782,11 @@ SCREENS.settings = async host => {
 
   const prof = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md');
   prof.id = 'setProfile';
-  prof.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Signed in</div>
+  prof.innerHTML = `<div class="flex items-center justify-between mb-space-sm"><span class="font-table-header text-table-header uppercase tracking-wider text-on-surface-variant font-semibold">Session profile</span>${ME?.role ? statusChip('connected', ME.role) : ''}</div>
+    <div class="flex items-center gap-3 p-space-sm rounded-lg bg-surface-container-low mb-space-sm">
+      <div class="w-12 h-12 rounded-lg bg-primary-container text-on-primary flex items-center justify-center font-label-numeric-md text-label-numeric-md font-bold shrink-0">${esc(initials(ME?.name || email || '?'))}</div>
+      <div class="min-w-0"><div class="font-headline-md text-headline-md text-on-surface truncate">Signed in</div>
+        <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant truncate">${esc(email || 'unknown')}</div></div></div>
     <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">Identity as the sign-in service and the staff record each see it</div>
     ${noMeRow ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
       <div>No row in <span class="font-label-numeric-sm">users</span> matches ${esc(email || 'this account')}. The read succeeded and came back empty, which is what makes this a real absence: the account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
@@ -2237,17 +2241,26 @@ SCREENS.settings = async host => {
   const isOn = id => (id === 'compact') === savedCompact;
 
   const look = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); prefsMain.appendChild(look);
-  look.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Appearance</div>
-    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">How tightly tables are packed</div>
-    <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="setDensity" role="group" aria-label="Table density">
-      ${DENSITIES.map(d => `<button type="button" data-d="${d.id}" class="${isOn(d.id) ? 'on' : ''}"
-        aria-pressed="${isOn(d.id) ? 'true' : 'false'}">${esc(d.label)}</button>`).join('')}
+  look.innerHTML = `<div class="flex items-start gap-2.5 mb-space-sm"><span class="material-symbols-outlined text-primary text-[22px]">palette</span>
+      <div><h2 class="font-headline-md text-headline-md text-on-surface">Appearance &amp; locale</h2>
+        <p class="font-body-sm text-body-sm text-on-surface-variant">Table density, and how times are shown.</p></div></div>
+    <div class="flex flex-col divide-y divide-outline-variant/30">
+      <div class="py-3 flex items-center justify-between gap-space-md">
+        <div><div class="font-body-md text-body-md font-semibold text-on-surface">Data table density</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" id="setDensityHint">${esc(DENSITIES.find(d => isOn(d.id)).hint)}</div></div>
+        <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="setDensity" role="group" aria-label="Table density">
+          ${DENSITIES.map(d => `<button type="button" data-d="${d.id}" class="${isOn(d.id) ? 'on' : ''}"
+            aria-pressed="${isOn(d.id) ? 'true' : 'false'}">${esc(d.label)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="py-3 flex items-center justify-between gap-space-md">
+        <div><div class="font-body-md text-body-md font-semibold text-on-surface">Timestamp standard</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">Gulf Standard Time (GST, UTC+04:00), 24-hour, on every screen.</div></div>
+        <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-1 rounded bg-surface-container text-on-surface font-semibold whitespace-nowrap">24-HOUR · GST</span>
+      </div>
     </div>
-    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" id="setDensityHint" style="margin-top:10px">${
-      esc(DENSITIES.find(d => isOn(d.id)).hint)}</div>
-    <div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:16px;margin-bottom:0">
-      <span class="material-symbols-outlined" style="font-size:20px">info</span>
-      <div>${esc(NO_PERSIST)}</div>
+    <div class="flex items-start gap-2 pt-space-sm font-body-sm text-body-sm text-on-surface-variant">
+      <span class="material-symbols-outlined text-[18px] text-outline">info</span><span>${esc(NO_PERSIST)}</span>
     </div>`;
 
   const dseg = $('setDensity');
@@ -2267,17 +2280,22 @@ SCREENS.settings = async host => {
      from every list and count unless this is on. */
   const priv = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); prefsMain.appendChild(priv);
   const hidden = hiddenTestCount();
-  priv.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Privacy</div>
-    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">For screen sharing, and for what appears in lists</div>
-    <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
-      <input type="checkbox" id="setPrivacy" ${privacyOn() ? 'checked' : ''} />
-      <span><strong>Privacy mode</strong><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
-    </label>
-    <label style="display:flex;gap:10px;align-items:flex-start">
-      <input type="checkbox" id="setShowTests" ${showTestRecords() ? 'checked' : ''} />
-      <span><strong>Show internal test records</strong><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
-    </label>
-    ${hidden && !showTestRecords() ? `<div class="font-body-sm text-body-sm text-outline mt-0.5" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
+  const ROW_BOX = 'flex items-center justify-between gap-space-md p-space-sm rounded-lg bg-surface-container-low cursor-pointer';
+  const CHECK = 'w-5 h-5 shrink-0 accent-primary cursor-pointer';
+  priv.innerHTML = `<div class="flex items-start justify-between gap-space-sm mb-space-sm">
+      <div class="flex items-start gap-2.5"><span class="material-symbols-outlined text-primary text-[22px]">visibility_off</span>
+        <div><h2 class="font-headline-md text-headline-md text-on-surface">Showroom privacy mode</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">Masks customer names, phones and emails on every screen, for screen sharing and floor displays. Remembered by this browser.</p></div></div>
+      ${privacyOn() ? statusChip('live', 'Active protection') : statusChip('not-tested', 'Off')}</div>
+    <div class="flex flex-col gap-space-sm">
+      <label class="${ROW_BOX}"><span><span class="font-body-md text-body-md font-semibold text-on-surface">Privacy mode</span>
+        <span class="block font-body-sm text-body-sm text-on-surface-variant">Masks customer names, phones and emails. Also on the top bar.</span></span>
+        <input type="checkbox" id="setPrivacy" class="${CHECK}" ${privacyOn() ? 'checked' : ''} /></label>
+      <label class="${ROW_BOX}"><span><span class="font-body-md text-body-md font-semibold text-on-surface">Show internal test records</span>
+        <span class="block font-body-sm text-body-sm text-on-surface-variant">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</span></span>
+        <input type="checkbox" id="setShowTests" class="${CHECK}" ${showTestRecords() ? 'checked' : ''} /></label>
+    </div>
+    ${hidden && !showTestRecords() ? `<div class="font-body-sm text-body-sm text-outline mt-space-sm">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
   $('setPrivacy').addEventListener('change', e => setPrivacy(e.target.checked));
   $('setShowTests').addEventListener('change', e => setShowTestRecords(e.target.checked));  // app.js re-renders on the change
 
