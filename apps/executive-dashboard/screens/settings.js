@@ -80,15 +80,17 @@
 import { HOOK, ME, SESSION, canInviteTeam, db, edgeFn, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
-import { ago, clock, dubaiTime, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { ago, clock, dubaiTime, esc, n0, num, pct, tone } from '../lib/format.js';
 import { HEALTH_WORDS, OUTCOME, healthWords, outcomeOf, outcomeWords } from '../lib/health.js';
 import { renderIntegrations } from '../lib/integrations.js';
-import { SCREENS, go } from '../lib/nav.js';
-import { applyDensity } from '../lib/prefs.js';
+import { NAV, SCREENS, flatNav, go } from '../lib/nav.js';
+import { applyDensity, readFlag, writeFlag } from '../lib/prefs.js';
+import { PALETTE_PREF } from '../lib/command-palette.js';
+import { sectionHeader, statusChip, trustFooter } from '../lib/stitch-ui.js';
 import { hiddenTestCount, privacyOn, setPrivacy, setShowTestRecords, showTestRecords } from '../lib/privacy.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { tenantState } from '../lib/tenant.js';
-import { closeDrawer, openDrawer, table, wireRows } from '../lib/ui.js';
+import { tenantLabel, tenantState } from '../lib/tenant.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+import { BTN, bannerClass, openDrawer, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/admin-kit.js';
 
 /* Bounded read of the knowledge base. Where the cap is hit the panel says so —
    a KB listing that looks complete but is a window would understate what Ask AI
@@ -487,6 +489,178 @@ function expiryText(expiresAt) {
   return { text: `valid until ${at}, ${left} min from now`, bad: false };
 }
 
+/* ── My preferences (7 Oct 2026) ───────────────────────────────────────────
+   Per-person, per-device settings, kept by lib/prefs.js (localStorage, wrapped
+   so a blocked store simply means "the default"). Nothing here is shared with
+   the dealership or stored in the database, and the section says so. What each
+   one actually does TODAY is stated on it, because a switch that is saved and
+   honoured by nothing would be the product pretending:
+
+     Default landing screen — HONOURED. When the app opens with no screen in the
+       address, the block below sends it to the saved screen instead of Today's
+       Money Leaks. It runs at module load (this file is imported eagerly by
+       app.js, before boot() chooses its first screen) and only fills an EMPTY
+       hash, so every bookmark and deep link still wins.
+     Reduce motion — HONOURED, by the two Tailwind classes in REDUCE_MOTION on
+       <body>, applied here at load and on change.
+     Keyboard shortcuts — HONOURED by lib/command-palette.js, which owns the
+       shortcuts and stops Ctrl K / ? / G-then-X when this is off.
+     Notification categories — SAVED ONLY. The bell and its drawer (lib/shell.js)
+       do not read them yet, and each row says so.
+
+   lib/prefs.js stores flags ('1'/'0'), so the landing screen is one flag per
+   screen id with exactly one set. */
+const PREF_LANDING = id => `nexus.pref.landing.${id}`;
+const PREF_REDUCE_MOTION = 'nexus.pref.reduceMotion';
+const PREF_NOTIFY = k => `nexus.pref.notify.${k}`;
+const REDUCE_MOTION = ['[&_*]:!transition-none', '[&_*]:!animate-none'];
+const landingChoices = () => flatNav().filter(i => !i.roadmap && i.sidebar !== false);
+const savedLanding = () => landingChoices().find(i => readFlag(PREF_LANDING(i.id), false)) || null;
+const applyReduceMotion = on => { try { REDUCE_MOTION.forEach(c => document.body.classList.toggle(c, !!on)); } catch { /* no body yet */ } };
+if (typeof document !== 'undefined') {
+  applyReduceMotion(readFlag(PREF_REDUCE_MOTION, false));
+  const land = savedLanding();
+  if (land && !location.hash.slice(1)) location.hash = land.id;
+}
+const NOTIFY_CATS = [
+  ['urgent', 'Urgent', 'HOT items on the attention list: a customer waiting, a lead with no owner.'],
+  ['action', 'Action required', 'WARM items that need someone to act today.'],
+  ['info', 'Info', 'Everything else the attention list files.'],
+  ['system', 'System', 'Automation failures — a workflow that did not deliver.'],
+];
+const SWITCH = {
+  on:  'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-primary transition-colors',
+  off: 'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-surface-container-high transition-colors',
+};
+const KNOB = { on: 'inline-block h-5 w-5 translate-x-5 rounded-full bg-white shadow transition-transform', off: 'inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform' };
+const toggle = (key, on, label) => `<button type="button" role="switch" aria-checked="${on}" aria-label="${esc(label)}" data-pref="${esc(key)}" class="${on ? SWITCH.on : SWITCH.off}"><span class="${on ? KNOB.on : KNOB.off}"></span></button>`;
+const prefCard = (icon, title, sub, tagHtml, bodyHtml) => `<section class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md flex flex-col gap-space-md">
+    <div class="flex items-start justify-between gap-space-sm"><div class="flex items-start gap-2.5">
+      <div class="w-9 h-9 rounded-lg bg-primary-container/10 text-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">${icon}</span></div>
+      <div><h2 class="font-headline-md text-headline-md text-on-surface">${title}</h2><p class="font-body-sm text-body-sm text-on-surface-variant">${sub}</p></div></div>
+      ${tagHtml}</div>${bodyHtml}</section>`;
+const tag = t => `<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-semibold uppercase whitespace-nowrap">${esc(t)}</span>`;
+
+function buildPrefs(host) {
+  const draw = () => {
+    const land = savedLanding();
+    const sc = readFlag(PALETTE_PREF.shortcuts, true);
+    const rm = readFlag(PREF_REDUCE_MOTION, false);
+    const opts = landingChoices().map(i => `<option value="${esc(i.id)}"${land && land.id === i.id ? ' selected' : ''}>${esc(i.title)}</option>`).join('');
+    host.innerHTML = `
+      ${prefCard('desktop_windows', 'Operational defaults', 'Where NEXUS opens for you on this device.', tag('This device'), `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+          <div class="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-space-sm">
+            <div class="flex items-center justify-between gap-2"><span class="font-body-md text-body-md font-semibold text-on-surface">Default landing screen</span>${statusChip('live', 'Applied')}</div>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">The screen NEXUS opens on when you start it without a link to a particular screen.</p>
+            <select data-landing class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface">
+              <option value=""${land ? '' : ' selected'}>Today's Money Leaks (the default)</option>${opts}</select>
+            <p class="font-label-numeric-sm text-label-numeric-sm text-outline">A bookmark or link to a screen always wins over this.</p>
+          </div>
+          <div class="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-space-sm">
+            <div class="flex items-center justify-between gap-2"><span class="font-body-md text-body-md font-semibold text-on-surface">Default showroom branch</span>${statusChip('planned')}</div>
+            <p class="font-body-sm text-body-sm text-on-surface-variant">This build answers as one dealership with one rooftop, so there is no branch to choose. It arrives with Group & Branches.</p>
+            <select disabled class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container font-body-md text-body-md text-outline"><option>—</option></select>
+          </div>
+        </div>`)}
+      ${prefCard('notifications', 'Notification categories', 'Which kinds of attention item you want to be told about.', statusChip('partial', 'Saved only'), `
+        <p class="font-body-sm text-body-sm text-on-surface-variant -mt-space-sm">Saved on this device. The bell and the notifications drawer do not read these yet — they still list every category — so turning one off here hides nothing today.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">${NOTIFY_CATS.map(([k, label, why]) => {
+          const on = readFlag(PREF_NOTIFY(k), true);
+          return `<div class="p-space-md rounded-lg bg-surface-container-low flex items-start justify-between gap-space-md">
+            <div><div class="font-body-md text-body-md font-semibold text-on-surface">${esc(label)}</div><p class="font-body-sm text-body-sm text-on-surface-variant">${esc(why)}</p></div>
+            ${toggle(PREF_NOTIFY(k), on, label)}</div>`;
+        }).join('')}</div>`)}
+      ${prefCard('accessibility_new', 'Interface & accessibility', 'How NEXUS behaves under your keyboard and on your screen.', tag('This device'), `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+          <div class="p-space-md rounded-lg bg-surface-container-low flex flex-col justify-between gap-space-sm">
+            <div><div class="font-body-md text-body-md font-semibold text-on-surface">Keyboard shortcuts</div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant">Ctrl K to search or ask, G then L / I / C / D to jump, N for a walk-in, ? for the list.</p></div>
+            <div class="flex items-center justify-between"><span class="font-label-numeric-sm text-label-numeric-sm ${sc ? 'text-primary' : 'text-outline'}">${sc ? 'ENABLED' : 'DISABLED'}</span>${toggle(PALETTE_PREF.shortcuts, sc, 'Keyboard shortcuts')}</div>
+          </div>
+          <div class="p-space-md rounded-lg bg-surface-container-low flex flex-col justify-between gap-space-sm">
+            <div><div class="font-body-md text-body-md font-semibold text-on-surface">Reduce motion</div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant">Stops animations and transitions — the pulsing dots, sliding panels and fades.</p></div>
+            <div class="flex items-center justify-between"><span class="font-label-numeric-sm text-label-numeric-sm ${rm ? 'text-primary' : 'text-outline'}">${rm ? 'ENABLED' : 'DISABLED'}</span>${toggle(PREF_REDUCE_MOTION, rm, 'Reduce motion')}</div>
+          </div>
+          <div class="p-space-md rounded-lg bg-surface-container-low flex flex-col justify-between gap-space-sm">
+            <div><div class="font-body-md text-body-md font-semibold text-on-surface">Timezone & clock</div>
+              <p class="font-body-sm text-body-sm text-on-surface-variant">Every time in NEXUS is shown in Gulf Standard Time, whatever this computer is set to.</p></div>
+            <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-container-lowest font-label-numeric-sm text-label-numeric-sm text-on-surface"><span class="material-symbols-outlined text-[16px] text-outline">schedule</span>Asia/Dubai · GST (UTC+4)</div>
+          </div>
+        </div>`)}
+      <div data-pref-note class="font-body-sm text-body-sm text-on-surface-variant"></div>`;
+    host.querySelector('[data-landing]').addEventListener('change', e => {
+      const id = e.target.value;
+      let ok = true;
+      landingChoices().forEach(i => { ok = writeFlag(PREF_LANDING(i.id), i.id === id) && ok; });
+      host.querySelector('[data-pref-note]').textContent = ok
+        ? (id ? 'Saved on this device. NEXUS will open on that screen next time it starts without a link.' : 'Saved on this device. NEXUS will open on Today’s Money Leaks.')
+        : 'This browser would not let NEXUS remember that (site data is blocked or this is a private window), so nothing was saved.';
+    });
+    host.querySelectorAll('[data-pref]').forEach(b => b.addEventListener('click', () => {
+      const key = b.dataset.pref;
+      const def = key === PREF_REDUCE_MOTION ? false : true;
+      const on = !readFlag(key, def);
+      const ok = writeFlag(key, on);
+      if (key === PREF_REDUCE_MOTION) applyReduceMotion(on);
+      draw();
+      host.querySelector('[data-pref-note]').textContent = ok ? 'Saved on this device.' : 'This browser would not let NEXUS remember that, so it lasts until you reload.';
+    }));
+  };
+  draw();
+}
+
+/* ── Role home screens (7 Oct 2026) ────────────────────────────────────────
+   Stitch's table of "which screen each role lands on". There is no per-role
+   default stored anywhere in NEXUS — no table, no column — so this is display
+   only and says what is true: every role opens on the same screen unless the
+   person sets their own landing screen above. The roles are the six
+   tenant_members roles lib/data.js knows; the permission column says what each
+   is allowed, from the same lists canX() in lib/data.js uses. */
+const ROLE_ROWS = [
+  ['owner', 'Owner', 'Everything, including granting owner and the unit cost.'],
+  ['admin', 'Admin', 'Everything except granting owner.'],
+  ['manager', 'Manager', 'Reassigning leads, managing access below owner.'],
+  ['sales', 'Sales', 'Their own leads and conversations.'],
+  ['technician', 'Technician', 'Read-only outside their own work.'],
+  ['member', 'Member', 'Read-only.'],
+];
+function roleHomes(host) {
+  const def = flatNav().find(i => i.id === 'moneyleaks')?.title || "Today's Money Leaks";
+  host.innerHTML = `<section class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm overflow-hidden">
+    <div class="px-space-md py-3 flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+      <div class="flex items-start gap-2.5"><span class="material-symbols-outlined text-primary text-[22px]">admin_panel_settings</span>
+        <div><h2 class="font-headline-md text-headline-md text-on-surface">Role-based default home screens</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">What each role sees first when it signs in. Display only: NEXUS stores no per-role home screen today, so every role opens on ${esc(def)} unless the person picks their own landing screen under My preferences.</p></div></div>
+      <div class="flex items-center gap-2">${statusChip('coming-soon', 'Per-role defaults')}</div>
+    </div>
+    <div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+      <thead><tr class="bg-surface-container-low border-b border-outline-variant/30 text-outline font-table-header text-table-header uppercase">
+        <th class="py-3 px-4">Role</th><th class="py-3 px-4">Default home screen</th><th class="py-3 px-4">Route</th><th class="py-3 px-4">What the role may do</th><th class="py-3 px-4 text-right">Person can override</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm text-on-surface">${ROLE_ROWS.map(([id, label, may]) => `<tr class="h-11 hover:bg-surface-container-low transition-colors">
+        <td class="px-4"><span class="inline-flex items-center gap-2 font-semibold"><span class="w-2 h-2 rounded-full bg-primary"></span>${esc(label)}</span></td>
+        <td class="px-4">${esc(def)}</td><td class="px-4 font-label-numeric-sm text-label-numeric-sm text-primary">#moneyleaks</td>
+        <td class="px-4 text-on-surface-variant">${esc(may)}</td>
+        <td class="px-4 text-right"><span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface font-semibold">YES · PER DEVICE</span></td></tr>`).join('')}</tbody></table></div>
+  </section>`;
+}
+
+const SET_TABS = [
+  ['prefs', 'tune', 'My preferences'],
+  ['roles', 'account_tree', 'Role home screens'],
+  ['dealer', 'storefront', 'Dealership & team'],
+  ['health', 'monitor_heart', 'System health & probes'],
+  ['kb', 'menu_book', 'Knowledge base'],
+];
+const SET_TAB = {
+  on:  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold shadow-sm',
+  off: 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface font-body-sm text-body-sm font-semibold transition-colors',
+};
+const PANE = { on: 'flex flex-col gap-space-md', off: 'hide' };
+const INTG_TILE = ['rounded-xl', 'bg-surface-container-low', 'border', 'border-outline-variant/40'];
+let setTab = 'prefs';
+
 /* ── S14 · Settings ───────────────────────────────────────────────────────── */
 SCREENS.settings = async host => {
   /* `.ds-screen` is the class lib/design-system.css gates its handful of
@@ -497,27 +671,53 @@ SCREENS.settings = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* 7 Oct 2026 — the Stitch layout (settings-workspace-governance-preferences
+     --7e840f primary, settings-workspace-system-configuration--137c0f): a page
+     header and five tabs. Every card that was on this screen before is still on
+     it, unchanged in what it reads and says; the tabs only decide where it sits.
+     buildPrefs() and roleHomes() below are the two sections that are new. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  root.innerHTML = `${sectionHeader({ eyebrow: 'Settings / Workspace configuration', title: 'Settings — Workspace & System Configuration',
+      sub: 'Your own preferences on this device, how this dealership is set up, and whether the services NEXUS runs for it are healthy.' })}
+    <div class="flex flex-wrap items-center gap-1 -mt-space-sm" role="tablist" aria-label="Settings sections">
+      ${SET_TABS.map(([k, icon, label]) => `<button type="button" role="tab" data-set-tab="${k}" aria-selected="${k === setTab}" class="${k === setTab ? SET_TAB.on : SET_TAB.off}">
+        <span class="material-symbols-outlined text-[18px]">${icon}</span><span>${label}</span><span data-set-tab-count="${k}"></span></button>`).join('')}
+    </div>
+    ${SET_TABS.map(([k]) => `<div data-pane="${k}" class="${k === setTab ? PANE.on : PANE.off}"></div>`).join('')}`;
+  const pane = Object.fromEntries(SET_TABS.map(([k]) => [k, root.querySelector(`[data-pane="${k}"]`)]));
+  const showTab = k => {
+    setTab = k;
+    root.querySelectorAll('[data-set-tab]').forEach(b => {
+      const on = b.dataset.setTab === k;
+      b.className = on ? SET_TAB.on : SET_TAB.off;
+      b.setAttribute('aria-selected', String(on));
+    });
+    Object.entries(pane).forEach(([key, node]) => { node.className = key === k ? PANE.on : PANE.off; });
+  };
+  root.querySelectorAll('[data-set-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.setTab)));
+  /* An alert row jumps to the card it is about; the card may sit in another tab. */
+  const reveal = node => { const p = node && node.closest('[data-pane]'); if (p) showTab(p.dataset.pane); };
 
   /* ── The system-health strip ────────────────────────────────────────────
      Rendered first and filled last. Its inputs arrive at three different
      times — the database reads, the connectivity probes the tiles run, and the
      knowledge-base read — so it is recomputed as each lands rather than showing
      nothing until the slowest one is in. */
-  const alertCard = el('div', 'card flush');
+  const alertCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm');
   alertCard.id = 'setAlerts';
-  alertCard.innerHTML = `<div class="card-head">
+  alertCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm">
       <div>
-        <div class="card-title">System health</div>
-        <div class="card-sub" id="setAlertSub">Reading the attention list, the automation health figures and the newest failed runs…</div>
+        <div class="font-headline-md text-headline-md text-on-surface">System health</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" id="setAlertSub">Reading the attention list, the automation health figures and the newest failed runs…</div>
       </div>
       <div style="flex:1"></div>
       <div id="setAlertCount"></div>
-    </div><div class="pbody" id="setAlertBody">${stateLoading(2)}</div>`;
-  root.appendChild(alertCard);
+    </div><div class="p-space-md" id="setAlertBody">${stateLoading(2)}</div>`;
+  pane.health.appendChild(alertCard);
 
-  const top = el('div', 'grid g2 top'); top.style.marginTop = '16px'; root.appendChild(top);
+  const top = el('div', 'grid grid-cols-1 lg:grid-cols-12 gap-space-md items-start'); pane.prefs.appendChild(top);
+  const prefsMain = el('div', 'lg:col-span-8 flex flex-col gap-space-md');
 
   /* Screen-scoped state. Each field is null until its read lands and carries
      its own error, because "the health view is down" and "the audit log is
@@ -553,8 +753,8 @@ SCREENS.settings = async host => {
   /* Everything the users row would have told us is unknown rather than unset in
      that case, and "not set" cannot carry the difference. */
   const meMissing = whenAbsent => meUnknown
-    ? `<span class="t-muted" title="${esc(`users could not be read: ${meErr}`)}">unknown — <span class="mono">users</span> could not be read</span>`
-    : `<span class="t-muted">${esc(whenAbsent)}</span>`;
+    ? `<span class="text-on-surface-variant" title="${esc(`users could not be read: ${meErr}`)}">unknown — <span class="font-label-numeric-sm">users</span> could not be read</span>`
+    : `<span class="text-on-surface-variant">${esc(whenAbsent)}</span>`;
 
   /* The one person this screen lists is the one reading it, and a person is
      shown with their number beside their name. There is no number to show, and
@@ -577,30 +777,64 @@ SCREENS.settings = async host => {
     ? 'This account has somewhere to record a phone number and nothing is recorded in it.'
     : NO_STAFF_PHONE;
   const phoneCell = mePhone
-    ? `<span class="mono">${esc(mePhone)}</span>`
-    : `<span class="t-muted" title="${esc(phoneWhy)}">no number on record</span>`;
+    ? `<span class="font-label-numeric-sm">${esc(mePhone)}</span>`
+    : `<span class="text-on-surface-variant" title="${esc(phoneWhy)}">no number on record</span>`;
 
-  const prof = el('div', 'card');
+  const prof = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md');
   prof.id = 'setProfile';
-  prof.innerHTML = `<div class="card-title" style="margin-bottom:4px">Signed in</div>
-    <div class="card-sub" style="margin-bottom:14px">Identity as the sign-in service and the staff record each see it</div>
-    ${noMeRow ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
-      <div>No row in <span class="mono">users</span> matches ${esc(email || 'this account')}. The read succeeded and came back empty, which is what makes this a real absence: the account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
-    ${meUnknown ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">help</span>
-      <div>The <span class="mono">users</span> table could not be read for ${esc(email || 'this account')}, so whether this account has a staff record is <strong>unknown</strong> — not absent. The read failed with <span class="mono">${esc(meErr)}</span>. Name, role and status below are blank for that reason and no other; they are not evidence that nothing is stored. Role-keyed behaviour elsewhere in the dashboard is running without a role until this read succeeds.</div></div>` : ''}
-    <dl class="kv">
+  prof.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Signed in</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">Identity as the sign-in service and the staff record each see it</div>
+    ${noMeRow ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
+      <div>No row in <span class="font-label-numeric-sm">users</span> matches ${esc(email || 'this account')}. The read succeeded and came back empty, which is what makes this a real absence: the account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
+    ${meUnknown ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm"><span class="material-symbols-outlined" style="font-size:20px">help</span>
+      <div>The <span class="font-label-numeric-sm">users</span> table could not be read for ${esc(email || 'this account')}, so whether this account has a staff record is <strong>unknown</strong> — not absent. The read failed with <span class="font-label-numeric-sm">${esc(meErr)}</span>. Name, role and status below are blank for that reason and no other; they are not evidence that nothing is stored. Role-keyed behaviour elsewhere in the dashboard is running without a role until this read succeeds.</div></div>` : ''}
+    <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0">
       <dt>Email</dt><dd>${esc(email || 'unknown')}</dd>
       <dt>Name</dt><dd>${ME?.name ? esc(ME.name) : meMissing('not set in users')}
-        <span class="t-muted">·</span> ${phoneCell}</dd>
+        <span class="text-on-surface-variant">·</span> ${phoneCell}</dd>
       <dt>Role</dt><dd>${ME?.role ? esc(ME.role) : meMissing('no role on record')}</dd>
       <dt>Account status</dt><dd>${ME?.status ? esc(ME.status) : meMissing('not set')}</dd>
-      <dt>Auth user id</dt><dd class="mono">${esc(SESSION?.user?.id || 'unknown')}</dd>
+      <dt>Auth user id</dt><dd class="font-label-numeric-sm">${esc(SESSION?.user?.id || 'unknown')}</dd>
       <dt>Access token</dt><dd>${exp
-        ? `<span class="${exp.bad ? 't-hot' : ''}">${esc(exp.text)}</span>`
-        : '<span class="t-muted">no expiry on the session object</span>'}</dd>
+        ? `<span class="${exp.bad ? 'text-red-700' : ''}">${esc(exp.text)}</span>`
+        : '<span class="text-on-surface-variant">no expiry on the session object</span>'}</dd>
     </dl>
-    <div class="ds-cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by the sign-in service, not by this dashboard. Roles are edited on the Team screen.</div>`;
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by the sign-in service, not by this dashboard. Roles are edited on the Team screen.</div>`;
+  prof.className = 'lg:col-span-4 rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md';
   top.appendChild(prof);
+  top.appendChild(prefsMain);
+  const prefsBox = el('div', 'flex flex-col gap-space-md');
+  prefsMain.appendChild(prefsBox);
+  buildPrefs(prefsBox);
+  roleHomes(pane.roles);
+
+  /* ── Dealership (the "Showroom & legal entity" tab of the design) ───────────
+     Only what this account can read about its own dealership: the membership
+     read lib/tenant.js already made. Trade licence, tax registration and
+     showroom addresses are not recorded anywhere in NEXUS, so the card says
+     that instead of drawing empty fields that read like unfilled forms. */
+  {
+    const ts = tenantState();
+    const t = ts.active;
+    /* tenantLabel() is lib/tenant.js's own reading of the dealership's name
+       (name, else slug) — the same words the scope chip in the topbar shows. */
+    const dealerTitle = t ? str(tenantLabel()) : '';
+    const role = ts.ok && Array.isArray(ts.memberships) && t ? (ts.memberships.find(m => m.tenant_id === t.id) || {}).role : null;
+    const dl = el('section', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md flex flex-col gap-space-md');
+    dl.innerHTML = `<div class="flex items-start justify-between gap-space-sm"><div class="flex items-start gap-2.5">
+        <div class="w-9 h-9 rounded-lg bg-primary-container/10 text-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">storefront</span></div>
+        <div><h2 class="font-headline-md text-headline-md text-on-surface">Dealership</h2><p class="font-body-sm text-body-sm text-on-surface-variant">The dealership every screen in NEXUS is scoped to for this account.</p></div></div>
+        ${!ts.loaded ? statusChip('pending', 'Reading') : !ts.ok ? statusChip('not-tested', 'Unknown') : t ? statusChip(str(t.status) === 'active' ? 'live' : 'restricted', str(t.status) || 'Status not recorded') : statusChip('blocked', 'No dealership')}</div>
+      <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0">
+        <dt>Name</dt><dd>${t ? esc(dealerTitle || 'No name recorded') : '—'}</dd>
+        <dt>Account id</dt><dd class="font-label-numeric-sm">${t ? esc(str(t.slug) || '—') : '—'}</dd>
+        <dt>Your role here</dt><dd>${role ? esc(role) : '—'}</dd>
+        <dt>Rooftops</dt><dd>One. This build answers as one dealership; several rooftops arrive with Group &amp; Branches (planned).</dd>
+        <dt>Legal entity &amp; tax</dt><dd class="text-on-surface-variant">Not recorded in NEXUS — there is no field for a trade licence or tax registration number.</dd>
+      </dl>
+      ${!ts.ok && ts.loaded ? '<p class="font-body-sm text-body-sm text-on-surface-variant">The membership read failed, so which dealership this account belongs to is unknown — not none.</p>' : ''}`;
+    pane.dealer.appendChild(dl);
+  }
 
   /* ── Connection ─────────────────────────────────────────────────────────
      "Which project am I actually looking at?" is the first question of every
@@ -655,31 +889,31 @@ SCREENS.settings = async host => {
      in full, in red, because a dealership whose Ask AI has been dead for a week
      is entitled to know that it is dead by configuration rather than by fault. */
   const envBroken = ENV_VARS.filter(v => (v.opaque ? anonBroken : !str(v.value)));
-  const envCard = el('div', 'card');
+  const envCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md');
   envCard.id = 'setEnvCard';
-  envCard.innerHTML = `<div class="card-title" style="margin-bottom:4px">Connection</div>
-    <div class="card-sub" style="margin-bottom:14px">Whether this deployment is configured to reach the services NEXUS runs for you</div>
-    <dl class="kv">
+  envCard.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Connection</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">Whether this deployment is configured to reach the services NEXUS runs for you</div>
+    <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0">
       <dt>NEXUS data</dt><dd>${envErrors.length || !SUPABASE_URL
-        ? '<span class="t-hot">not configured — no screen on this dashboard can load</span>'
+        ? '<span class="text-red-700">not configured — no screen on this dashboard can load</span>'
         : 'configured'}</dd>
       <dt>Automation</dt><dd>${N8N_BASE
         ? 'configured'
-        : '<span class="t-hot">not configured — nothing on this dashboard can start a workflow</span>'}</dd>
+        : '<span class="text-red-700">not configured — nothing on this dashboard can start a workflow</span>'}</dd>
       <dt>Credentials</dt><dd>${anonBroken
-        ? '<span class="t-hot">missing or malformed</span>'
-        : 'held by NEXUS <span class="t-muted">· never shown here, in full or masked</span>'}</dd>
+        ? '<span class="text-red-700">missing or malformed</span>'
+        : 'held by NEXUS <span class="text-on-surface-variant">· never shown here, in full or masked</span>'}</dd>
     </dl>
-    ${envBroken.length ? `<div class="banner hot" style="margin-top:14px">
+    ${envBroken.length ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:14px">
       <span class="material-symbols-outlined" style="font-size:20px">error</span>
       <div><strong>This deployment is missing configuration NEXUS supplies, and ${envBroken.length === 1 ? 'something is' : 'things are'} switched off because of it.</strong>
-      ${envBroken.map(v => `<div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(v.dead)}</div>`).join('')}
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">Nothing here can be fixed from this screen or by this dealership — it is set when NEXUS deploys the dashboard. Report it and it can be redeployed.</div></div></div>` : ''}
-    <div class="banner info" style="margin-top:16px;margin-bottom:0">
+      ${envBroken.map(v => `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:6px;white-space:normal">${esc(v.dead)}</div>`).join('')}
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:6px;white-space:normal">Nothing here can be fixed from this screen or by this dealership — it is set when NEXUS deploys the dashboard. Report it and it can be redeployed.</div></div></div>` : ''}
+    <div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">lock</span>
       <div>Keys, credentials and secrets are never displayed or accepted on this screen, masked or otherwise. Neither are the addresses of the services behind it: which host, which project and which build this dashboard points at is NEXUS's operational configuration, and this screen states only whether each one is reachable.</div>
     </div>`;
-  top.appendChild(envCard);
+  pane.health.appendChild(envCard);
 
   /* ── Connectivity ───────────────────────────────────────────────────────
      renderIntegrations owns the probes themselves; this screen owns which of
@@ -692,12 +926,12 @@ SCREENS.settings = async host => {
      disagree about what "reachable" means; naming the allow-list at the call
      site is what stops them disagreeing about what may be *called*, since a
      probe added for Automation's benefit would otherwise start firing here. */
-  const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; root.appendChild(conn);
-  conn.innerHTML = `<div class="card-head" style="padding:0 0 14px">
-      <div><div class="card-title">Connectivity</div>
-        <div class="card-sub" id="setConnSub">Live checks, from this browser, against the services this dashboard depends on</div></div>
+  const conn = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); conn.id = 'setConn'; pane.health.appendChild(conn);
+  conn.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm" style="padding:0 0 14px">
+      <div><div class="font-headline-md text-headline-md text-on-surface">Connectivity</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" id="setConnSub">Live checks, from this browser, against the services this dashboard depends on</div></div>
       <div style="flex:1"></div>
-      <button class="btn sm" id="setRecheck">Re-run checks</button>
+      <button class="${BTN.secondary}" id="setRecheck">Re-run checks</button>
     </div>
     <div id="setIntg">${stateLoading(2)}</div>
     ${/* CONTROL-PLANE.md 5.3. This block printed every webhook this build can
@@ -707,12 +941,12 @@ SCREENS.settings = async host => {
           sits behind which feature. What replaced it is the count and the
           capability, which is the half that is the dealership's. */ ''}
     <div style="margin-top:18px">
-      <div class="label-caps" style="margin-bottom:8px">Automations this dashboard can start</div>
-      <div class="ds-cell-sub">${N8N_BASE
+      <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:8px">Automations this dashboard can start</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${N8N_BASE
         ? `${hooks.length} of them: asking a question of your documents, calculating finance, enrolling a customer in a drip, recording a closed deal, auditing an uploaded document, escalating a lead, syncing the ERP and sending a WhatsApp reply.`
-        : '<span class="t-hot">None. This deployment is not configured to reach the automation host, so every one of them refuses outright rather than failing halfway.</span>'}</div>
-      <div class="ds-cell-sub" style="margin-top:8px">Their addresses are not shown: where an automation lives is NEXUS's operational configuration, not a fact this dashboard puts in front of you. Nothing on this card calls one, and none of these is probed by this screen — calling one to see whether it answers does real work, and a check that enrols a real customer or bills a real run is not a check. What they actually did is in the workflow table below, which reads what they recorded.</div>
-      <div class="ds-cell-sub" style="margin-top:8px">No key, token or webhook secret is rendered anywhere on this screen, in full or masked.</div>
+        : '<span class="text-red-700">None. This deployment is not configured to reach the automation host, so every one of them refuses outright rather than failing halfway.</span>'}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px">Their addresses are not shown: where an automation lives is NEXUS's operational configuration, not a fact this dashboard puts in front of you. Nothing on this card calls one, and none of these is probed by this screen — calling one to see whether it answers does real work, and a check that enrols a real customer or bills a real run is not a check. What they actually did is in the workflow table below, which reads what they recorded.</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px">No key, token or webhook secret is rendered anywhere on this screen, in full or masked.</div>
     </div>`;
 
   /* The tiles report into their own DOM and return nothing, and this screen may
@@ -780,6 +1014,15 @@ SCREENS.settings = async host => {
        there for Automation's benefit. Monitoring does not get to write to the
        table it monitors, and "opening Settings" is not a business event. */
     renderIntegrations($('setIntg'), { autoProbe: AUTO_PROBE });
+    /* lib/integrations.js draws legacy tiles (`.card`, `.btn`), and inside this
+       screen's Stitch scope the scoped reset strips a legacy button's padding
+       and a card's border. The tiles keep their `.card` class and inline styles
+       — readProbes() below reads them back by exactly those — and gain the
+       Stitch surface; the buttons, which carry their data-* hooks, become
+       Stitch buttons. Re-applied on every re-check, since that re-renders. */
+    const intg = $('setIntg');
+    intg?.querySelectorAll('.card').forEach(t => t.classList.add(...INTG_TILE));
+    intg?.querySelectorAll('button.btn').forEach(b => { b.className = BTN.secondary; });
     watchProbes();
   };
   $('setRecheck').addEventListener('click', runChecks);
@@ -788,15 +1031,15 @@ SCREENS.settings = async host => {
   /* ── Wiring: workflows and credentials ──────────────────────────────────
      Placeholders now, filled when the batch below lands, so the cards sit in
      their final order instead of appearing underneath the knowledge base. */
-  const wfCard = el('div', 'card flush'); wfCard.id = 'setWfCard';
-  wfCard.style.marginTop = '16px'; root.appendChild(wfCard);
-  wfCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflows</div>
-    <div class="card-sub">Reading the automation health figures…</div></div></div><div class="pbody">${stateLoading(5)}</div>`;
+  const wfCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); wfCard.id = 'setWfCard';
+  pane.health.appendChild(wfCard);
+  wfCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Workflows</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Reading the automation health figures…</div></div></div><div class="p-space-md">${stateLoading(5)}</div>`;
 
-  const credCard = el('div', 'card flush'); credCard.id = 'setCredsCard';
-  credCard.style.marginTop = '16px'; root.appendChild(credCard);
-  credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-    <div class="card-sub">Reading the newest failed runs…</div></div></div><div class="pbody">${stateLoading(2)}</div>`;
+  const credCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); credCard.id = 'setCredsCard';
+  pane.health.appendChild(credCard);
+  credCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Credentials</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Reading the newest failed runs…</div></div></div><div class="p-space-md">${stateLoading(2)}</div>`;
 
   /* ── The system read ────────────────────────────────────────────────────
      One batch, settled individually. A shared catch would put one silence over
@@ -1020,7 +1263,7 @@ SCREENS.settings = async host => {
     if (meUnknown) out.push({
       key: 'me-unread', sev: 'WARNING', icon: 'help',
       title: 'The users table could not be read, so this account’s staff record is unknown',
-      detail: `Looking up ${esc(email || 'the signed-in account')} in <span class="mono">users</span> failed with: ${esc(meErr)}. Whether a staff row exists, and what role it carries, cannot be stated either way from here. This is not the finding above — it is the absence of the evidence that would settle it — and this screen used to report the two as the same thing.`,
+      detail: `Looking up ${esc(email || 'the signed-in account')} in <span class="font-label-numeric-sm">users</span> failed with: ${esc(meErr)}. Whether a staff row exists, and what role it carries, cannot be stated either way from here. This is not the finding above — it is the absence of the evidence that would settle it — and this screen used to report the two as the same thing.`,
       foot: 'Reload once the database is answering. Until then everything keyed on role is running without one, which is not the same as running as unassigned.',
       target: 'setProfile',
     });
@@ -1196,7 +1439,7 @@ SCREENS.settings = async host => {
         title: stale
           ? `${g.subject} was failing, and nothing since proves it is fixed`
           : `${g.subject} is failing`,
-        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}<div class="ds-cell-sub" style="margin-top:4px">${esc(credEvidence(g))}${
+        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:4px">${esc(credEvidence(g))}${
           g.viewCount ? `, and the attention list reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.workflows.length ? ` · seen in ${esc(g.workflows.join(', '))}` : ''}.${
           g.named ? '' : ' The text names no credential, so this row is keyed on the workflow it broke rather than merged with every other un-named fault.'}</div>`,
@@ -1257,6 +1500,8 @@ SCREENS.settings = async host => {
        because the day a settings branch is added to the view its rows must
        start counting here without anybody remembering to come back. */
     const durable = alerts.filter(a => a.sev === 'CRITICAL' || a.sev === 'WARNING');
+    const tabCount = root.querySelector('[data-set-tab-count="health"]');
+    if (tabCount) tabCount.innerHTML = (durable.length + mine.length) ? `<span class="px-1.5 rounded bg-error text-on-error font-label-numeric-sm text-table-header font-bold">${num(durable.length + mine.length)}</span>` : '';
     const tally = $('setAlertCount');
     if (tally) {
       const n = durable.length + mine.length;
@@ -1267,32 +1512,32 @@ SCREENS.settings = async host => {
 
     const viewRows = mine.map(it => {
       const sev = str(it.severity);
-      return `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">${esc(KIND_ICON[it.kind] || 'warning')}</span>
+      return `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+        <span class="material-symbols-outlined ${toneText(sevTone(sev))}" style="font-size:20px">${esc(KIND_ICON[it.kind] || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
-            <span class="chip">${esc(str(it.kind) || 'item')}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(str(it.kind) || 'item')}</span>
           </div>
-          <div class="ds-cell-sub">${esc(str(it.detail))}</div>
-          <div class="ds-cell-sub t-muted">${it.at
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(str(it.detail))}</div>
+          <div class="font-body-sm text-body-sm text-outline mt-0.5">${it.at
             ? `Waiting since ${esc(clock(it.at))} — ${esc(ago(it.at))}`
             : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
         </div></div>`;
     }).join('');
 
     const derivedRows = alerts.map(a => `
-      <div class="list-item" role="button" tabindex="0" data-target="${esc(a.target)}"${a.wf ? ` data-wf="${esc(a.wf)}"` : ''}
+      <div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" role="button" tabindex="0" data-target="${esc(a.target)}"${a.wf ? ` data-wf="${esc(a.wf)}"` : ''}
         title="Show the panel this is about">
-        <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px">${esc(a.icon)}</span>
+        <span class="material-symbols-outlined ${toneText(sevTone(a.sev))}" style="font-size:20px">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
           </div>
-          <div class="ds-cell-sub">${a.detail}</div>
-          ${a.foot ? `<div class="ds-cell-sub t-muted">${a.foot}</div>` : ''}
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${a.detail}</div>
+          ${a.foot ? `<div class="font-body-sm text-body-sm text-outline mt-0.5">${a.foot}</div>` : ''}
         </div>
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">chevron_right</span>
       </div>`).join('');
 
     /* What was actually checked, and what could not be. A screen that quietly
@@ -1347,13 +1592,13 @@ SCREENS.settings = async host => {
        half a second before the first alert is exactly the reassurance this
        strip exists to withhold. */
     const attnUnread = !!(s && s.attnErr);
-    const nothing = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-${attnUnread ? 'muted' : 'ok'}" style="font-size:20px">${attnUnread ? 'help' : 'task_alt'}</span>
+    const nothing = `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+      <span class="material-symbols-outlined ${attnUnread ? 'text-outline' : 'text-emerald-700'}" style="font-size:20px">${attnUnread ? 'help' : 'task_alt'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${attnUnread
           ? 'Nothing this screen could check for itself is wrong'
           : 'Nothing this screen checks is wrong right now'}</div>
-        <div class="ds-cell-sub">${attnUnread
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${attnUnread
           ? 'The attention list could not be read, so whether the database has filed anything against this screen is unknown — though it has no settings branch to file from in the first place'
           /* Never "the view returned none today". It has no settings branch;
              its silence about this screen is structural, not a finding. */
@@ -1362,16 +1607,16 @@ SCREENS.settings = async host => {
           : ''}${envErrors.length ? '' : ', and every environment variable this build needs is set'}.</div>
       </div></div>`;
 
-    const stillReading = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:20px">hourglass_top</span>
+    const stillReading = `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+      <span class="material-symbols-outlined text-outline" style="font-size:20px">hourglass_top</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">Still checking</div>
-        <div class="ds-cell-sub">The attention list, the automation health figures and the newest failed runs have not answered yet, so anything they would report is missing from this list. The configuration findings above do not depend on them.</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">The attention list, the automation health figures and the newest failed runs have not answered yet, so anything they would report is missing from this list. The configuration findings above do not depend on them.</div>
       </div></div>`;
 
-    const notesRow = notes.length ? `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>` : '';
+    const notesRow = notes.length ? `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+      <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>` : '';
 
     bodyHost.innerHTML = viewRows + derivedRows
       + (!s ? stillReading : (alerts.length || mine.length ? '' : nothing))
@@ -1386,6 +1631,7 @@ SCREENS.settings = async host => {
       const jump = () => {
         if (node.dataset.wf) setWfFilter(node.dataset.wf);
         const dest = $(node.dataset.target);
+        reveal(dest);
         if (dest) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
       };
       node.addEventListener('click', jump);
@@ -1428,12 +1674,12 @@ SCREENS.settings = async host => {
     renderAlerts();
 
     if (s.healthErr) {
-      wfCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflows</div>
-        <div class="card-sub">The automation health figures could not be read</div></div></div>
-        <div class="pbody">${stateError('workflow health', s.healthErr)}</div>`;
-      credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-        <div class="card-sub">Faults named in the text of a failed run</div></div></div>
-        <div class="pbody">${renderCreds()}</div>`;
+      wfCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Workflows</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">The automation health figures could not be read</div></div></div>
+        <div class="p-space-md">${stateError('workflow health', s.healthErr)}</div>`;
+      credCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Credentials</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Faults named in the text of a failed run</div></div></div>
+        <div class="p-space-md">${renderCreds()}</div>`;
       wireCreds();
       return;
     }
@@ -1468,22 +1714,22 @@ SCREENS.settings = async host => {
       return s.fails.filter(f => names.has(low(f.workflow)));
     };
 
-    wfCard.innerHTML = `<div class="card-head">
-        <div><div class="card-title">Workflows</div>
-          <div class="card-sub">${num(rows.length)} registered · ${num(active)} switched on · state and 30-day counts read ${esc(clock(s.readAt))}</div></div>
+    wfCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm">
+        <div><div class="font-headline-md text-headline-md text-on-surface">Workflows</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(rows.length)} registered · ${num(active)} switched on · state and 30-day counts read ${esc(clock(s.readAt))}</div></div>
         <div style="flex:1"></div>
-        <button class="btn sm" id="setWfAutomation">Open Automation</button>
+        <button class="${BTN.secondary}" id="setWfAutomation">Open Automation</button>
       </div>
-      <div class="toolbar">
-        <div class="seg" id="setWfSeg" role="group" aria-label="Filter workflows by state">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="setWfSeg" role="group" aria-label="Filter workflows by state">
           ${WF_FILTERS.filter(f => f.key === 'ALL' || counts[f.key])
             .map(f => `<button type="button" data-f="${f.key}" class="${f.key === wfFilter ? 'on' : ''}"
-              aria-pressed="${f.key === wfFilter ? 'true' : 'false'}">${esc(f.label)} <span class="t-muted">${num(counts[f.key])}</span></button>`).join('')}
+              aria-pressed="${f.key === wfFilter ? 'true' : 'false'}">${esc(f.label)} <span class="text-on-surface-variant">${num(counts[f.key])}</span></button>`).join('')}
         </div>
       </div>
       <div id="setWfList"></div>
-      <div class="pbody" style="padding-top:0">
-        <div class="ds-cell-sub" style="white-space:normal">${[
+      <div class="p-space-md" style="padding-top:0">
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${[
           'Active means the workflow is switched on and will run. It does not mean it succeeds — an active workflow with a broken connection runs on every trigger and fails on every trigger, and both of those are true at once.',
           'Success is successes ÷ the runs that counted, computed once by NEXUS rather than by this screen. Runs refused by design and runs escalated to a person on purpose are excluded from the denominator, so an unauthorised caller cannot dilute a real miss rate — which is why “Runs 30 d” can be larger than the number the rate is taken over, and says so where it is.',
           'No output is not Degraded and is not a milder version of it. Those workflows are not failing: the run completes, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
@@ -1511,19 +1757,19 @@ SCREENS.settings = async host => {
       listHost.innerHTML = table([
         { label: 'Workflow', strong: true, render: w => `
           <div>${esc(str(w.name) || 'Unnamed workflow')}${
-            isPublicPage(w) ? ` <span class="chip" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
-          <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}${
+            isPublicPage(w) ? ` <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(str(w.category) || 'no category recorded')}${
             w.is_active === false
-              ? ' · <span class="t-warm">switched off — it will not run</span>'
-              : ' · <span class="t-muted" title="This workflow is switched on and will run. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
+              ? ' · <span class="text-amber-700">switched off — it will not run</span>'
+              : ' · <span class="text-on-surface-variant" title="This workflow is switched on and will run. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
         { label: 'State', render: w => {
           const h = healthOf(w);
           return `<span title="${esc(h.blurb)}">${pill(h.label, h.t, { verbatim: false })}</span>${
-            stateKey(w) === 'UNKNOWN' ? `<div class="ds-cell-sub mono">${esc(str(w.health) || 'null')}</div>` : ''}`;
+            stateKey(w) === 'UNKNOWN' ? `<div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${esc(str(w.health) || 'null')}</div>` : ''}`;
         } },
         { label: 'Runs 30 d', align: 'r', render: w => {
           const r = n0(w.runs_30d);
-          if (r == null) return '<span class="t-muted">—</span>';
+          if (r == null) return '<span class="text-on-surface-variant">—</span>';
           /* Two numbers where the view excludes some: runs logged, and runs
              that count toward the rate. Printing only the first invites the
              reader to do the division themselves and get a different answer
@@ -1531,7 +1777,7 @@ SCREENS.settings = async host => {
           const eff = n0(w.effective_runs_30d);
           const excluded = eff == null ? 0 : r - eff;
           return `<span title="${esc(runsBreakdown(w))}">${num(r)}</span>${
-            excluded > 0 ? `<div class="ds-cell-sub">${num(eff)} count toward the rate</div>` : ''}`;
+            excluded > 0 ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(eff)} count toward the rate</div>` : ''}`;
         } },
         /* Was "Failed 30 d", reading straight off failures_30d — a column that
            counted status='FAILED' and nothing else, so a workflow whose every
@@ -1541,7 +1787,7 @@ SCREENS.settings = async host => {
            are added and then broken apart underneath. */
         { label: 'Did not deliver 30 d', align: 'r', render: w => {
           const total = undelivered30(w);
-          if (total == null) return '<span class="t-muted">—</span>';
+          if (total == null) return '<span class="text-on-surface-variant">—</span>';
           const f = n0(w.failures_30d) || 0, pa = n0(w.partials_30d) || 0, none = n0(w.no_result_30d) || 0;
           const parts = [
             f ? `${num(f)} failed` : '',
@@ -1549,7 +1795,7 @@ SCREENS.settings = async host => {
             none ? `${num(none)} produced nothing` : '',
           ].filter(Boolean);
           return total
-            ? `<span class="t-hot">${num(total)}</span><div class="ds-cell-sub">${esc(parts.join(' · '))}</div>`
+            ? `<span class="text-red-700">${num(total)}</span><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(parts.join(' · '))}</div>`
             : num(0);
         } },
         { label: 'Success 30 d', align: 'r', render: w => {
@@ -1558,12 +1804,12 @@ SCREENS.settings = async host => {
              nexus_outcome_class(). Null is not 0% and not 100%: it is no
              qualifying run, and the reason differs by state. */
           return r == null
-            ? `<span class="t-muted" title="${esc(noRateWhy(w))}">—</span>`
+            ? `<span class="text-on-surface-variant" title="${esc(noRateWhy(w))}">—</span>`
             : `<span title="${esc(runsBreakdown(w))}">${esc(pct(r))}</span>`;
         } },
         { label: 'Last run', align: 'r', render: w => w.last_run
           ? esc(ago(w.last_run))
-          : '<span class="t-muted">never</span>' },
+          : '<span class="text-on-surface-variant">never</span>' },
       ], list, {
         empty: stateEmpty('No workflow in that state', 'Nothing in the automation health figures matches this filter right now.', 'filter_alt'),
         onRow: true,
@@ -1579,10 +1825,10 @@ SCREENS.settings = async host => {
       const viewRate = n0(w.success_rate);
       const own30 = rate30(w);
       openDrawer(`
-        <div class="drawer-head">
+        <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
           <div style="flex:1">
             <h2 style="font-size:18px">${esc(str(w.name) || 'Unnamed workflow')}</h2>
-            <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(str(w.category) || 'no category recorded')}</div>
             ${/* This line used to join `category`, `trigger_type` and
                  `trigger_detail` and print “no trigger recorded” when all three
                  were empty. The last two are control-plane columns — absent from
@@ -1594,28 +1840,28 @@ SCREENS.settings = async host => {
                  verdict and replaced the same wording; this is that fix carried
                  across, and the line below states the boundary instead of
                  asserting an absence. */ ''}
-            <div class="ds-cell-sub" style="white-space:normal;margin-top:2px">${esc(TRIGGER_NOT_AVAILABLE)}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:2px">${esc(TRIGGER_NOT_AVAILABLE)}</div>
           </div>
-          <button class="btn ghost sm" id="wfClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+          <button class="${BTN.tertiary}" id="wfClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <div class="drawer-body">
-          <div class="section">
+        <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+          <div class="flex flex-col gap-1">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${pill(h.label, h.t, { verbatim: false })}
               ${w.is_active === false
-                ? '<span class="chip" title="Switched off. Nothing will trigger it.">Inactive</span>'
-                : '<span class="chip" title="Switched on and will run. It is not a statement about whether the run succeeds.">Active</span>'}
-              ${w.writes_audit_log ? '' : '<span class="chip" title="No Audit Log node, so nothing it does reaches the activity log.">Writes no audit row</span>'}</div>
-            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
-            ${w.description ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
+                ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Switched off. Nothing will trigger it.">Inactive</span>'
+                : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Switched on and will run. It is not a statement about whether the run succeeds.">Active</span>'}
+              ${w.writes_audit_log ? '' : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="No Audit Log node, so nothing it does reaches the activity log.">Writes no audit row</span>'}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
+            ${w.description ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
           </div>
-          <div class="section" style="margin-top:20px">
-            <div class="label-caps">What the view reports</div>
-            <dl class="kv" style="margin-top:10px">
-              <dt>Runs, 30 days</dt><dd>${r30 == null ? '<span class="t-muted">not reported</span>' : num(r30)}</dd>
+          <div class="flex flex-col gap-1" style="margin-top:20px">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">What the view reports</div>
+            <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0" style="margin-top:10px">
+              <dt>Runs, 30 days</dt><dd>${r30 == null ? '<span class="text-on-surface-variant">not reported</span>' : num(r30)}</dd>
               <dt>Counted toward the rate</dt><dd>${eff30 == null
-                ? '<span class="t-muted">not reported</span>'
+                ? '<span class="text-on-surface-variant">not reported</span>'
                 : `${num(eff30)}${r30 != null && r30 !== eff30
-                    ? ` <span class="t-muted">· ${num(r30 - eff30)} excluded: refused by design or escalated to a person on purpose</span>`
+                    ? ` <span class="text-on-surface-variant">· ${num(r30 - eff30)} excluded: refused by design or escalated to a person on purpose</span>`
                     : ''}`}</dd>
               ${OUTCOME_ROWS.map(([label, key, why]) => {
                 const v = n0(w[key]);
@@ -1624,31 +1870,31 @@ SCREENS.settings = async host => {
                    was measured on it. A column the view did not return is the
                    only thing that reads "not reported". */
                 return `<dt title="${esc(why)}">${esc(label)}</dt><dd>${v == null
-                  ? '<span class="t-muted">not reported</span>'
-                  : (v ? `${num(v)}` : '<span class="t-muted">0</span>')}</dd>`;
+                  ? '<span class="text-on-surface-variant">not reported</span>'
+                  : (v ? `${num(v)}` : '<span class="text-on-surface-variant">0</span>')}</dd>`;
               }).join('')}
               <dt>Success, 30 days</dt><dd>${own30 == null
-                ? `<span class="t-muted">${esc(noRateWhy(w))}</span>`
-                : `${esc(pct(own30))} <span class="t-muted">· successes_30d ÷ effective_runs_30d, computed by the view</span>`}</dd>
+                ? `<span class="text-on-surface-variant">${esc(noRateWhy(w))}</span>`
+                : `${esc(pct(own30))} <span class="text-on-surface-variant">· successes_30d ÷ effective_runs_30d, computed by the view</span>`}</dd>
               <dt>Runs, all time</dt><dd>${num(n0(w.runs) ?? 0)}</dd>
               <dt>Failures, all time</dt><dd>${num(n0(w.failures) ?? 0)}</dd>
               <dt>success_rate</dt><dd>${viewRate == null
-                ? '<span class="t-muted">not reported</span>'
-                : `${esc(pct(viewRate))} <span class="t-muted">· the view's all-time column, over its own window</span>`}</dd>
-              <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) + ` <span class="t-muted mono">${esc(clock(w.last_run))}</span>` : '<span class="t-muted">never</span>'}</dd>
-              <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) + ` <span class="t-muted mono">${esc(clock(w.last_success))}</span>` : '<span class="t-muted">no run has ever succeeded outright</span>'}</dd>
-              <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
-              <dt>Last half-landed</dt><dd>${w.last_partial ? `<span class="t-hot">${esc(ago(w.last_partial))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+                ? '<span class="text-on-surface-variant">not reported</span>'
+                : `${esc(pct(viewRate))} <span class="text-on-surface-variant">· the view's all-time column, over its own window</span>`}</dd>
+              <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) + ` <span class="text-on-surface-variant font-label-numeric-sm">${esc(clock(w.last_run))}</span>` : '<span class="text-on-surface-variant">never</span>'}</dd>
+              <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) + ` <span class="text-on-surface-variant font-label-numeric-sm">${esc(clock(w.last_success))}</span>` : '<span class="text-on-surface-variant">no run has ever succeeded outright</span>'}</dd>
+              <dt>Last failure</dt><dd>${w.last_failure ? `<span class="text-red-700">${esc(ago(w.last_failure))}</span>` : '<span class="text-on-surface-variant">none recorded</span>'}</dd>
+              <dt>Last half-landed</dt><dd>${w.last_partial ? `<span class="text-red-700">${esc(ago(w.last_partial))}</span>` : '<span class="text-on-surface-variant">none recorded</span>'}</dd>
             </dl>
-            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(runsBreakdown(w))}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">${esc(runsBreakdown(w))}</div>
             ${own30 != null && viewRate != null && Math.abs(own30 - viewRate) > 0.1
-              ? '<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The two rates differ, and they are not the same measurement: the first is the 30-day window classified through NEXUS’s own rule for what a run achieved, the second is the view’s own all-time column. Neither is corrected against the other here.</div>'
+              ? '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">The two rates differ, and they are not the same measurement: the first is the 30-day window classified through NEXUS’s own rule for what a run achieved, the second is the view’s own all-time column. Neither is corrected against the other here.</div>'
               : ''}
           </div>
-          <div class="section" style="margin-top:20px">
-            <div class="label-caps">Recent incomplete runs</div>
+          <div class="flex flex-col gap-1" style="margin-top:20px">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Recent incomplete runs</div>
             ${fails == null
-              ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(`The activity log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from the automation health figures and are unaffected.`)}</div>`
+              ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">${esc(`The activity log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from the automation health figures and are unaffected.`)}</div>`
               : shown.length
                 ? shown.map(f => {
                     /* The row is labelled with what it actually was. A FAILED
@@ -1656,20 +1902,20 @@ SCREENS.settings = async host => {
                        land" is a partial delivery, and lib/health.js is the one
                        place allowed to make that call. */
                     const o = outcomeWords(outcomeOf(f));
-                    return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
+                    return `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span title="${esc(o.blurb)}">${pill(o.label, o.tone, { verbatim: false })}</span>
-                      <span class="ds-cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
-                    <div class="ds-cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
+                      <span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
+                    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
                   </div>`;
                   }).join('')
-                : `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed or half-landed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either nothing of either kind happened inside that window, or it logs under a name the registry does not list. Note that a run which produced nothing usable is neither, and would not appear here — the counters above are where those are counted.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
-            ${fails && fails.length > shown.length ? `<div class="ds-cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older rows in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
+                : `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed or half-landed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either nothing of either kind happened inside that window, or it logs under a name the registry does not list. Note that a run which produced nothing usable is neither, and would not appear here — the counters above are where those are counted.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
+            ${fails && fails.length > shown.length ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px">${esc(`${fails.length - shown.length} older rows in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
           </div>
         </div>
-        <div class="drawer-foot">
-          <button class="btn ghost" id="wfClose2">Close</button>
+        <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+          <button class="${BTN.secondary}" id="wfClose2">Close</button>
           <div style="flex:1"></div>
-          <button class="btn" disabled title="This dashboard only starts a workflow when it has a real subject to start it against — a customer, a deal, a document. Firing one from here just to see whether it works would do real work: enrol a customer, send a message, bill a run.">Run now</button>
+          <button class="${BTN.secondary}" disabled title="This dashboard only starts a workflow when it has a real subject to start it against — a customer, a deal, a document. Firing one from here just to see whether it works would do real work: enrol a customer, send a message, bill a run.">Run now</button>
         </div>`);
       $('wfClose').addEventListener('click', closeDrawer);
       $('wfClose2').addEventListener('click', closeDrawer);
@@ -1679,9 +1925,9 @@ SCREENS.settings = async host => {
     $('setWfSeg').querySelectorAll('button').forEach(b =>
       b.addEventListener('click', () => setWfFilter(b.dataset.f)));
 
-    credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-      <div class="card-sub">Faults named in the text of a failed or half-landed run — the only evidence about a connection this dashboard can have. Nothing here claims a connection works: this panel reports faults and their age, and never a clean bill of health.</div></div></div>
-      <div class="pbody">${renderCreds()}</div>`;
+    credCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Credentials</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Faults named in the text of a failed or half-landed run — the only evidence about a connection this dashboard can have. Nothing here claims a connection works: this panel reports faults and their age, and never a clean bill of health.</div></div></div>
+      <div class="p-space-md">${renderCreds()}</div>`;
     wireCreds();
   });
 
@@ -1708,30 +1954,30 @@ SCREENS.settings = async host => {
     return `<div>${groups.map(g => {
       const stale = credStale(g.newest);
       return `
-      <div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:6px">
+      <div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">
-          <span class="material-symbols-outlined t-hot" style="font-size:20px">key_off</span>
+          <span class="material-symbols-outlined text-red-700" style="font-size:20px">key_off</span>
           <span style="font-weight:500">${esc(g.display)}</span>
           ${pill('CRITICAL', 'hot', { verbatim: false })}
           <div style="flex:1"></div>
-          <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
+          <button class="${BTN.secondary}" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>
-        ${g.named ? '' : `<div class="ds-cell-sub t-muted" style="white-space:normal">The text of these runs names no credential — “Forbidden - perhaps check your credentials?” names nothing — so this row is keyed on the workflow that broke rather than pooled with every other un-named fault. Two workflows failing on one shared credential will therefore appear here twice, which is the safer error: it overstates how many things to look at and hides nothing.</div>`}
-        <div class="ds-cell-sub" style="white-space:normal">${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}</div>
-        <div class="ds-cell-sub">${esc(credEvidence(g))}${
+        ${g.named ? '' : `<div class="font-body-sm text-body-sm text-outline mt-0.5" style="white-space:normal">The text of these runs names no credential — “Forbidden - perhaps check your credentials?” names nothing — so this row is keyed on the workflow that broke rather than pooled with every other un-named fault. Two workflows failing on one shared credential will therefore appear here twice, which is the safer error: it overstates how many things to look at and hides nothing.</div>`}
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(credEvidence(g))}${
           g.viewCount ? ` · the attention list reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
-        ${stale ? `<div class="ds-cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
+        ${stale ? `<div class="font-body-sm text-body-sm text-outline mt-0.5" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
         ${g.workflows.length
-          ? `<div class="ds-cell-sub">Seen in: ${g.workflows.map(w =>
-              `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
+          ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Seen in: ${g.workflows.map(w =>
+              `<button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
                 title="Show this in the workflow table above">${esc(w)}</button>`).join(' ')}</div>`
-          : '<div class="ds-cell-sub t-muted">No run in this window records which workflow it belongs to.</div>'}
+          : '<div class="font-body-sm text-body-sm text-outline mt-0.5">No run in this window records which workflow it belongs to.</div>'}
       </div>`;
     }).join('')}
-      <div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${esc(NO_CRED_FIX)}</div>
+      <div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc(NO_CRED_FIX)}</div>
       </div></div>`;
   }
 
@@ -1744,6 +1990,7 @@ SCREENS.settings = async host => {
       node.addEventListener('click', () => {
         setWfFilter('ALL');
         const dest = $('setWfCard');
+        reveal(dest);
         if (dest) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
@@ -1754,13 +2001,13 @@ SCREENS.settings = async host => {
      actually retrieved, so both counts are shown: an operator who sees "6
      documents" and gets a thin answer needs to know whether those six were
      chunked into 400 sections or into 6. */
-  const kb = el('div', 'card flush'); kb.id = 'setKbCard'; kb.style.marginTop = '16px'; root.appendChild(kb);
+  const kb = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); kb.id = 'setKbCard'; pane.kb.appendChild(kb);
 
   const kbShell = (sub, body) => {
-    kb.innerHTML = `<div class="card-head">
-        <div><div class="card-title">Knowledge base</div><div class="card-sub">${sub}</div></div>
+    kb.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm">
+        <div><div class="font-headline-md text-headline-md text-on-surface">Knowledge base</div><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${sub}</div></div>
         <div style="flex:1"></div>
-        <button class="btn ghost sm" id="kbReload" aria-label="Reload the knowledge base">
+        <button class="${BTN.tertiary}" id="kbReload" aria-label="Reload the knowledge base">
           <span class="material-symbols-outlined">refresh</span></button>
       </div><div id="kbBody">${body}</div>`;
     $('kbReload').addEventListener('click', loadKb);
@@ -1843,22 +2090,22 @@ SCREENS.settings = async host => {
       totalChars != null ? ` · ${charText(totalChars)} indexed` : ''} · read ${esc(clock(readAt))}`;
 
     kbShell(sub, `
-      ${capped ? `<div class="banner warm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">filter_alt</span>
+      ${capped ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">filter_alt</span>
         <div>Showing the first ${num(KB_LIMIT)} sections only. The knowledge base is larger than this listing, so the totals above are a floor rather than a count.</div></div>` : ''}
-      ${untitled ? `<div class="banner warm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">help</span>
-        <div>${num(untitled)} section${untitled === 1 ? ' has' : 's have'} no <span class="mono">${esc(titleKey || 'title')}</span> value, so ${untitled === 1 ? 'it cannot' : 'they cannot'} be attributed to a document. Ask AI can still retrieve ${untitled === 1 ? 'it' : 'them'}, but a citation will have nothing to name.</div></div>` : ''}
-      ${!titleKey ? `<div class="banner warm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">info</span>
+      ${untitled ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">help</span>
+        <div>${num(untitled)} section${untitled === 1 ? ' has' : 's have'} no <span class="font-label-numeric-sm">${esc(titleKey || 'title')}</span> value, so ${untitled === 1 ? 'it cannot' : 'they cannot'} be attributed to a document. Ask AI can still retrieve ${untitled === 1 ? 'it' : 'them'}, but a citation will have nothing to name.</div></div>` : ''}
+      ${!titleKey ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">info</span>
         <div>Nothing in your documents records which document a section came from, so sections cannot be grouped by document. NEXUS can correct that when the documents are next loaded.</div></div>` : ''}
-      ${!dateKey ? `<div class="banner info" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">schedule</span>
+      ${!dateKey ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm mb-space-sm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">schedule</span>
         <div>Your documents carry no date of any kind — nothing recording when a section was added or last changed. So <strong>how fresh this knowledge base is cannot be answered from the data</strong>, and this panel does not guess one: inferring a load date from the order the sections were stored in would be invention dressed as a fact. If Ask AI is citing a price list that was superseded a month ago, nothing on this screen will show it — the only way to know is to load the documents again and compare.</div></div>` : ''}
-      <div class="toolbar">
-        <div class="seg" id="kbSeg" role="group" aria-label="Sort documents">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="kbSeg" role="group" aria-label="Sort documents">
           <button type="button" data-s="name" class="on" aria-pressed="true">By name</button>
           <button type="button" data-s="size" aria-pressed="false">${textKey ? 'Largest first' : 'Most sections'}</button>
         </div>
-        <div class="grow">
+        <div class="flex-1 min-w-0">
           <label class="sr-only" for="kbQ">Search the knowledge base</label>
-          <input type="search" id="kbQ" placeholder="Search document, section or source file" />
+          <input type="search" id="kbQ" class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary" placeholder="Search document, section or source file" />
         </div>
       </div>
       <div id="kbList"></div>`);
@@ -1878,20 +2125,20 @@ SCREENS.settings = async host => {
 
       const tcols = [
         { label: 'Document', strong: true, render: g => `
-          <div>${g.title ? esc(g.title) : '<span class="t-muted">Untitled sections</span>'}</div>
+          <div>${g.title ? esc(g.title) : '<span class="text-on-surface-variant">Untitled sections</span>'}</div>
           ${g.sources.size
-            ? `<div class="ds-cell-sub">${esc([...g.sources].slice(0, 2).join(', '))}${g.sources.size > 2 ? ` +${g.sources.size - 2} more` : ''}</div>`
-            : hasSrc ? '<div class="ds-cell-sub t-muted">no source file recorded</div>' : ''}` },
+            ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc([...g.sources].slice(0, 2).join(', '))}${g.sources.size > 2 ? ` +${g.sources.size - 2} more` : ''}</div>`
+            : hasSrc ? '<div class="font-body-sm text-body-sm text-outline mt-0.5">no source file recorded</div>' : ''}` },
         { label: 'Sections', align: 'r', render: g => num(g.secs.length) },
       ];
       if (textKey) tcols.push({ label: 'Size', align: 'r', render: g => charText(g.chars) });
       if (hasPage) tcols.push({ label: 'Pages', align: 'r', render: g => {
-        if (!g.pages.length) return '<span class="t-muted">—</span>';
+        if (!g.pages.length) return '<span class="text-on-surface-variant">—</span>';
         const lo = Math.min(...g.pages), hi = Math.max(...g.pages);
         return esc(lo === hi ? String(lo) : `${lo}–${hi}`);
       } });
       if (dateKey) tcols.push({ label: 'Indexed', align: 'r', render: g =>
-        g.last ? esc(ago(new Date(g.last).toISOString())) : '<span class="t-muted">—</span>' });
+        g.last ? esc(ago(new Date(g.last).toISOString())) : '<span class="text-on-surface-variant">—</span>' });
 
       const listHost = $('kbList');
       listHost.innerHTML = table(tcols, list, {
@@ -1904,31 +2151,31 @@ SCREENS.settings = async host => {
     function openDoc(g) {
       const secs = g.secs.slice().sort((a, b) => (n0(a.page_number) ?? 0) - (n0(b.page_number) ?? 0));
       openDrawer(`
-        <div class="drawer-head">
+        <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
           <div style="flex:1">
             <h2 style="font-size:18px">${g.title ? esc(g.title) : 'Untitled sections'}</h2>
-            <div class="ds-cell-sub">${num(g.secs.length)} retrievable section${g.secs.length === 1 ? '' : 's'}${
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(g.secs.length)} retrievable section${g.secs.length === 1 ? '' : 's'}${
               textKey ? ` · ${charText(g.chars)}` : ''}</div>
           </div>
-          <button class="btn ghost sm" id="kbClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+          <button class="${BTN.tertiary}" id="kbClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <div class="drawer-body">
-          <div class="section">
-            <div class="label-caps">Document</div>
-            <dl class="kv" style="margin-top:10px">
-              <dt>Source files</dt><dd>${g.sources.size ? esc([...g.sources].join(', ')) : '<span class="t-muted">none recorded</span>'}</dd>
+        <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+          <div class="flex flex-col gap-1">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Document</div>
+            <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0" style="margin-top:10px">
+              <dt>Source files</dt><dd>${g.sources.size ? esc([...g.sources].join(', ')) : '<span class="text-on-surface-variant">none recorded</span>'}</dd>
               <dt>Sections</dt><dd>${num(g.secs.length)}</dd>
               ${textKey ? `<dt>Indexed size</dt><dd>${charText(g.chars)}</dd>` : ''}
               ${hasPage ? `<dt>Pages</dt><dd>${g.pages.length
                 ? esc(`${Math.min(...g.pages)}–${Math.max(...g.pages)}`)
-                : '<span class="t-muted">not recorded</span>'}</dd>` : ''}
+                : '<span class="text-on-surface-variant">not recorded</span>'}</dd>` : ''}
               ${dateKey ? `<dt>Last indexed</dt><dd>${g.last
                 ? esc(ago(new Date(g.last).toISOString()))
-                : '<span class="t-muted">not recorded</span>'}</dd>` : ''}
+                : '<span class="text-on-surface-variant">not recorded</span>'}</dd>` : ''}
             </dl>
           </div>
-          <div class="section" style="margin-top:20px">
-            <div class="label-caps">Sections as stored</div>
+          <div class="flex flex-col gap-1" style="margin-top:20px">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Sections as stored</div>
             ${secs.map((r, i) => {
               const body = textKey ? String(r[textKey] ?? '') : '';
               const meta = [
@@ -1936,23 +2183,23 @@ SCREENS.settings = async host => {
                 hasSrc && r.source_file ? String(r.source_file) : null,
                 textKey ? charText(body.length) : null,
               ].filter(Boolean);
-              return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
+              return `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
                 <div style="font-weight:500">${hasSect && r.section ? esc(r.section) : `Section ${i + 1}`}</div>
-                <div class="ds-cell-sub">${meta.length ? esc(meta.join(' · ')) : '<span class="t-muted">no section metadata</span>'}</div>
+                <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${meta.length ? esc(meta.join(' · ')) : '<span class="text-on-surface-variant">no section metadata</span>'}</div>
                 ${textKey
                   ? (body
-                      ? `<div class="ds-cell-sub" style="white-space:pre-wrap;margin-top:4px">${esc(body.slice(0, PREVIEW_CHARS))}${body.length > PREVIEW_CHARS ? '…' : ''}</div>`
-                      : '<div class="ds-cell-sub t-muted" style="margin-top:4px">This section is stored empty, so retrieving it returns nothing.</div>')
+                      ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:pre-wrap;margin-top:4px">${esc(body.slice(0, PREVIEW_CHARS))}${body.length > PREVIEW_CHARS ? '…' : ''}</div>`
+                      : '<div class="font-body-sm text-body-sm text-outline mt-0.5" style="margin-top:4px">This section is stored empty, so retrieving it returns nothing.</div>')
                   : ''}
               </div>`;
             }).join('')}
           </div>
-          ${!textKey ? `<div class="ds-cell-sub" style="margin-top:14px">Nothing in your documents holds the text of a section, so section contents and sizes cannot be shown. What NEXUS is storing for them is not what this panel needs, and only NEXUS can change that.</div>` : ''}
+          ${!textKey ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:14px">Nothing in your documents holds the text of a section, so section contents and sizes cannot be shown. What NEXUS is storing for them is not what this panel needs, and only NEXUS can change that.</div>` : ''}
         </div>
-        <div class="drawer-foot">
-          <button class="btn ghost" id="kbClose2">Close</button>
+        <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+          <button class="${BTN.secondary}" id="kbClose2">Close</button>
           <div style="flex:1"></div>
-          <button class="btn" disabled title="${esc(NO_KB_EDIT)}">Edit document</button>
+          <button class="${BTN.secondary}" disabled title="${esc(NO_KB_EDIT)}">Edit document</button>
         </div>`);
       $('kbClose').addEventListener('click', closeDrawer);
       $('kbClose2').addEventListener('click', closeDrawer);
@@ -1989,16 +2236,16 @@ SCREENS.settings = async host => {
   ];
   const isOn = id => (id === 'compact') === savedCompact;
 
-  const look = el('div', 'card'); look.style.marginTop = '16px'; root.appendChild(look);
-  look.innerHTML = `<div class="card-title" style="margin-bottom:4px">Appearance</div>
-    <div class="card-sub" style="margin-bottom:14px">How tightly tables are packed</div>
-    <div class="seg" id="setDensity" role="group" aria-label="Table density">
+  const look = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); prefsMain.appendChild(look);
+  look.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Appearance</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">How tightly tables are packed</div>
+    <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="setDensity" role="group" aria-label="Table density">
       ${DENSITIES.map(d => `<button type="button" data-d="${d.id}" class="${isOn(d.id) ? 'on' : ''}"
         aria-pressed="${isOn(d.id) ? 'true' : 'false'}">${esc(d.label)}</button>`).join('')}
     </div>
-    <div class="ds-cell-sub" id="setDensityHint" style="margin-top:10px">${
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" id="setDensityHint" style="margin-top:10px">${
       esc(DENSITIES.find(d => isOn(d.id)).hint)}</div>
-    <div class="banner info" style="margin-top:16px;margin-bottom:0">
+    <div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">info</span>
       <div>${esc(NO_PERSIST)}</div>
     </div>`;
@@ -2018,19 +2265,19 @@ SCREENS.settings = async host => {
      also on the top bar; it is repeated here so it can be found. Test records
      are the fixtures NEXUS's own checks write (NEXUS TEST …, Preflight …): hidden
      from every list and count unless this is on. */
-  const priv = el('div', 'card'); priv.style.marginTop = '16px'; root.appendChild(priv);
+  const priv = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); prefsMain.appendChild(priv);
   const hidden = hiddenTestCount();
-  priv.innerHTML = `<div class="card-title" style="margin-bottom:4px">Privacy</div>
-    <div class="card-sub" style="margin-bottom:14px">For screen sharing, and for what appears in lists</div>
+  priv.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Privacy</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">For screen sharing, and for what appears in lists</div>
     <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
       <input type="checkbox" id="setPrivacy" ${privacyOn() ? 'checked' : ''} />
-      <span><strong>Privacy mode</strong><div class="ds-cell-sub" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
+      <span><strong>Privacy mode</strong><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
     </label>
     <label style="display:flex;gap:10px;align-items:flex-start">
       <input type="checkbox" id="setShowTests" ${showTestRecords() ? 'checked' : ''} />
-      <span><strong>Show internal test records</strong><div class="ds-cell-sub" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
+      <span><strong>Show internal test records</strong><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
     </label>
-    ${hidden && !showTestRecords() ? `<div class="ds-cell-sub t-muted" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
+    ${hidden && !showTestRecords() ? `<div class="font-body-sm text-body-sm text-outline mt-0.5" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
   $('setPrivacy').addEventListener('change', e => setPrivacy(e.target.checked));
   $('setShowTests').addEventListener('change', e => setShowTestRecords(e.target.checked));  // app.js re-renders on the change
 
@@ -2047,7 +2294,7 @@ SCREENS.settings = async host => {
   const teamTenantId = teamTenant?.id || null;
   const teamTenantName = teamTenant?.name || teamTenant?.slug || null;
   if (teamTenantId && canInviteTeam(teamTenantId)) {
-    const team = el('div', 'card'); team.style.marginTop = '16px'; root.appendChild(team);
+    const team = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); pane.dealer.appendChild(team);
     let tBusy = false, tMsg = '', tTone = 'ok';
     /* The same shape screens/founder.js's refusalText() reads, narrowed to
        the one body shape this card can ever receive -- founder-invite's own
@@ -2066,17 +2313,17 @@ SCREENS.settings = async host => {
       return String(e && e.message || 'The invite did not go through.');
     };
     const tDraw = () => {
-      team.innerHTML = `<div class="card-title">Team</div>
-        <div class="card-sub" style="margin-bottom:14px">Invite a teammate into ${esc(teamTenantName || 'this dealership')}. NEXUS sends them a real invite email. The invite is sent from NEXUS&rsquo;s servers; no privileged key ever reaches this browser.</div>
-        ${tMsg ? `<div class="banner ${tTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${tTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(tMsg)}</div></div>` : ''}
-        <div class="grid g2" style="gap:12px">
-          <div class="field"><label for="teamEmail">Email</label><input id="teamEmail" type="email" placeholder="colleague@dealer.com" /></div>
-          <div class="field"><label for="teamRole">Role</label><select id="teamRole">
+      team.innerHTML = `<div class="font-headline-md text-headline-md text-on-surface">Team</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:14px">Invite a teammate into ${esc(teamTenantName || 'this dealership')}. NEXUS sends them a real invite email. The invite is sent from NEXUS&rsquo;s servers; no privileged key ever reaches this browser.</div>
+        ${tMsg ? `<div class="${bannerClass(tTone === 'ok' ? 'info' : 'hot')}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${tTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(tMsg)}</div></div>` : ''}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md" style="gap:12px">
+          <div class="flex flex-col gap-1 [&>label]:font-table-header [&>label]:text-table-header [&>label]:uppercase [&>label]:tracking-wider [&>label]:text-outline [&>label]:font-semibold [&_input]:w-full [&_input]:px-3 [&_input]:py-2 [&_input]:rounded-lg [&_input]:border [&_input]:border-outline-variant [&_input]:bg-surface-container-lowest [&_input]:text-on-surface [&_input:focus]:outline-none [&_input:focus]:border-primary [&_select]:w-full [&_select]:px-3 [&_select]:py-2 [&_select]:rounded-lg [&_select]:border [&_select]:border-outline-variant [&_select]:bg-surface-container-lowest [&_select]:text-on-surface [&_textarea]:w-full [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:border-outline-variant [&_textarea]:bg-surface-container-lowest"><label for="teamEmail">Email</label><input id="teamEmail" type="email" placeholder="colleague@dealer.com" /></div>
+          <div class="flex flex-col gap-1 [&>label]:font-table-header [&>label]:text-table-header [&>label]:uppercase [&>label]:tracking-wider [&>label]:text-outline [&>label]:font-semibold [&_input]:w-full [&_input]:px-3 [&_input]:py-2 [&_input]:rounded-lg [&_input]:border [&_input]:border-outline-variant [&_input]:bg-surface-container-lowest [&_input]:text-on-surface [&_input:focus]:outline-none [&_input:focus]:border-primary [&_select]:w-full [&_select]:px-3 [&_select]:py-2 [&_select]:rounded-lg [&_select]:border [&_select]:border-outline-variant [&_select]:bg-surface-container-lowest [&_select]:text-on-surface [&_textarea]:w-full [&_textarea]:px-3 [&_textarea]:py-2 [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:border-outline-variant [&_textarea]:bg-surface-container-lowest"><label for="teamRole">Role</label><select id="teamRole">
             ${['admin', 'manager', 'sales', 'technician', 'member'].map(r => `<option value="${esc(r)}"${r === 'sales' ? ' selected' : ''}>${esc(r)}</option>`).join('')}
           </select></div>
         </div>
-        <div class="ds-cell-sub" style="margin-top:8px">The owner role is not offered here -- granting it is a roster action (nexus_team_set_role, on the Team screen), and team_05's own rule restricts setting or removing owner to an existing owner acting on that roster, not to an invite.</div>
-        <button class="btn primary" id="teamGo" style="margin-top:14px"${tBusy ? ' disabled' : ''}>${tBusy ? 'Sending…' : 'Send invite'}</button>`;
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px">The owner role is not offered here -- granting it is a roster action (nexus_team_set_role, on the Team screen), and team_05's own rule restricts setting or removing owner to an existing owner acting on that roster, not to an invite.</div>
+        <button class="${BTN.primary}" id="teamGo" style="margin-top:14px"${tBusy ? ' disabled' : ''}>${tBusy ? 'Sending…' : 'Send invite'}</button>`;
       $('teamGo')?.addEventListener('click', teamSend);
     };
     const teamSend = async () => {
@@ -2100,9 +2347,24 @@ SCREENS.settings = async host => {
       }
     };
     tDraw();
+  } else {
+    const team = el('section', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md flex items-start justify-between gap-space-md');
+    team.innerHTML = `<div><h2 class="font-headline-md text-headline-md text-on-surface">Team</h2>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">${teamTenantId
+        ? 'Inviting a teammate is an owner’s action, and this account is not recorded as this dealership’s owner. The roster and roles are on the Team screen.'
+        : 'Which dealership this account belongs to could not be read, so no invite can be offered here.'}</p></div>
+      <button type="button" class="${BTN.secondary}" data-go-team>Open Team</button>`;
+    team.querySelector('[data-go-team]').addEventListener('click', () => go('team'));
+    pane.dealer.appendChild(team);
   }
 
   /* The screen is not finished until its own reads are: returning earlier would
      let nav.js call it done while three panels still say "loading". */
   await sysRead;
+  const foot = el('div', '');
+  foot.innerHTML = trustFooter({ source: 'users · v_workflow_health · audit_log · rag_documents · this device',
+    asOf: sysState ? dubaiTime(sysState.readAt) : null,
+    evidence: sysState && sysState.health ? `${num(sysState.health.length)} workflows read` : null,
+    actor: (ME && (ME.name || ME.email)) || email });
+  root.appendChild(foot);
 };

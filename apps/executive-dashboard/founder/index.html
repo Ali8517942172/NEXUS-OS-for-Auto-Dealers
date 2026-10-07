@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="nx-tw">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
 </head>
-<body>
+<body class="bg-background font-body-md text-body-md text-on-surface antialiased">
 
 <!--
   The NEXUS founder console, deliberately a separate page from the dealer app
@@ -22,23 +22,25 @@
 
 <div id="boot" class="login-wrap"></div>
 
-<div id="app" class="app hide">
-  <div class="main">
-    <header class="topbar">
-      <div class="brand-mark">N</div>
-      <h1 id="pageTitle">Founder Console</h1>
-      <div class="topbar-spacer"></div>
-      <span class="cell-sub" id="userName">—</span>
-      <a class="btn ghost sm" href="/" title="Back to the dashboard">Dashboard</a>
-      <button class="btn ghost sm" id="refreshBtn" title="Refresh" aria-label="Refresh">
-        <span class="material-symbols-outlined">refresh</span>
-      </button>
-      <button class="btn ghost sm" id="signOutBtn" title="Sign out" aria-label="Sign out">
-        <span class="material-symbols-outlined">logout</span>
-      </button>
-    </header>
-    <main class="content" id="screen" role="main"></main>
-  </div>
+<!-- The console chrome is the Stitch topbar (founder-console-nexus-platform-
+     administration--d6c87c.html) without the dealer sidebar: this page has one
+     screen. Every id founder/app.js wires is unchanged. -->
+<div id="app" class="hide">
+  <header class="nx-stitch sticky top-0 z-40 h-14 px-space-lg bg-surface-container-lowest/95 backdrop-blur border-b border-outline-variant/40 flex items-center gap-space-md">
+    <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-bold">N</div>
+    <h1 id="pageTitle" class="font-headline-md text-headline-md font-semibold text-on-surface">Founder Console</h1>
+    <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-semibold uppercase">Platform</span>
+    <div class="flex-1"></div>
+    <span class="font-body-sm text-body-sm text-on-surface-variant" id="userName">—</span>
+    <a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold" href="/" title="Back to the dashboard">Dashboard</a>
+    <button class="w-8 h-8 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" id="refreshBtn" title="Refresh" aria-label="Refresh">
+      <span class="material-symbols-outlined text-[20px]">refresh</span>
+    </button>
+    <button class="w-8 h-8 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" id="signOutBtn" title="Sign out" aria-label="Sign out">
+      <span class="material-symbols-outlined text-[20px]">logout</span>
+    </button>
+  </header>
+  <main class="px-space-lg py-space-lg max-w-[1600px] mx-auto" id="screen" role="main"></main>
 </div>
 
 <div class="scrim" id="scrim"></div>

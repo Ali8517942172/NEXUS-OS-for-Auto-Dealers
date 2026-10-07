@@ -39,12 +39,22 @@
    second thing worth knowing: one of the six cannot be answered from this
    database at all today, so 83% is the highest it can currently read. That is
    said on the screen rather than left as a puzzle. */
-import { el } from '../lib/dom.js';
-import { esc, num } from '../lib/format.js';
+/* 7 Oct 2026 — the Stitch layout: design/stitch/setup-dealership-configuration-
+   verification--382282.html. Four tiles (steps done of six, confirmed, still
+   to do, not measured), the readiness strip, the six numbered configuration
+   modules with their state chip and fix button, a right-hand column, and the
+   WhatsApp credential table. What the export has and this screen deliberately
+   does not draw: "Dry run diagnostics" / "Commit configuration" (no such
+   operation exists), "Estimated recovery velocity AED …/month" (no figure in
+   NEXUS supports it — CLAUDE.md, never fabricate a monetary impact) and the
+   deployment-topology card (infrastructure is the vendor's, not the
+   dealership's — CONTROL-PLANE.md). The right-hand "post-setup" column says
+   what is true: what each state word means, and that Go live is not recorded
+   anywhere. Every state, figure and sentence still comes from lib/setup.js. */
+import { ME, SESSION } from '../lib/data.js';
+import { dubaiStamp, esc, num } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { panel } from '../lib/ui.js';
-import { dsCallout, dsChip, dsEvidence, dsIntent, dsNote, dsRowList, dsSectionHead, dsStat, dsStatRow }
-  from '../lib/design-system.js';
+import { BTN, sectionHeader, statusChip, emptyState, errorState, skeleton, trustFooter } from '../lib/stitch-ui.js';
 /* The three words a FIGURE may be labelled with, owned by lib/vocabulary.js and
    never re-declared: the percentage tile carries one exactly as the owner strip
    on Today's Money Leaks does, and for the same reason — a number with no
@@ -53,35 +63,35 @@ import { TILE_PROVENANCE, UNKNOWN_IS_NOT_ZERO } from '../lib/vocabulary.js';
 import { META_CREDENTIAL, SETUP_STATE, metaCredential, readSetup, resetSetupReads } from '../lib/setup.js';
 
 const str = v => String(v == null ? '' : v).trim();
-const para = h => `<p>${h}</p>`;
-const mono = v => `<span class="ds-mono">${esc(str(v))}</span>`;
-const muted = h => `<div class="ds-cell-sub">${h}</div>`;
 
 /* Same shape as the one on Today's Money Leaks, and the same rule: a button for
    a screen this bundle does not contain is a click that does nothing, so it is
    rendered disabled and says why. */
 const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
-};
+  ? `<button type="button" class="${BTN.secondary}" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button type="button" class="${BTN.secondary}" disabled title="${esc(label)} is not part of this build.">${esc(label)} — not in this build</button>`);
 
-const STATE_ICON = { DONE: 'check', INCOMPLETE: 'alert', UNKNOWN: 'question' };
-const stateChip = key => {
-  const s = SETUP_STATE[key];
-  if (!s) return dsChip('Unstated', 'neutral', { name: 'question' });
-  return dsChip(s.label, dsIntent(s.tone), { name: STATE_ICON[key], title: s.blurb });
-};
+const STATE_CHIP = { DONE: 'live', INCOMPLETE: 'blocked', UNKNOWN: 'not-tested' };
+const STATE_WORD = { DONE: 'Confirmed done', INCOMPLETE: 'Attention required', UNKNOWN: 'Not known' };
+const stateChip = key => statusChip(STATE_CHIP[key] || 'not-tested', STATE_WORD[key] || 'Unstated');
+const PROV_CHIP = { CONFIRMED: 'live', ESTIMATED: 'partial', UNKNOWN: 'not-tested' };
+const provChip = key => statusChip(PROV_CHIP[key], TILE_PROVENANCE[key].label);
 
-const PROV_ICON = { CONFIRMED: 'check', ESTIMATED: 'alert', UNKNOWN: 'question' };
-const provChip = key => {
-  const p = TILE_PROVENANCE[key];
-  return dsChip(p.label, dsIntent(p.tone), { name: PROV_ICON[key], title: p.blurb });
+/* The module card: three looks, each a complete class string. */
+const MOD = {
+  DONE:       { box: 'rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex gap-space-md', num: 'w-10 h-10 rounded-lg bg-surface-container-low text-primary flex items-center justify-center font-label-numeric-md text-label-numeric-md font-bold shrink-0', miss: 'font-body-sm text-body-sm text-on-surface-variant' },
+  INCOMPLETE: { box: 'rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex gap-space-md border-2 border-red-200', num: 'w-10 h-10 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-label-numeric-md text-label-numeric-md font-bold shrink-0', miss: 'font-body-sm text-body-sm text-red-700' },
+  UNKNOWN:    { box: 'rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex gap-space-md border border-dashed border-outline-variant', num: 'w-10 h-10 rounded-lg bg-surface-container text-outline flex items-center justify-center font-label-numeric-md text-label-numeric-md font-bold shrink-0', miss: 'font-body-sm text-body-sm text-on-surface-variant' },
 };
+const DETAIL = { closed: 'hide', open: 'mt-space-sm pt-space-sm border-t border-outline-variant/30 flex flex-col gap-space-sm' };
+
+const tile = (label, icon, iconCls, valueHtml, unit, subHtml, footHtml) => `<div class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm">
+    <div class="flex items-center justify-between"><span class="font-table-header text-table-header uppercase tracking-wider text-on-surface-variant font-semibold">${label}</span>
+      <span class="material-symbols-outlined text-[22px] ${iconCls}">${icon}</span></div>
+    <div class="flex items-baseline gap-2"><span class="font-label-numeric-lg text-[2.25rem] leading-none font-bold text-on-surface">${valueHtml}</span>${unit ? `<span class="font-label-numeric-md text-label-numeric-md text-on-surface-variant">${unit}</span>` : ''}</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant">${subHtml}</div>
+    ${footHtml || ''}
+  </div>`;
 
 /* ══════════════════════════════════════════════════════════════════════════
    The strip
@@ -93,47 +103,41 @@ function strip(s) {
      all a nought. Nothing measured means no percentage — words, at heading
      size, so nothing in the slot can be misread as a quantity. */
   const pctTile = measured === 0
-    ? dsStat({ label: 'Setup complete', value: 'Not known', words: true, intent: 'unknown',
-        meta: provChip('UNKNOWN'),
-        note: para(esc(UNKNOWN_IS_NOT_ZERO))
-          + para('Not one of the six steps could be measured on this load, so there is no figure to show. Each step '
-            + 'below says what it tried to read and why it could not.') })
-    : dsStat({ label: 'Setup complete', value: `${s.pct}%`,
-        intent: s.pct === 100 ? 'success' : s.done ? 'warning' : 'danger',
-        meta: provChip('CONFIRMED')
-          + `<span>${num(s.done)} of ${num(s.denominator)} steps done — the denominator is ${num(s.denominator)}</span>`,
-        note: para(`The figure is the number of steps confirmed done divided by ${esc(String(s.denominator))}, and `
-            + 'nothing else. No step is weighted, no step counts twice and no step earns part marks, so counting the '
-            + 'ticks below gives the same answer.')
-          + para('A step nobody could measure is not counted as done. It lowers this figure exactly as an unfinished '
-            + 'one does, which is the right way round: "we could not check" must never read as progress.') });
+    ? tile('Setup complete', 'help', 'text-outline', 'Not known', '', `${esc(UNKNOWN_IS_NOT_ZERO)} Not one of the six steps could be measured on this load.`, `<div>${provChip('UNKNOWN')}</div>`)
+    : tile('Core progress', 'task_alt', 'text-primary', esc(String(s.done)), `/ ${esc(String(s.denominator))} steps`,
+        `${esc(String(s.pct))}% — steps confirmed done divided by ${esc(String(s.denominator))}, nothing else. A step nobody could measure is not counted as done.`,
+        `<div class="flex items-center gap-2">${provChip('CONFIRMED')}</div>`);
+  return `<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-md">
+    ${pctTile}
+    ${tile('Confirmed done', 'verified', 'text-[#157a5b]', esc(num(s.done)), `of ${esc(num(s.denominator))}`, 'Each of these came back from the read named on the step itself.')}
+    ${tile('Still to do', 'warning', s.incomplete ? 'text-red-700' : 'text-outline', esc(num(s.incomplete)), `of ${esc(num(s.denominator))}`, 'The read came back and the thing it looks for is not there. Each one names what is missing and where it is fixed.')}
+    ${tile('Not measured', 'history', 'text-outline', esc(num(s.unknown)), `of ${esc(num(s.denominator))}`, 'Neither done nor outstanding: steps this dashboard could not check at all, shown so the gap stays visible.')}
+  </div>`;
+}
 
-  const doneTile = dsStat({ label: 'Confirmed done', value: num(s.done),
-    intent: s.done ? 'success' : 'neutral',
-    meta: `<span>of ${num(s.denominator)}</span>`,
-    note: para('Each of these came back from the read named on the step itself.') });
-
-  const openTile = dsStat({ label: 'Still to do', value: num(s.incomplete),
-    intent: s.incomplete ? 'warning' : 'success',
-    meta: `<span>of ${num(s.denominator)}</span>`,
-    note: para('The read came back and the thing it looks for is not there. Each one names what is missing and '
-      + 'where it is fixed.') });
-
-  const unknownTile = dsStat({ label: 'Not measured', value: num(s.unknown),
-    intent: s.unknown ? 'unknown' : 'success',
-    meta: `<span>of ${num(s.denominator)}</span>`,
-    note: para('Neither done nor outstanding: these are the steps this dashboard could not check at all. They are '
-        + 'shown so that the gap is visible rather than resolved into whichever answer looks tidier.')
-      + para(esc(UNKNOWN_IS_NOT_ZERO)) });
-
-  return dsStatRow(pctTile + doneTile + openTile + unknownTile);
+function healthBanner(s) {
+  const measured = s.done + s.incomplete;
+  const pct = measured === 0 ? null : s.pct;
+  return `<div class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+    <div class="flex items-start gap-space-md">
+      <div class="w-12 h-12 rounded-xl bg-primary-container/10 text-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[26px]">speed</span></div>
+      <div><div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md font-semibold text-on-surface">Where setup stands</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-primary font-bold">${esc(num(s.done))} OF ${esc(num(s.denominator))} DONE</span></div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant">${esc(num(s.incomplete))} still to do and ${esc(num(s.unknown))} that could not be measured. The six are fixed: Dealership, Team, Inventory, WhatsApp, Test enquiry, Go live. Go live cannot be answered from this database at all today, so 5 of 6 (83%) is the highest this can currently read — a gap in what NEXUS records, not work left undone.</p></div>
+    </div>
+    <div class="w-full lg:w-72 shrink-0">
+      <div class="flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-on-surface"><span>Steps done</span><span class="text-primary font-bold">${pct == null ? '—' : `${esc(String(pct))}%`}</span></div>
+      <div class="mt-1 h-2 rounded-full bg-surface-container overflow-hidden flex">${Array.from({ length: s.denominator }, (_, i) => `<div class="${i < s.done ? 'flex-1 bg-primary border-r border-surface-container-lowest' : 'flex-1 border-r border-surface-container-lowest'}"></div>`).join('')}</div>
+    </div>
+  </div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
    One step
    ══════════════════════════════════════════════════════════════════════════ */
-function stepRow(step) {
+function stepCard(step, i) {
   const s = SETUP_STATE[step.state];
+  const m = MOD[step.state] || MOD.UNKNOWN;
   const fix = step.fix || {};
   /* Three ways a step tells the reader where it is fixed, and the third is the
      one this screen was careful to get right: a step whose work does not happen
@@ -142,32 +146,34 @@ function stepRow(step) {
   const fixHtml = step.state === 'DONE'
     ? (fix.screen ? linkBtn(fix.screen, fix.label || 'Open') : '')
     : fix.outside
-      ? muted(`This step is not done in NEXUS. It is done in ${esc(str(fix.where) || 'a system that is not NEXUS')}.`)
+      ? `<span class="font-body-sm text-body-sm text-on-surface-variant max-w-[14rem]">Done outside NEXUS, in ${esc(str(fix.where) || 'a system that is not NEXUS')}.</span>`
       : fix.screen
-        ? linkBtn(fix.screen, fix.label || 'Open')
+        ? `<button type="button" class="${BTN.primary}" data-go="${esc(fix.screen)}"${SCREENS[fix.screen] ? '' : ' disabled'}>${esc(fix.label || 'Open')}</button>`
         : '';
-
-  const detail = para(esc(str(step.headline)))
-    + (step.missing ? para(`<strong>What is missing.</strong> ${esc(str(step.missing))}`) : '')
-    + (step.note ? para(esc(str(step.note))) : '')
-    + (Array.isArray(step.evidence) && step.evidence.length
-        ? dsEvidence(step.evidence.map(e => ({ fact: esc(str(e.fact)), source: str(e.source) })))
-        : '')
-    + (fixHtml ? `<div style="margin-top:10px">${fixHtml}</div>` : '')
-    + (s ? dsNote(para(esc(s.blurb)), { label: 'What this state means' }) : '');
-
-  return {
-    cells: [
-      `<div class="ds-cell--strong">${esc(str(step.title))}</div>`,
-      `<div>${stateChip(step.state)}</div>`,
-      `<div class="ds-clamp2">${esc(str(step.headline))}</div>`,
-    ],
-    detail,
-    /* Open on arrival when there is something to do about it, closed when there
-       is not. A reader who has three steps left should not have to click three
-       times to find out what they are. */
-    open: step.state === 'INCOMPLETE',
-  };
+  const evidence = Array.isArray(step.evidence) ? step.evidence : [];
+  /* Open on arrival when there is something to do about it, closed when there
+     is not. A reader who has three steps left should not have to click three
+     times to find out what they are. */
+  const open = step.state === 'INCOMPLETE';
+  return `<div class="${m.box}">
+    <div class="${m.num}">${String(i + 1).padStart(2, '0')}</div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-start justify-between gap-space-md">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md font-semibold text-on-surface">${esc(str(step.title))}</span>${stateChip(step.state)}</div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(str(step.headline))}</p>
+          ${step.missing ? `<p class="${m.miss} mt-1">Missing: ${esc(str(step.missing))}</p>` : ''}
+        </div>
+        <div class="flex flex-col items-end gap-1 shrink-0">${fixHtml}
+          <button type="button" class="${BTN.tertiary}" data-detail="${i}" aria-expanded="${open}">${open ? 'Hide detail' : 'Show detail'}</button></div>
+      </div>
+      <div class="${open ? DETAIL.open : DETAIL.closed}" data-detail-body="${i}">
+        ${step.note ? `<p class="font-body-sm text-body-sm text-on-surface">${esc(str(step.note))}</p>` : ''}
+        ${evidence.length ? `<div class="flex flex-col gap-1">${evidence.map(e => `<div class="flex flex-wrap items-baseline gap-x-2 font-body-sm text-body-sm"><span class="text-on-surface">${esc(str(e.fact))}</span><span class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(str(e.source))}</span></div>`).join('')}</div>` : ''}
+        ${s ? `<p class="font-body-sm text-body-sm text-on-surface-variant"><span class="font-semibold text-on-surface">What this state means.</span> ${esc(s.blurb)}</p>` : ''}
+      </div>
+    </div>
+  </div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -182,74 +188,44 @@ function stepRow(step) {
    can agree, over the phone, that the credential in the system is the one that
    was created — and it is all that exists to show. Nothing here has access to
    a secret: the read that produces this panel does not return one. */
+const CRED_ROW = { ok: 'h-11 hover:bg-surface-container-low transition-colors', bad: 'h-11 bg-red-50/40 hover:bg-red-50 transition-colors' };
 function credentialPanel(step) {
-  if (!step) return '';
+  if (!step) return emptyState({ icon: 'chat', title: 'The WhatsApp step was not returned', body: 'lib/setup.js answered without a WhatsApp step, so nothing is claimed about the credentials.' });
   if (step.state === 'UNKNOWN') {
-    return dsCallout({ intent: 'unknown', lede: 'Not known.',
-      body: esc(str(step.headline)),
-      note: (step.note ? para(esc(str(step.note))) : '')
-        + (Array.isArray(step.evidence) ? dsEvidence(step.evidence.map(e => ({ fact: esc(str(e.fact)), source: str(e.source) }))) : ''),
-      noteLabel: 'Why this could not be checked' });
+    return `<div class="p-space-md flex items-start gap-3"><span class="material-symbols-outlined text-outline">help</span><div class="flex flex-col gap-1">
+      <span class="font-body-md text-body-md font-semibold text-on-surface">Not known. ${esc(str(step.headline))}</span>
+      ${step.note ? `<span class="font-body-sm text-body-sm text-on-surface-variant">${esc(str(step.note))}</span>` : ''}
+      ${(Array.isArray(step.evidence) ? step.evidence : []).map(e => `<span class="font-body-sm text-body-sm text-on-surface-variant">${esc(str(e.fact))} <span class="font-label-numeric-sm text-outline">${esc(str(e.source))}</span></span>`).join('')}</div></div>`;
   }
   const numbers = Array.isArray(step.numbers) ? step.numbers : [];
   if (!numbers.length) {
-    return dsCallout({ intent: 'warning', lede: 'No number is registered.',
-      body: esc(str(step.missing) || str(step.headline)),
-      note: para('The three credentials below cannot exist until a number does, so none of them is shown as missing '
-        + '— there is nothing for them to be missing from.')
-        + `<ul>${Object.entries(META_CREDENTIAL).map(([kind, c]) =>
-            `<li>${mono(kind)} — ${esc(c.label)}. ${esc(c.matters)}</li>`).join('')}</ul>`,
-      noteLabel: 'What the three credentials are' });
+    return `<div class="p-space-md flex flex-col gap-space-sm">
+      <div class="flex items-start gap-3"><span class="material-symbols-outlined text-amber-700">warning</span><div>
+        <div class="font-body-md text-body-md font-semibold text-on-surface">No number is registered.</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(str(step.missing) || str(step.headline))} The three credentials below cannot exist until a number does, so none of them is shown as missing — there is nothing for them to be missing from.</div></div></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-space-sm">${Object.entries(META_CREDENTIAL).map(([kind, c]) => `<div class="p-space-sm rounded-lg bg-surface-container-low">
+        <div class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(kind)}</div><div class="font-body-sm text-body-sm font-semibold text-on-surface">${esc(c.label)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(c.matters)}</div></div>`).join('')}</div></div>`;
   }
-  return numbers.map(nmb => {
-    const rows = nmb.credentials.map(c => {
-      const known = metaCredential(c.kind);
-      const installed = c.state === 'INSTALLED';
-      const chip = installed
-        ? dsChip('Installed', 'success', { name: 'check', title: 'This credential is installed for this number.' })
-        : c.state === 'MISSING'
-          ? dsChip('Missing', 'danger', { name: 'danger', title: 'This credential is not installed for this number.' })
-          : dsChip(c.stateRaw || 'Unstated', 'unknown', { name: 'question', verbatim: true,
-              title: 'The check reported a state this screen has no wording for, so nothing is claimed about it.' });
-      return {
-        cells: [
-          `<div class="ds-cell--strong">${esc((known && known.label) || c.kind)}</div>`,
-          `<div>${chip}</div>`,
-          `<div>${installed
-            ? (c.fingerprint
-                ? mono(c.fingerprint)
-                : `<span class="ds-cell-sub">no fingerprint in the answer</span>`)
-            : '<span class="ds-cell-sub">—</span>'}</div>`,
-        ],
-        detail: para(mono(c.kind))
-          + (known ? para(esc(known.matters)) : '')
-          + (installed
-              ? para(c.fingerprint
-                  ? `Installed${c.installedAt ? ` on ${esc(c.installedAt)}` : ''}, fingerprint `
-                    + `${mono(c.fingerprint)}. The fingerprint is eight characters derived from the credential and `
-                    + 'is not the credential: it cannot be used to send, receive or sign anything. It is here so '
-                    + 'that the installation in NEXUS can be matched against the one created in Meta without either '
-                    + 'side reading a secret aloud.'
-                  : 'This credential is installed and the answer carried no fingerprint, so none is shown rather '
-                    + 'than a placeholder.')
-              : para('This credential is not installed. It is created in the dealership’s own Meta Business '
-                  + 'account and installed by NEXUS; nothing in this dashboard installs one, and nothing here can '
-                  + 'work around its absence.'))
-          + para(`<span class="ds-cell-sub">${esc(c.detail)}</span>`),
-        open: !installed,
-      };
-    });
-    const missing = nmb.missing.length;
-    return dsSectionHead({
-      title: `Number ${nmb.phoneNumberId}`,
-      sub: missing
-        ? `<span class="ds-t-danger">${num(missing)} of ${num(nmb.credentials.length)} credentials not installed</span>`
-        : `All ${num(nmb.credentials.length)} credentials installed`,
-      note: para('The identifier above is the number’s own id in Meta, not a phone number. It is shown because it '
-        + 'is what the dealership sees in their own Meta account, so the two can be matched.'),
-    }) + dsRowList(['Credential', 'State', 'Fingerprint'], rows,
-      { template: 'minmax(180px,1fr) 160px minmax(120px,1fr)', caption: `Credentials for number ${nmb.phoneNumberId}` });
-  }).join('');
+  const rows = numbers.flatMap(nmb => nmb.credentials.map(c => {
+    const known = metaCredential(c.kind);
+    const installed = c.state === 'INSTALLED';
+    const chip = installed ? statusChip('live', 'Installed')
+      : c.state === 'MISSING' ? statusChip('blocked', 'Missing')
+        : statusChip('not-tested', c.stateRaw || 'Unstated');
+    return `<tr class="${installed ? CRED_ROW.ok : CRED_ROW.bad}" title="${esc(c.detail || '')}">
+      <td class="px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface">${esc(nmb.phoneNumberId)}</td>
+      <td class="px-4"><div class="font-body-sm text-body-sm font-semibold text-on-surface">${esc((known && known.label) || c.kind)}</div><div class="font-label-numeric-sm text-[11px] text-outline">${esc(c.kind)}</div></td>
+      <td class="px-4">${chip}</td>
+      <td class="px-4 font-label-numeric-sm text-label-numeric-sm">${installed ? (c.fingerprint ? esc(c.fingerprint) : '<span class="text-outline">no fingerprint in the answer</span>') : '—'}</td>
+      <td class="px-4 font-body-sm text-body-sm text-on-surface-variant">${installed ? esc(c.installedAt || '—') : 'Created in the dealership’s Meta account, installed by NEXUS'}</td></tr>`;
+  })).join('');
+  return `<div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+    <thead><tr class="bg-surface-container-low border-b border-outline-variant/30 text-outline font-table-header text-table-header uppercase">
+      <th class="py-3 px-4">Number id (Meta)</th><th class="py-3 px-4">Credential</th><th class="py-3 px-4">State</th><th class="py-3 px-4">Fingerprint</th><th class="py-3 px-4">Installed</th></tr></thead>
+    <tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm text-on-surface">${rows}</tbody></table></div>
+    <div class="px-space-md py-2.5 bg-surface-container-low font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-outline">shield</span>
+      The id is the number’s own id in Meta, not a phone number. A fingerprint is eight characters derived from a credential, never the credential: it cannot send, receive or sign anything.</div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -260,48 +236,60 @@ SCREENS.setup = async host => {
      length: a remembered answer to "are you set up yet" is the one answer that
      is guaranteed to be wrong the moment somebody acts on it. */
   resetSetupReads();
+  host.innerHTML = `<div class="nx-stitch flex flex-col gap-space-md">
+    ${sectionHeader({ eyebrow: 'Account · Setup', title: 'Dealership Setup & Onboarding',
+      sub: 'Six steps. A step is done when the read named on it came back and found the thing; not done when the read came back and did not; and not known when the read could not be made at all.',
+      actionsHtml: `<button type="button" class="${BTN.secondary}" data-recheck><span class="material-symbols-outlined text-[18px]">refresh</span><span class="whitespace-nowrap">Re-check all six</span></button>` })}
+    <div data-s="body">${skeleton({ rows: 4 })}</div>
+  </div>`;
+  const root = host.firstElementChild;
+  root.querySelector('[data-recheck]').addEventListener('click', () => go('setup'));
+  const slot = root.querySelector('[data-s="body"]');
 
-  const root = el('div', 'ds-screen');
-  host.appendChild(root);
-
-  panel(root, {
-    title: 'Where setup stands',
-    sub: 'Six steps. A step is done when the read named on it came back and found the thing; it is not done when the '
-       + 'read came back and did not; and it is not known when the read could not be made at all',
-    load: () => readSetup(),
-    render: s => `<div style="padding:16px">${strip(s)}`
-      + dsCallout({ intent: s.unknown ? 'unknown' : 'info',
-          lede: `${num(s.done)} of ${num(s.denominator)} done.`,
-          body: `${num(s.incomplete)} still to do and ${num(s.unknown)} that could not be measured.`,
-          note: para(`The denominator is ${esc(String(s.denominator))} and it is fixed: Dealership, Team, Inventory, `
-              + 'WhatsApp, Test enquiry, Go live.')
-            + para('One of the six — Go live — cannot be answered from this database at all today, because nothing '
-              + 'here records whether a dealership has been switched on commercially. Five of six, or 83%, is '
-              + 'therefore the highest this figure can currently read, and that ceiling is a gap in what NEXUS '
-              + 'records rather than work left undone by the dealership.'),
-          noteLabel: 'What the six are, and why 100% is not reachable today' })
-      + '</div>',
-  });
-
-  panel(root, {
-    title: 'The six steps',
-    sub: 'Each one says what was read, what it found, and — where there is one — the screen it is fixed on. Where '
-       + 'there is not, it names where the work actually happens',
-    load: () => readSetup(),
-    render: s => `<div style="padding:16px">`
-      + dsRowList(['Step', 'State', 'What this read found'], s.steps.map(stepRow),
-          { template: 'minmax(140px,1fr) 150px minmax(240px,3fr)', caption: 'The six setup steps' })
-      + '</div>',
-  }).then(wireGo);
-
-  panel(root, {
-    title: 'WhatsApp',
-    sub: 'The step that blocks a dealership. A number is registered in the dealership’s own Meta Business account '
-       + 'and three credentials are installed against it; until all three are in, messages do not flow',
-    load: () => readSetup(),
-    render: s => {
-      const step = s.steps.find(x => x.id === 'whatsapp');
-      return `<div style="padding:16px">${credentialPanel(step)}</div>`;
-    },
-  }).then(wireGo);
+  let s;
+  try { s = await readSetup(); } catch (e) {
+    slot.innerHTML = errorState({ what: 'setup', err: e, retry: 'setup' });
+    slot.querySelector('[data-retry]')?.addEventListener('click', () => go('setup'));
+    return;
+  }
+  const steps = Array.isArray(s.steps) ? s.steps : [];
+  const wa = steps.find(x => x.id === 'whatsapp');
+  const golive = steps.find(x => x.id === 'golive' || /go live/i.test(str(x.title)));
+  slot.innerHTML = `<div class="flex flex-col gap-space-md">
+    ${strip(s)}
+    ${healthBanner(s)}
+    <div class="grid grid-cols-1 xl:grid-cols-12 gap-space-md">
+      <div class="xl:col-span-8 flex flex-col gap-space-sm">
+        <div class="flex items-center justify-between px-1"><div class="flex items-center gap-2"><span class="font-headline-md text-headline-md font-semibold text-on-surface">Configuration steps</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(num(s.denominator))} STEP PROTOCOL</span></div></div>
+        ${steps.map(stepCard).join('')}
+      </div>
+      <div class="xl:col-span-4 flex flex-col gap-space-md">
+        <div class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm">
+          <div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-primary-container text-on-primary flex items-center justify-center"><span class="material-symbols-outlined text-[18px]">shield</span></div>
+            <div><div class="font-headline-md text-headline-md font-semibold text-on-surface">After setup</div><div class="font-body-sm text-body-sm text-outline">What is and is not recorded</div></div></div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">Go live — the dealership being switched on commercially — is not recorded anywhere in this database, so this screen can never show it as done. It is shown as ${golive ? esc(STATE_WORD[golive.state] || 'not known').toLowerCase() : 'not known'} rather than inferred from the steps above it.</p>
+          ${Object.entries(SETUP_STATE).map(([k, v]) => `<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1"><div>${stateChip(k)}</div><span class="font-body-sm text-body-sm text-on-surface-variant">${esc(v.blurb)}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <section class="rounded-xl bg-surface-container-lowest shadow-sm overflow-hidden">
+      <div class="px-space-md py-3 flex items-start justify-between gap-space-sm">
+        <div><div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md font-semibold text-on-surface">WhatsApp Business numbers — credential install state</span>
+          ${wa ? stateChip(wa.state) : ''}</div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">The step that blocks a dealership. A number is registered in the dealership’s own Meta Business account and three credentials are installed against it; until all three are in, messages do not flow.</p></div>
+      </div>
+      ${credentialPanel(wa)}
+    </section>
+    ${trustFooter({ source: 'lib/setup.js — six reads', asOf: dubaiStamp(new Date().toISOString()), evidence: `${num(s.done)} done · ${num(s.incomplete)} to do · ${num(s.unknown)} not measured`,
+      actor: (ME && (ME.name || ME.email)) || (SESSION && SESSION.user && SESSION.user.email) || null })}
+  </div>`;
+  slot.querySelectorAll('[data-go]').forEach(b => { if (!b.disabled) b.addEventListener('click', () => go(b.dataset.go)); });
+  slot.querySelectorAll('[data-detail]').forEach(b => b.addEventListener('click', () => {
+    const body = slot.querySelector(`[data-detail-body="${b.dataset.detail}"]`);
+    const open = body.className === DETAIL.closed;
+    body.className = open ? DETAIL.open : DETAIL.closed;
+    b.textContent = open ? 'Hide detail' : 'Show detail';
+    b.setAttribute('aria-expanded', String(open));
+  }));
 };

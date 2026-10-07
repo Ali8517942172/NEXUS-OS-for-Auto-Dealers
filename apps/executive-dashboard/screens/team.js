@@ -199,7 +199,7 @@
    table failed to load says so rather than showing a plausible blank. */
 import { canGrantOwner, canManageAccess, db, dbWrite } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, tone } from '../lib/format.js';
 import { displayName, maskText } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
 /* Open pipeline, defined once. TERMINAL_TONES and isOpenLead used to be
@@ -211,8 +211,9 @@ import { SCREENS, go } from '../lib/nav.js';
    reason is attribution and cap disclosure rather than a disagreement about
    what pipeline means; see DB_PIPELINE_NOTE for the sentence that says so. */
 import { CAP_NOTE, DB_PIPELINE_NOTE, LEAD_LIMIT, isOpenLead, sumBudget } from '../lib/pipeline.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+import { BTN, actor, bannerClass, kpi, openDrawer, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/admin-kit.js';
+import { sectionHeader, trustFooter } from '../lib/stitch-ui.js';
 
 /* Leads are read to answer three questions the view cannot: which leads have no
    owner at all, what a given rep is actually holding, and how much of that is
@@ -335,8 +336,8 @@ const nameList = (rows, n = 4) => {
    really is a lead we hold no number for — rendered as a dash that says so, not
    as an empty cell and never as a placeholder number. */
 const leadPhone = l => (str(l?.phone)
-  ? `<span class="mono">${esc(maskText(str(l.phone)))}</span>`
-  : '<span class="t-muted" title="No phone number is recorded on this lead.">\u2014</span>');
+  ? `<span class="font-label-numeric-sm">${esc(maskText(str(l.phone)))}</span>`
+  : '<span class="text-on-surface-variant" title="No phone number is recorded on this lead.">\u2014</span>');
 
 const low = v => String(v ?? '').trim().toLowerCase();
 const valOf = r => (r.status === 'fulfilled' ? r.value : null);
@@ -377,7 +378,7 @@ const statusLabel  = r => {
   return String(r.status).replace(/_/g, ' ');
 };
 const statusPill = r => {
-  if (!r.status) return `<span class="t-muted">No status on file</span>`;
+  if (!r.status) return `<span class="text-on-surface-variant">No status on file</span>`;
   if (isPending(r)) return pill('Pending invite', 'warm', { verbatim: false });
   return pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined, { verbatim: true });
 };
@@ -392,15 +393,28 @@ SCREENS.team = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* 7 Oct 2026 — the Stitch layout, design/stitch/team-showroom-roster-access
+     --bcd2c2.html: page header, metric strip, attention cards, the roster
+     table and "Who has access". The alert strip stays ABOVE the metric strip,
+     for the reason given just below; every read, rule and control is unchanged.
+     The export's "Export roster" button is not drawn (no export exists); its
+     "Invite team member" button is, and it opens the add-a-colleague form in
+     Who has access, which is the invite path this screen really has. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  const head = el('div');
+  head.innerHTML = sectionHeader({ eyebrow: 'Operations · Governance & roster', title: 'Team & Showroom Roster',
+    sub: 'Who is on the floor, what they are holding, how fast they answer, and who can open this dealership’s data.',
+    actionsHtml: `<button type="button" class="${BTN.primary}" data-team-invite><span class="material-symbols-outlined text-[18px]">person_add</span><span class="whitespace-nowrap">Invite team member</span></button>` });
+  root.appendChild(head);
+  head.querySelector('[data-team-invite]').addEventListener('click', () => focusAccess(true));
 
   /* The alert strip sits above the KPI row on purpose. "How many people are on
      the team" is a fact; "a rep is holding nothing while a HOT lead has no
      owner" is a job, and the job must not be the thing you scroll past. */
-  const alertHost = el('div'); alertHost.style.marginBottom = '16px'; root.appendChild(alertHost);
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
-  const body = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
+  const alertHost = el('div'); root.appendChild(alertHost);
+  const strip = el('div', 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-space-md'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const body = el('div', 'flex flex-col gap-space-md'); root.appendChild(body);
 
   /* allSettled, not catch(() => []): a directory that failed to read and a
      directory with nobody in it are opposite answers, and on this screen the
@@ -675,11 +689,11 @@ SCREENS.team = async host => {
     strip.innerHTML = [
       kpi('Team members', num(roster.length),
         usersErr
-          ? '<span class="t-warm">Directory unreadable — counted from the performance view</span>'
+          ? '<span class="text-amber-700">Directory unreadable — counted from the performance view</span>'
           /* "0 pending invite" beside a roster of one is a count of a thing that
              is not happening. It appears when there is something to report. */
           : `${num(withAccount.length)} with an account${pending.length ? ` · ${num(pending.length)} pending invite` : ''}`
-            + (roster.length === 1 ? '<div class="t-muted">The whole floor is one person</div>' : '')),
+            + (roster.length === 1 ? '<div class="text-on-surface-variant">The whole floor is one person</div>' : '')),
       /* These two lines said sending an invitation was not built. It is, and it
          ships in this bundle: the Team card on Settings calls the founder-invite
          Edge Function, which returns outcome 'invited' after NEXUS sends the
@@ -690,9 +704,9 @@ SCREENS.team = async host => {
          does. */
       kpi('Awaiting an invite', num(pending.length),
         pending.length
-          ? '<span class="t-warm">A seat is recorded but no account exists — the invitation mail goes out from the Team card on Settings, which an owner opens</span>'
-          : '<span class="t-ok">Nobody is waiting on an invitation</span>'
-            + '<div class="t-muted">Adding a colleague below records the seat and the role; the invitation mail itself is sent by NEXUS from the Team card on Settings, which an owner opens</div>',
+          ? '<span class="text-amber-700">A seat is recorded but no account exists — the invitation mail goes out from the Team card on Settings, which an owner opens</span>'
+          : '<span class="text-emerald-700">Nobody is waiting on an invitation</span>'
+            + '<div class="text-on-surface-variant">Adding a colleague below records the seat and the role; the invitation mail itself is sent by NEXUS from the Team card on Settings, which an owner opens</div>',
         pending.length ? 't-warm' : ''),
       /* The counts here are within_sla / breached_sla straight off the view, and
          both are count(*) FILTER on response_time_minutes, so their sum is the
@@ -703,17 +717,17 @@ SCREENS.team = async host => {
       kpi('Within the 5-minute rule',
         (timingTrusted && measuredTot) ? `${num(withinTot ?? 0)} / ${num(measuredTot)}` : '—',
         !timingTrusted
-          ? `<span class="t-warm" title="${esc(NO_TIMING)}">Nobody can be scored against the 5-minute rule yet</span>`
-            + `<div class="t-muted">${esc(timingWhy)}</div>`
+          ? `<span class="text-amber-700" title="${esc(NO_TIMING)}">Nobody can be scored against the 5-minute rule yet</span>`
+            + `<div class="text-on-surface-variant">${esc(timingWhy)}</div>`
           : !measuredTot
-            ? '<span class="t-muted">No rep row carries a response measurement</span>'
+            ? '<span class="text-on-surface-variant">No rep row carries a response measurement</span>'
             /* One measured lead is an outcome, not a rate. The count stays — it
                is the fact — and the percentage is withdrawn with the reason. */
             : measuredTot < MIN_RATE_SAMPLE
-              ? `<span class="t-muted">One lead has been timed, so this is that lead's outcome and not a rate</span>`
-                + (teamAvg == null ? '' : `<div class="t-muted">Its ${esc(avgLabel)} ${esc(mins(teamAvg))}</div>`)
+              ? `<span class="text-on-surface-variant">One lead has been timed, so this is that lead's outcome and not a rate</span>`
+                + (teamAvg == null ? '' : `<div class="text-on-surface-variant">Its ${esc(avgLabel)} ${esc(mins(teamAvg))}</div>`)
               : `${pct((withinTot ?? 0) / measuredTot * 100)} · ${esc(avgLabel)} ${esc(mins(teamAvg))}`
-                + (measuredTot <= THIN ? `<div><span class="t-warm">Over ${num(measuredTot)} measured leads in total — a proportion this small moves a long way on one reply</span></div>` : ''),
+                + (measuredTot <= THIN ? `<div><span class="text-amber-700">Over ${num(measuredTot)} measured leads in total — a proportion this small moves a long way on one reply</span></div>` : ''),
         timingTrusted && measuredTot >= MIN_RATE_SAMPLE && (withinTot ?? 0) / measuredTot < 0.5 ? 't-hot' : ''),
       /* Open pipeline, not "pipeline". The label names exactly what is summed:
          budget_aed over the leads read here that are assigned to somebody and
@@ -725,29 +739,29 @@ SCREENS.team = async host => {
          disclose its own truncation. */
       kpi('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
         !leads
-          ? `<span class="t-muted">Leads could not be read, so open pipeline could not be summed. ${esc(DB_PIPELINE_NOTE)}</span>`
+          ? `<span class="text-on-surface-variant">Leads could not be read, so open pipeline could not be summed. ${esc(DB_PIPELINE_NOTE)}</span>`
           : pipelineTot == null
             ? (openHeld
-                ? `<span class="t-muted">${num(openHeld)} open ${plural(openHeld, 'lead is', 'leads are')} held, and not one of them carries a budget_aed — so there is a book here, but no money to total</span>`
-                : '<span class="t-muted">Nobody on the roster is holding an open lead</span>')
+                ? `<span class="text-on-surface-variant">${num(openHeld)} open ${plural(openHeld, 'lead is', 'leads are')} held, and not one of them carries a budget_aed — so there is a book here, but no money to total</span>`
+                : '<span class="text-on-surface-variant">Nobody on the roster is holding an open lead</span>')
             : (roster.length === 1
                 ? 'Held by the only person on the roster'
                 : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`)
-              + `<div class="t-muted">Open leads only — won and dead ones are excluded</div>`
+              + `<div class="text-on-surface-variant">Open leads only — won and dead ones are excluded</div>`
               /* Same wording Overview prints on its own pipeline tile, from
                  lib/pipeline.js, so one truncation cannot be disclosed in two
                  strengths on two screens showing the same rule. */
-              + (leadsCapped ? `<div class="t-warm">${esc(CAP_NOTE(num(LEAD_LIMIT)))}</div>` : '')),
+              + (leadsCapped ? `<div class="text-amber-700">${esc(CAP_NOTE(num(LEAD_LIMIT)))}</div>` : '')),
       kpi('Unassigned leads', leads ? num(unassigned.length) : '—',
         !leads
-          ? `<span class="t-muted">Leads could not be read</span>`
+          ? `<span class="text-on-surface-variant">Leads could not be read</span>`
           : unassigned.length
             /* Which of them are HOT is the whole point: an unowned COLD lead is
                a queue, an unowned HOT lead is the auto-assign trigger failing. */
-            ? `<span class="t-hot">Nobody owns these</span>${unassignedHot.length ? ` · <span class="t-hot">${num(unassignedHot.length)} HOT</span>` : ' · none of them HOT'}`
-            : '<span class="t-ok">Every lead read here has an owner</span>'
+            ? `<span class="text-red-700">Nobody owns these</span>${unassignedHot.length ? ` · <span class="text-red-700">${num(unassignedHot.length)} HOT</span>` : ' · none of them HOT'}`
+            : '<span class="text-emerald-700">Every lead read here has an owner</span>'
               + (leads.length <= THIN
-                  ? `<div class="t-muted">That is the whole your leads — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it</div>`
+                  ? `<div class="text-on-surface-variant">That is the whole your leads — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it</div>`
                   : ''),
         leads && unassigned.length ? 't-hot' : ''),
     ].join('');
@@ -796,9 +810,9 @@ SCREENS.team = async host => {
     const who = findRep(it.ref);
     const t = str(it.title);
     const titleHtml = !t
-      ? '<span class="t-muted">This alert carries no title</span>'
+      ? '<span class="text-on-surface-variant">This alert carries no title</span>'
       : HANDLE.test(t)
-        ? `<span class="mono">${esc(t)}</span> <span class="t-muted">— a WhatsApp handle, not a name</span>`
+        ? `<span class="font-label-numeric-sm">${esc(t)}</span> <span class="text-on-surface-variant">— a WhatsApp handle, not a name</span>`
         : esc(t);
     alerts.push({
       source: 'view',
@@ -810,7 +824,7 @@ SCREENS.team = async host => {
       titleHtml,
       detailHtml: (str(it.detail) ? esc(str(it.detail)) : 'The attention list recorded no detail on this row.')
         + (who || it.ref == null ? ''
-          : ` <span class="t-muted">Raised against <span class="mono">${esc(str(it.ref))}</span>, which matches nobody on the roster read here, so there is no row on this screen for it to open.</span>`),
+          : ` <span class="text-on-surface-variant">Raised against <span class="font-label-numeric-sm">${esc(str(it.ref))}</span>, which matches nobody on the roster read here, so there is no row on this screen for it to open.</span>`),
       act: who ? () => openRep(who) : null,
       actLabel: 'Open rep',
     });
@@ -824,7 +838,7 @@ SCREENS.team = async host => {
       sev: 'PENDING_INVITE', icon: 'mark_email_unread', at: oldest, atLabel: 'oldest seat made',
       titleHtml: `${num(pending.length)} ${plural(pending.length, 'seat is', 'seats are')} held by an invite nobody accepted`,
       detailHtml: `${nameList(pending) || `${num(pending.length)} ${plural(pending.length, 'person', 'people')}`} `
-        + `${plural(pending.length, 'sits', 'sit')} at <span class="mono">pending_invite</span>. They cannot sign in, cannot be alerted when a HOT lead lands and cannot be assigned one, `
+        + `${plural(pending.length, 'sits', 'sit')} at <span class="font-label-numeric-sm">pending_invite</span>. They cannot sign in, cannot be alerted when a HOT lead lands and cannot be assigned one, `
         + `so their share of the floor is being carried by whoever else is on it. `
         + (oldest ? `The oldest of these accounts was created ${esc(ago(oldest))}. ` : 'None of these rows carries a creation date, so how long they have been waiting is not knowable. ')
         + 'Adding them here recorded a seat and a role; it sends no mail \u2014 that is all nexus_team_invite does. The invitation itself is sent by NEXUS from the Team card on Settings, which an owner can open, so this stays outstanding until somebody sends it from there rather than until an endpoint is written.',
@@ -838,7 +852,7 @@ SCREENS.team = async host => {
      doorstep and somebody standing in the showroom with nothing to do. */
   if (leads && unassignedHot.length) {
     const shown = unassignedHot.slice(0, 4).map(l =>
-      `${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')} ${leadPhone(l)} <span class="t-muted">(${esc(ago(l.created_at))})</span>`).join(' · ');
+      `${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')} ${leadPhone(l)} <span class="text-on-surface-variant">(${esc(ago(l.created_at))})</span>`).join(' · ');
     add({
       sev: 'HOT', icon: 'person_add_disabled', at: unassignedHot[0].created_at, atLabel: 'oldest arrived',
       titleHtml: `${num(unassignedHot.length)} HOT ${plural(unassignedHot.length, 'lead has', 'leads have')} no owner`
@@ -846,7 +860,7 @@ SCREENS.team = async host => {
       detailHtml: `${shown}${unassignedHot.length > 4 ? ` and ${num(unassignedHot.length - 4)} more` : ''}. `
         + (idle.length ? `${nameList(idle)} ${plural(idle.length, 'has', 'have')} no lead at all against ${plural(idle.length, 'their name', 'their names')}. ` : '')
         + 'The auto-assign trigger is supposed to hand a HOT lead to the least-loaded rep, and these were handed to nobody, so on these rows it did not do its job. '
-        + 'Whether it never fired or fired and failed is <em>not</em> readable from here: <span class="mono">leads</span> records who owns a lead and carries no record of who set the owner or when — no assigned_by, no assigned_at, no updated_at — so a trigger assignment and a hand assignment look identical afterwards. '
+        + 'Whether it never fired or fired and failed is <em>not</em> readable from here: <span class="font-label-numeric-sm">leads</span> records who owns a lead and carries no record of who set the owner or when — no assigned_by, no assigned_at, no updated_at — so a trigger assignment and a hand assignment look identical afterwards. '
         + 'What can be said is that these rows have no owner of any kind.',
       act: () => go('leads'),
       actLabel: 'Open leads',
@@ -856,7 +870,7 @@ SCREENS.team = async host => {
       sev: 'WARM', icon: 'work_off',
       titleHtml: `${num(idle.length)} ${plural(idle.length, 'rep is', 'reps are')} holding no leads at all`,
       detailHtml: `${nameList(idle)} ${plural(idle.length, 'has', 'have')} an active account and no lead against ${plural(idle.length, 'their name', 'their names')} — `
-        + `neither in <span class="mono">The team figures</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'Your leads, which did not load'}. `
+        + `neither in <span class="font-label-numeric-sm">The team figures</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'Your leads, which did not load'}. `
         /* This branch runs only when no HOT lead is unassigned, and it used to
            conclude from that alone that "nothing is going unworked". Unowned
            WARM and COLD leads are also work, and on this table there are three
@@ -885,12 +899,12 @@ SCREENS.team = async host => {
       sev: 'WARM', icon: 'hourglass_disabled',
       titleHtml: `${num(stalledReps.length)} ${plural(stalledReps.length, 'rep is', 'reps are')} holding ${num(held)} ${plural(held, 'lead', 'leads')} with no first reply timed`,
       detailHtml: `${nameList(worst)} ${plural(stalledReps.length, 'has', 'have')} leads assigned and no measured response against ${plural(stalledReps.length, 'that name', 'those names')} — `
-        + 'not a slow average, no <span class="mono">within_sla</span> or <span class="mono">breached_sla</span> count at all. That is usually what the view reports when nobody has replied, but it is not proof of it: the trigger also leaves a lead unstamped when its only reply predates the lead row. So this names work nobody has been timed on, not customers nobody has answered. '
+        + 'not a slow average, no <span class="font-label-numeric-sm">within_sla</span> or <span class="font-label-numeric-sm">breached_sla</span> count at all. That is usually what the view reports when nobody has replied, but it is not proof of it: the trigger also leaves a lead unstamped when its only reply predates the lead row. So this names work nobody has been timed on, not customers nobody has answered. '
         + (untimed != null
-          ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untimed)} of their ${plural(untimed, 'leads carries', 'leads carry')} no <span class="mono">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
+          ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untimed)} of their ${plural(untimed, 'leads carries', 'leads carry')} no <span class="font-label-numeric-sm">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
           : !leads
             ? 'Leads could not be read, so this cannot be confirmed lead by lead.'
-            : 'It cannot be confirmed lead by lead either: not one lead read here carries a <span class="mono">response_time_minutes</span>, so counting the untimed ones would return every lead on the page no matter what happened.'),
+            : 'It cannot be confirmed lead by lead either: not one lead read here carries a <span class="font-label-numeric-sm">response_time_minutes</span>, so counting the untimed ones would return every lead on the page no matter what happened.'),
       act: () => focusRoster('STALLED'),
       actLabel: 'Show them',
     });
@@ -904,11 +918,11 @@ SCREENS.team = async host => {
       sev: 'HOT', icon: 'timer_off',
       titleHtml: `${num(breachTotal)} ${plural(breachTotal, 'lead', 'leads')} breached the 5-minute rule across ${num(breachers.length)} ${plural(breachers.length, 'rep', 'reps')}`,
       detailHtml: breachers.slice(0, 5).map(r =>
-        `${esc(str(r.name) || 'Unnamed')} <span class="t-hot">${num(breachedSla(r))}</span>`
-        + `${avgResponse(r) == null ? '' : ` <span class="t-muted">(${esc(mins(avgResponse(r)))} average)</span>`}`).join(' · ')
+        `${esc(str(r.name) || 'Unnamed')} <span class="text-red-700">${num(breachedSla(r))}</span>`
+        + `${avgResponse(r) == null ? '' : ` <span class="text-on-surface-variant">(${esc(mins(avgResponse(r)))} average)</span>`}`).join(' · ')
         + `${breachers.length > 5 ? ` and ${num(breachers.length - 5)} more` : ''}. `
         + 'Each of these is a lead the view timed at longer than five minutes to a first reply — the window in which the odds of qualifying it drop by about four fifths. '
-        + 'These counts come from the view itself and are all-time, not a window computed here. They are only shown at all because <span class="mono">leads.response_time_minutes</span> has been stamped on at least one lead read here; where it has been stamped on none, no breach is claimed against anybody.',
+        + 'These counts come from the view itself and are all-time, not a window computed here. They are only shown at all because <span class="font-label-numeric-sm">leads.response_time_minutes</span> has been stamped on at least one lead read here; where it has been stamped on none, no breach is claimed against anybody.',
       act: () => focusRoster('BREACHED'),
       actLabel: 'Show them',
     });
@@ -925,7 +939,7 @@ SCREENS.team = async host => {
         + `budget_aed summed over the leads assigned to them that are not won or dead${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads read` : ''}. `
         + `An even split would be ${esc(pct(c.even * 100))} each. `
         + `${leadsAssigned(c.rep) == null ? '' : `They are credited with ${num(leadsAssigned(c.rep))} ${plural(leadsAssigned(c.rep), 'lead', 'leads')}${hotLeads(c.rep) ? `, ${num(hotLeads(c.rep))} of them HOT` : ''}. `}`
-        + 'The imbalance is measured, not inferred. Its <em>cause</em> is not available: the auto-assign trigger is meant to give each HOT lead to the least-loaded rep, and since <span class="mono">leads</span> stores only the finished owner — no assigned_by, no assignment timestamp, not even an updated_at — a lead the trigger placed and a lead a manager placed by hand are indistinguishable on this screen. '
+        + 'The imbalance is measured, not inferred. Its <em>cause</em> is not available: the auto-assign trigger is meant to give each HOT lead to the least-loaded rep, and since <span class="font-label-numeric-sm">leads</span> stores only the finished owner — no assigned_by, no assignment timestamp, not even an updated_at — a lead the trigger placed and a lead a manager placed by hand are indistinguishable on this screen. '
         + (unassignedHot.length
           ? `What is visible is that ${num(unassignedHot.length)} HOT ${plural(unassignedHot.length, 'lead', 'leads')} ${plural(unassignedHot.length, 'has', 'have')} no owner at all, which the trigger should have prevented — so it is demonstrably not covering everything.`
           : leads
@@ -960,7 +974,7 @@ SCREENS.team = async host => {
     add({
       sev: 'COLD', icon: 'person_search',
       titleHtml: `${num(unlinkedReps.length)} ${plural(unlinkedReps.length, 'person has', 'people have')} activity but no row in the user directory`,
-      detailHtml: `${nameList(unlinkedReps)} ${plural(unlinkedReps.length, 'appears', 'appear')} in <span class="mono">The team figures</span> and ${plural(unlinkedReps.length, 'matches', 'match')} nobody in <span class="mono">users</span> by id, email or name. `
+      detailHtml: `${nameList(unlinkedReps)} ${plural(unlinkedReps.length, 'appears', 'appear')} in <span class="font-label-numeric-sm">The team figures</span> and ${plural(unlinkedReps.length, 'matches', 'match')} nobody in <span class="font-label-numeric-sm">users</span> by id, email or name. `
         + 'They are shown on the roster below, labelled as unlinked rather than dropped — but they have no account record, so their role and status are unknown and no invite or role control can apply to them.',
       act: () => focusRoster('ALL'),
       actLabel: 'Show roster',
@@ -970,9 +984,9 @@ SCREENS.team = async host => {
   if (usersErr && perf) {
     add({
       sev: 'WARM', icon: 'person_off',
-      atHtml: '<span class="t-muted" title="This is the state of this page load, not a stored condition.">this page load</span>',
+      atHtml: '<span class="text-on-surface-variant" title="This is the state of this page load, not a stored condition.">this page load</span>',
       titleHtml: 'The user directory could not be read',
-      detailHtml: `${esc(usersErr)}. Roles and account status below are whatever <span class="mono">The team figures</span> carries, `
+      detailHtml: `${esc(usersErr)}. Roles and account status below are whatever <span class="font-label-numeric-sm">The team figures</span> carries, `
         + 'anyone with no leads at all is missing from this page entirely, and pending invites cannot be counted at all.',
     });
   }
@@ -1006,7 +1020,7 @@ SCREENS.team = async host => {
        rule cannot reach this strip through the view no matter what the column
        holds. */
     attnErr
-      ? `<span class="t-warm">The attention list could not be read (${esc(attnErr)}), so anything the database had filed against this screen is missing from this strip. It files nothing against this screen as the view is currently defined, so that is likely to be nothing — but it could not be confirmed on this page load. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
+      ? `<span class="text-amber-700">The attention list could not be read (${esc(attnErr)}), so anything the database had filed against this screen is missing from this strip. It files nothing against this screen as the view is currently defined, so that is likely to be nothing — but it could not be confirmed on this page load. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
       : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from the attention list where screen = ${SCREEN_ID}`
         + (viewCount ? '' : ', which is every row it can ever return here: none of its branches emits that screen name, so this is the view filing nothing about the team rather than the view finding nothing wrong with it')
         + `. ${num(derivedCount)} derived here from `
@@ -1014,10 +1028,10 @@ SCREENS.team = async host => {
         + `${perf ? `${num(perf.length)} performance ${plural(perf.length, 'row', 'rows')}` : 'no performance rows'} and `
         + `${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')}` : 'no leads'}.`,
     perfErr
-      ? `<span class="t-warm">The performance view did not load (${esc(perfErr)}), so SLA breaches and reps holding leads it has never timed were not checked at all — they are absent from this list, not clear.</span>`
+      ? `<span class="text-amber-700">The performance view did not load (${esc(perfErr)}), so SLA breaches and reps holding leads it has never timed were not checked at all — they are absent from this list, not clear.</span>`
       : '',
     leadsErr
-      ? `<span class="t-warm">Leads did not load (${esc(leadsErr)}), so unassigned leads, HOT leads with no owner and open pipeline — including its concentration on one rep — were not checked.</span>`
+      ? `<span class="text-amber-700">Leads did not load (${esc(leadsErr)}), so unassigned leads, HOT leads with no owner and open pipeline — including its concentration on one rep — were not checked.</span>`
       : '',
     leadsCapped
       ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every lead-derived count in this strip is a floor rather than a total.`
@@ -1034,7 +1048,7 @@ SCREENS.team = async host => {
         : '',
     timingTrusted
       ? ''
-      : `<span class="t-warm">Nothing in this strip scores anybody against the 5-minute rule, and that is a gap rather than an all-clear. ${esc(timingWhy)} ${esc(NO_TIMING)}</span>`,
+      : `<span class="text-amber-700">Nothing in this strip scores anybody against the 5-minute rule, and that is a gap rather than an all-clear. ${esc(timingWhy)} ${esc(NO_TIMING)}</span>`,
     `Staff phone numbers appear nowhere in this strip because they appear nowhere in the database: ${esc(NO_STAFF_PHONE)} Leads named above carry their own number, or an explicit dash where we hold none.`,
   ].filter(Boolean);
   const notesHtml = notes.join('<br>');
@@ -1073,24 +1087,24 @@ SCREENS.team = async host => {
     /* No clock is invented for a condition that has no moment attached. "How long
        has one rep held 62% of the pipeline" is not a question v_team_performance
        can answer — it reports a state, not when the state began. */
-    return `<span class="t-muted" title="${esc(a.source === 'view' ? 'This alert carries no timestamp.' : 'This is a standing condition computed from the current rows; nothing records when it started.')}">no start time</span>`;
+    return `<span class="text-on-surface-variant" title="${esc(a.source === 'view' ? 'This alert carries no timestamp.' : 'This is a standing condition computed from the current rows; nothing records when it started.')}">no start time</span>`;
   };
 
   const alertItem = (a, i) => {
     const clickable = typeof a.act === 'function';
-    return `<div class="list-item"${clickable ? ` role="button" tabindex="0" data-alert="${i}"` : ' style="cursor:default"'}>
-      <span class="material-symbols-outlined t-${esc(tone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
+    return `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors"${clickable ? ` role="button" tabindex="0" data-alert="${i}"` : ' style="cursor:default"'}>
+      <span class="material-symbols-outlined ${toneText(tone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
-          ${a.source === 'view' ? '<span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+          ${a.source === 'view' ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
-        <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${a.detailHtml}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0" class="ds-cell-sub">${waitedHtml(a)}
-        ${clickable ? `<div class="t-muted">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
-      ${a.noHook ? `<button class="btn sm" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
-      ${clickable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+      <div style="text-align:right;flex-shrink:0" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${waitedHtml(a)}
+        ${clickable ? `<div class="text-on-surface-variant">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
+      ${a.noHook ? `<button class="${BTN.secondary}" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
+      ${clickable ? '<span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
     </div>`;
   };
 
@@ -1121,33 +1135,33 @@ SCREENS.team = async host => {
     ].filter(Boolean);
 
     alertHost.innerHTML = readsFailed.length
-      ? `<div class="card">
+      ? `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md">
       <div style="display:flex;gap:10px;align-items:flex-start">
-        <span class="material-symbols-outlined t-warm" style="font-size:20px" aria-hidden="true">help</span>
+        <span class="material-symbols-outlined text-amber-700" style="font-size:20px" aria-hidden="true">help</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing could be checked on this screen — this is not an all-clear</div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">Every check in this strip is derived from
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">Every check in this strip is derived from
             ${esc(readsFailed.join(', '))}, and ${readsFailed.length === 1 ? 'that read' : 'those reads'} did not come
             back. An empty list here means nothing was looked at, not that nothing was found.</div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${notesHtml}</div>
         </div></div></div>`
-      : `<div class="card">
+      : `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md">
       <div style="display:flex;gap:10px;align-items:flex-start">
-        <span class="material-symbols-outlined t-ok" style="font-size:20px" aria-hidden="true">task_alt</span>
+        <span class="material-symbols-outlined text-emerald-700" style="font-size:20px" aria-hidden="true">task_alt</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing on the team screen needs a human right now</div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(CHECKED)}</div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${esc(CHECKED)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${notesHtml}</div>
         </div></div></div>`;
   } else {
-    alertHost.innerHTML = `<div class="card flush">
-      <div class="card-head"><div style="min-width:0">
-        <div class="card-title">Needs attention · ${num(alerts.length)}</div>
-        <div class="card-sub" style="white-space:normal">${esc(CHECKED)}</div></div></div>
+    alertHost.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div style="min-width:0">
+        <div class="font-headline-md text-headline-md text-on-surface">Needs attention · ${num(alerts.length)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc(CHECKED)}</div></div></div>
       <div>${alerts.map(alertItem).join('')}</div>
-      <div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
+      <div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${notesHtml}</div></div></div>`;
     const fire = i => { const a = alerts[Number(i)]; if (a && typeof a.act === 'function') a.act(); };
     alertHost.querySelectorAll('[data-alert]').forEach(node => {
       node.addEventListener('click', () => fire(node.dataset.alert));
@@ -1160,7 +1174,7 @@ SCREENS.team = async host => {
   if (!users && !perf) return;   /* the strip already carries the failure */
 
   /* ── Roster & performance ──────────────────────────────────────────────── */
-  const card = el('div', 'card flush'); body.appendChild(card);
+  const card = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); body.appendChild(card);
 
   /* "No activity yet" asks the same questions the columns answer, or the slice
      and the table disagree about the same person. `measured(r)` stays in even
@@ -1245,12 +1259,12 @@ SCREENS.team = async host => {
       .concat(rows.filter(r => s.get(r) == null).sort(byName));
   }
 
-  const notReported = '<span class="t-muted">Not reported</span>';
+  const notReported = '<span class="text-on-surface-variant">Not reported</span>';
   const cols = [
     { label: 'Name', strong: true, sort: 'name', render: r => `<div style="display:flex;align-items:center;gap:10px">
-        <div class="avatar">${esc(initials(r.name))}</div>
+        <div class="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-label-numeric-sm text-label-numeric-sm font-bold shrink-0">${esc(initials(r.name))}</div>
         <div><div>${esc(r.name || 'Unnamed')}</div>
-          ${r.unlinked ? '<div class="ds-cell-sub t-warm">Not in the user directory</div>' : ''}
+          ${r.unlinked ? '<div class="font-body-sm text-body-sm text-amber-700 mt-0.5">Not in the user directory</div>' : ''}
         </div></div>` },
     /* Contact, spelled out rather than implied. The phone line is the point of
        this column: every other screen shows a person's number beside their name,
@@ -1258,26 +1272,26 @@ SCREENS.team = async host => {
        dash is rendered with the reason on it so nobody reads it as "this rep did
        not give us their number" — the column does not exist to be empty. */
     { label: 'Contact', render: r => `
-        <div class="ds-cell-sub">${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</div>
-        <div class="ds-cell-sub">Phone <span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
-        <div class="ds-cell-sub">${r.slack
-          ? `Slack <span class="mono">${esc(r.slack)}</span>`
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${r.email ? esc(r.email) : '<span class="text-on-surface-variant">No email on file</span>'}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Phone <span class="text-on-surface-variant" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${r.slack
+          ? `Slack <span class="font-label-numeric-sm">${esc(r.slack)}</span>`
           : r.unlinked
-            ? '<span class="t-muted">No directory row, so no Slack id either</span>'
-            : '<span class="t-muted">No Slack id on file</span>'}</div>` },
+            ? '<span class="text-on-surface-variant">No directory row, so no Slack id either</span>'
+            : '<span class="text-on-surface-variant">No Slack id on file</span>'}</div>` },
     { label: 'Role', sort: 'role', render: r => r.role
-        ? `<span class="chip">${esc(r.role)}</span>`
-        : '<span class="t-muted">No role set</span>' },
+        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(r.role)}</span>`
+        : '<span class="text-on-surface-variant">No role set</span>' },
     { label: 'Account', sort: 'account', render: r => statusPill(r) },
     { label: 'Leads', align: 'r', sort: 'leads', render: r => {
         const n = leadsAssigned(r);
         if (n == null) return notReported;
         const owned = ownedBy(r).length;
-        return `${num(n)}${owned && owned !== n ? `<div class="ds-cell-sub">${num(owned)} in the leads read</div>` : ''}`;
+        return `${num(n)}${owned && owned !== n ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(owned)} in the leads read</div>` : ''}`;
       } },
     { label: 'HOT', align: 'r', sort: 'hot', render: r => {
         const n = hotLeads(r);
-        return n == null ? notReported : `<span class="${n > 0 ? 't-hot' : 't-muted'}">${num(n)}</span>`;
+        return n == null ? notReported : `<span class="${n > 0 ? 'text-red-700' : 'text-on-surface-variant'}">${num(n)}</span>`;
       } },
     /* avg_response_minutes is round(avg(l.response_time_minutes), 1), and avg
        skips nulls, so it is an average over the leads a rep was timed on and
@@ -1285,13 +1299,13 @@ SCREENS.team = async host => {
        shows the reason instead of a figure: "0m" in a green tone is the single
        most confident lie this screen could print. */
     { label: 'Avg response', align: 'r', sort: 'response', render: r => {
-        if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`;
+        if (!timingTrusted) return `<span class="text-amber-700" title="${esc(NO_TIMING)}">Not measurable</span>`;
         const a = avgResponse(r);
-        if (a == null) return '<span class="t-muted">Not measured</span>';
+        if (a == null) return '<span class="text-on-surface-variant">Not measured</span>';
         /* An average of one is that one. The figure is real either way; the word
            "average" is what would be doing the lying. */
-        return `<span class="${a > 5 ? 't-hot' : 't-ok'}">${mins(a)}</span>`
-          + (measured(r) === 1 ? '<div class="ds-cell-sub">one lead, not an average</div>' : '');
+        return `<span class="${a > 5 ? 'text-red-700' : 'text-emerald-700'}">${mins(a)}</span>`
+          + (measured(r) === 1 ? '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">one lead, not an average</div>' : '');
       } },
     /* within_sla and breached_sla are both count(*) FILTER on
        response_time_minutes, at <= 5 and > 5, so a lead carrying a null falls
@@ -1301,14 +1315,14 @@ SCREENS.team = async host => {
        withheld rather than captioned — "1 / 1" beside an explanation is still
        read as one for one. */
     { label: 'Within SLA', align: 'r', sort: 'sla', render: r => {
-        if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`;
+        if (!timingTrusted) return `<span class="text-amber-700" title="${esc(NO_TIMING)}">Not scored</span>`;
         const m = measured(r), w = withinSla(r);
-        if (!m) return '<span class="t-muted">Nothing measured</span>';
+        if (!m) return '<span class="text-on-surface-variant">Nothing measured</span>';
         if (m < MIN_RATE_SAMPLE) {
-          return `${num(w ?? 0)} / ${num(m)}<div class="ds-cell-sub">${w ? 'answered in time' : 'breached'} — one lead, so no rate</div>`;
+          return `${num(w ?? 0)} / ${num(m)}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${w ? 'answered in time' : 'breached'} — one lead, so no rate</div>`;
         }
         const rate = slaRate(r);
-        return `${num(w ?? 0)} / ${num(m)}<div class="ds-cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
+        return `${num(w ?? 0)} / ${num(m)}<div class="${rate != null && rate < 50 ? 'font-body-sm text-body-sm text-red-700 mt-0.5' : 'font-body-sm text-body-sm text-on-surface-variant mt-0.5'}">${pct(rate)}</div>`;
       } },
     /* Open pipeline, summed here from the leads read on this screen — not
        v_team_performance.pipeline_aed. That column summed every lead ever
@@ -1318,13 +1332,13 @@ SCREENS.team = async host => {
        to the leads listed below it and can say when its read was capped. The
        header explains it; the label names what is actually added up. */
     { label: 'Open pipeline', align: 'r', sort: 'pipeline', render: r => {
-        if (!leads) return `<span class="t-muted" title="Leads could not be read on this page load, so there is nothing here to add up. The performance view's own pipeline_aed is not shown in its place: since 2 Sep 2026 it counts open leads only, on the same rule as this column, but it cannot be attributed to the leads this screen would list, so it is not substituted for a figure this screen could not compute.">Not summable</span>`;
+        if (!leads) return `<span class="text-on-surface-variant" title="Leads could not be read on this page load, so there is nothing here to add up. The performance view's own pipeline_aed is not shown in its place: since 2 Sep 2026 it counts open leads only, on the same rule as this column, but it cannot be attributed to the leads this screen would list, so it is not substituted for a figure this screen could not compute.">Not summable</span>`;
         const p = openPipelineOf(r);
         if (p != null) return aed(p);
         const open = openLeadsOf(r).length;
         return open
-          ? `<span class="t-muted">No budget on file</span><div class="ds-cell-sub">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
-          : '<span class="t-muted">No open lead held</span>';
+          ? `<span class="text-on-surface-variant">No budget on file</span><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
+          : '<span class="text-on-surface-variant">No open lead held</span>';
       } },
     /* The access column exists only while somebody on the STAFF directory is
        marked pending. Kept in the list rather than deleted — the day a seat is
@@ -1338,9 +1352,9 @@ SCREENS.team = async host => {
        is why nobody was ever invited) and a control that looked like it knew
        the address would be inventing one. */
     ...(pending.length ? [{ label: 'Access', align: 'r', render: r => isPending(r)
-        ? `<button class="btn sm" data-goaccess aria-label="Give ${esc(r.name || 'this team member')} access to NEXUS"
+        ? `<button class="${BTN.secondary}" data-goaccess aria-label="Give ${esc(r.name || 'this team member')} access to NEXUS"
              title="${esc(NO_INVITE)}">Give access</button>`
-        : '<span class="t-muted">—</span>' }] : []),
+        : '<span class="text-on-surface-variant">—</span>' }] : []),
   ];
 
   const counts = {};
@@ -1353,25 +1367,25 @@ SCREENS.team = async host => {
      rather than leaving the toolbar mysteriously missing. */
   const oneRow = roster.length < 2;
 
-  card.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Roster &amp; performance</div>
-      <div class="card-sub">Who exists comes from the accounts NEXUS holds for this dealership; what they did is
+  card.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Roster &amp; performance</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Who exists comes from the accounts NEXUS holds for this dealership; what they did is
         measured from their own leads and replies. Sort by any column header. Click a row for the full record.
-        ${perfErr ? '<span class="t-warm">The performance figures could not be read, so only the roster is shown. That is a read that failed, not a team with nothing to show.</span>' : ''}</div>
+        ${perfErr ? '<span class="text-amber-700">The performance figures could not be read, so only the roster is shown. That is a read that failed, not a team with nothing to show.</span>' : ''}</div>
     </div></div>
     ${oneRow
       /* Nothing at all when the roster is empty — the table's own empty state
          below already says what is missing, and a toolbar above it explaining
          that there is nothing to filter is a second empty box saying the same. */
       ? (roster.length
-          ? `<div class="toolbar"><div class="ds-cell-sub" style="white-space:normal">${esc('One person is on the roster, so there is nothing to filter or search for: every slice would return the same row. The filters come back when there is a second person to tell apart from the first.')}</div></div>`
+          ? `<div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40"><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc('One person is on the roster, so there is nothing to filter or search for: every slice would return the same row. The filters come back when there is a second person to tell apart from the first.')}</div></div>`
           : '')
-      : `<div class="toolbar">
-      <div class="seg" id="tSegView" role="group" aria-label="Filter the roster">
+      : `<div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+      <div class="inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container [&>button]:px-3 [&>button]:py-1 [&>button]:rounded-md [&>button]:font-body-sm [&>button]:text-body-sm [&>button]:font-semibold [&>button]:text-on-surface-variant [&>button:hover]:text-on-surface [&>button.on]:bg-surface-container-lowest [&>button.on]:text-on-surface [&>button.on]:shadow-sm" id="tSegView" role="group" aria-label="Filter the roster">
         ${offeredViews.map((k, i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(VIEWS[k].label)} · ${num(counts[k])}</button>`).join('')}
       </div>
-      <div class="grow"><input type="search" id="tq" aria-label="Search the roster" placeholder="Search name, email or role" /></div>
-      <div class="t-muted num" id="tCount"></div>
+      <div class="flex-1 min-w-0"><input type="search" id="tq" class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary" aria-label="Search the roster" placeholder="Search name, email or role" /></div>
+      <div class="text-on-surface-variant font-label-numeric-sm" id="tCount"></div>
     </div>`}
     <div id="tTable"></div>`;
 
@@ -1404,7 +1418,7 @@ SCREENS.team = async host => {
         aria-label="Sort by ${esc(col.label)}${active ? (asc ? ', currently ascending' : ', currently descending') : ''}"
         style="background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;letter-spacing:inherit;
                text-transform:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px">
-        ${esc(col.label)}<span class="material-symbols-outlined ${active ? '' : 't-muted'}"
+        ${esc(col.label)}<span class="material-symbols-outlined ${active ? '' : 'text-outline'}"
           style="font-size:14px;opacity:${active ? 1 : .5}">${icon}</span></button>`;
       cell.querySelector('button').addEventListener('click', () => {
         if (f.sort === col.sort) f.dir = -f.dir;
@@ -1467,16 +1481,16 @@ SCREENS.team = async host => {
   draw();
 
   /* ── Workload and the 5-minute rule ────────────────────────────────────── */
-  const pair = el('div', 'grid g2'); pair.style.marginTop = '16px'; body.appendChild(pair);
+  const pair = el('div', 'grid grid-cols-1 md:grid-cols-2 gap-space-md'); body.appendChild(pair);
 
-  const workload = el('div', 'card'); pair.appendChild(workload);
+  const workload = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); pair.appendChild(workload);
   const carrying = roster.filter(r => (leadsAssigned(r) ?? 0) > 0)
     .sort((a, b) => leadsAssigned(b) - leadsAssigned(a));
   if (perfErr) {
-    workload.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Workload by rep</div>
+    workload.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">Workload by rep</div>
       ${stateError('the performance view', perfErr)}`;
   } else if (!carrying.length) {
-    workload.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Workload by rep</div>
+    workload.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">Workload by rep</div>
       ${stateEmpty('No leads assigned to anyone',
         'The performance view reports no assigned leads against a single person on the roster.', 'person_off')}`;
   } else {
@@ -1488,7 +1502,7 @@ SCREENS.team = async host => {
        chart is explained, rather than a chart being drawn that says something
        nobody measured. */
     const spread = carrying.length >= 2;
-    workload.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Workload by rep</div>
+    workload.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">Workload by rep</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${carrying.map(r => {
           const n = leadsAssigned(r);
@@ -1496,21 +1510,21 @@ SCREENS.team = async host => {
           return `<div style="display:flex;align-items:center;gap:12px">
             <div style="width:120px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
             ${spread
-              ? `<div class="bar" style="flex:1;height:10px"><i style="width:${(n / top * 100).toFixed(1)}%"></i></div>`
-              : `<div style="flex:1" class="ds-cell-sub">${num(n)} ${plural(n, 'lead', 'leads')} against their name</div>`}
-            <div class="num t-muted" style="width:88px;text-align:right">${num(n)}${hot ? ` · <span class="t-hot">${num(hot)} hot</span>` : ''}</div>
+              ? `<div class="h-1.5 rounded-full bg-surface-container overflow-hidden" style="flex:1;height:10px"><i class="block h-full rounded-full bg-primary" style="width:${(n / top * 100).toFixed(1)}%"></i></div>`
+              : `<div style="flex:1" class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(n)} ${plural(n, 'lead', 'leads')} against their name</div>`}
+            <div class="text-on-surface-variant font-label-numeric-sm" style="width:88px;text-align:right">${num(n)}${hot ? ` · <span class="text-red-700">${num(hot)} hot</span>` : ''}</div>
           </div>`;
         }).join('')}
       </div>
-      ${spread ? '' : `<div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
+      ${spread ? '' : `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:10px;white-space:normal">
         ${num(carrying.length)} ${plural(carrying.length, 'rep holds', 'reps hold')} any lead at all, so there is no distribution to chart:
         a single bar is the full width of itself by construction and would read as a rep at capacity. The count above is the whole finding.</div>`}
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">
         ${num(totalAssigned)} assigned lead${totalAssigned === 1 ? '' : 's'} across ${num(carrying.length)} of ${num(roster.length)} on the roster.
         ${leads ? `${num(unassigned.length)} more ${unassigned.length === 1 ? 'is' : 'are'} unassigned${unassignedHot.length ? `, ${num(unassignedHot.length)} of them HOT` : ''}${leadsCapped ? ` within the ${num(LEAD_LIMIT)} most recent leads read` : ''}.` : 'Leads could not be read, so unassigned leads are not counted here.'}
         ${idle.length ? `${nameList(idle)} ${plural(idle.length, 'holds', 'hold')} nothing at all and so ${plural(idle.length, 'has', 'have')} no bar here.` : ''}
       </div>
-      <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">
         ${concentration
           ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the open pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
           : carriers.length >= MIN_CARRIERS
@@ -1524,17 +1538,17 @@ SCREENS.team = async host => {
             : `Concentration is not measured here: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any open pipeline, and one person holding all of the money is a roster of one rather than a concentration. `}
         ${spread
           ? `A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
-             and this screen cannot tell you which: <span class="mono">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`
+             and this screen cannot tell you which: <span class="font-label-numeric-sm">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`
           : `A HOT lead is supposed to be auto-assigned to the least-loaded rep, and with ${num(carrying.length)} ${plural(carrying.length, 'rep', 'reps')} carrying work there is only one place it can go — so nothing about how work is shared out is visible from here either way.
-             <span class="mono">leads</span> would not answer it in any case: it stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`}
+             <span class="font-label-numeric-sm">leads</span> would not answer it in any case: it stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`}
         The one thing it can settle is whether the trigger is placing HOT work at all, which is the unassigned-HOT count above.
       </div>`;
   }
 
-  const sla = el('div', 'card'); pair.appendChild(sla);
+  const sla = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); pair.appendChild(sla);
   const timed = timingTrusted ? roster.filter(r => (measured(r) ?? 0) > 0) : [];
   if (perfErr) {
-    sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
+    sla.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateError('the performance view', perfErr)}`;
   } else if (!timingTrusted) {
     /* Not an empty state and not an error: the counters exist, they simply have
@@ -1544,23 +1558,23 @@ SCREENS.team = async host => {
        of drawing a green bar over it. Nothing here is switched off by hand or
        by date: the moment the trigger on communication_logs stamps any lead
        read here, this whole panel renders again. */
-    sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
-      <div class="banner warm">
+    sla.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">The 5-minute rule</div>
+      <div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm">
         <span class="material-symbols-outlined">timer_off</span>
         <div>
           <div style="font-weight:500">Nobody can be scored against the 5-minute rule yet</div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(timingWhy)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${esc(timingWhy)}</div>
         </div>
       </div>
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
-      <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:10px;white-space:normal">
         The ${num(roster.length)} ${plural(roster.length, 'person', 'people')} on the roster ${plural(roster.length, 'is', 'are')} neither passing nor
         failing this rule here — they are unscored, which is a third state and the only true one while no lead read here has been timed at all.
         An untimed lead is not a slow one and not a fast one, and it is not evidence that nobody answered it: the trigger declines to measure a
         reply that predates the lead row, which is the ordinary shape of a WhatsApp lead in this system. This panel is not disabled by hand and
         carries no date: it comes back by itself on the first lead the trigger stamps.</div>`;
   } else if (!timed.length) {
-    sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
+    sla.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateEmpty('No response times measured yet',
         'No row in the performance view carries a within_sla or breached_sla count, so nobody can be scored against the 5-minute rule.', 'timer')}`;
   } else {
@@ -1578,39 +1592,39 @@ SCREENS.team = async host => {
        they are what actually happened. */
     const rateable = m >= MIN_RATE_SAMPLE;
     const only = timed.length === 1 ? timed[0] : null;
-    sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule · ${num(m)} measured lead${m === 1 ? '' : 's'}</div>
+    sla.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">The 5-minute rule · ${num(m)} measured lead${m === 1 ? '' : 's'}</div>
       ${rateable
-        ? `<div class="stackbar">
-        <i style="width:${(w / m * 100).toFixed(1)}%;background:var(--ok)"></i>
-        <i style="width:${(breach / m * 100).toFixed(1)}%;background:var(--hot)"></i>
+        ? `<div class="flex h-2.5 rounded-full overflow-hidden bg-surface-container">
+        <i class="block h-full" style="width:${(w / m * 100).toFixed(1)}%;background:var(--ok)"></i>
+        <i class="block h-full" style="width:${(breach / m * 100).toFixed(1)}%;background:var(--hot)"></i>
       </div>
       <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:8px">
           <span style="width:8px;height:8px;border-radius:50%;background:var(--ok)"></span>
-          <span style="font-weight:500">Answered within 5 min</span><span class="t-muted num">${num(w)} · ${pct(w / m * 100)}</span></div>
+          <span style="font-weight:500">Answered within 5 min</span><span class="text-on-surface-variant font-label-numeric-sm">${num(w)} · ${pct(w / m * 100)}</span></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="width:8px;height:8px;border-radius:50%;background:var(--hot)"></span>
-          <span style="font-weight:500">Breached</span><span class="t-muted num">${num(breach)} · ${pct(breach / m * 100)}</span></div>
+          <span style="font-weight:500">Breached</span><span class="text-on-surface-variant font-label-numeric-sm">${num(breach)} · ${pct(breach / m * 100)}</span></div>
       </div>
-      ${m <= THIN ? `<div class="ds-cell-sub" style="margin-top:10px;white-space:normal"><span class="t-warm">These proportions are ${num(m)} leads in total — one more reply moves them by ${esc(pct(100 / m))}.</span></div>` : ''}`
+      ${m <= THIN ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:10px;white-space:normal"><span class="text-amber-700">These proportions are ${num(m)} leads in total — one more reply moves them by ${esc(pct(100 / m))}.</span></div>` : ''}`
         : `<div style="margin-top:4px">
-             <span class="${breach ? 't-hot' : 't-ok'}" style="font-weight:500">${breach
+             <span class="${breach ? 'text-red-700' : 'text-emerald-700'}" style="font-weight:500">${breach
                ? 'The one lead anyone has been timed on waited longer than five minutes for its first reply.'
                : 'The one lead anyone has been timed on was answered inside five minutes.'}</span>
-             ${only ? `<div class="ds-cell-sub" style="margin-top:6px">${esc(str(only.name) || 'The rep it is assigned to')} — ${esc(avgResponse(only) == null ? 'no response time on their row' : mins(avgResponse(only)) + ' to first reply')}.</div>` : ''}
+             ${only ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:6px">${esc(str(only.name) || 'The rep it is assigned to')} — ${esc(avgResponse(only) == null ? 'no response time on their row' : mins(avgResponse(only)) + ' to first reply')}.</div>` : ''}
            </div>
-           <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">No percentage, split bar or breach ranking is drawn from it: over a single lead the only figures that exist are 0% and 100%, and neither says anything the sentence above does not. They come back at ${num(MIN_RATE_SAMPLE)} measured leads.</div>`}
+           <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:10px;white-space:normal">No percentage, split bar or breach ranking is drawn from it: over a single lead the only figures that exist are 0% and 100%, and neither says anything the sentence above does not. They come back at ${num(MIN_RATE_SAMPLE)} measured leads.</div>`}
       ${rateable
-        ? (worst.length ? `<div class="label-caps" style="margin:16px 0 8px">Most breaches</div>
+        ? (worst.length ? `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin:16px 0 8px">Most breaches</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${worst.map(r => `<div style="display:flex;align-items:center;gap:12px">
             <div style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
-            <div class="ds-cell-sub">${mins(avgResponse(r))} average</div>
-            <div class="num t-hot" style="width:64px;text-align:right">${num(breachedSla(r))}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${mins(avgResponse(r))} average</div>
+            <div class="text-red-700 font-label-numeric-sm" style="width:64px;text-align:right">${num(breachedSla(r))}</div>
           </div>`).join('')}
-        </div>` : '<div class="ds-cell-sub" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>')
+        </div>` : '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>')
         : ''}
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">
         ${num(timed.length)} of ${num(roster.length)} on the roster ${plural(timed.length, 'has', 'have')} been timed on a lead. ${roster.length > timed.length
           ? 'The rest carry no measurement, which is not the same as being fast.'
           : 'Nobody on the roster is unmeasured.'}</div>`;
@@ -1651,8 +1665,12 @@ SCREENS.team = async host => {
      something unexpected; it is still reported as "nothing was saved" rather
      than as success, because the alternative is telling somebody their rep is
      locked out when they are not. */
-  const access = el('div', 'card flush'); access.style.marginTop = '16px'; body.appendChild(access);
-  focusAccess = () => access.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const access = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); body.appendChild(access);
+  focusAccess = toForm => {
+    const target = (toForm && access.querySelector('#acEmail')) || access;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (toForm) access.querySelector('#acEmail')?.focus({ preventScroll: true });
+  };
 
   /* The vocabulary the database enforces, in the dealership's words. The
      database is the authority — these are migrations rbac_02/rbac_04/rbac_05 —
@@ -1730,7 +1748,7 @@ SCREENS.team = async host => {
   function acRoleCell(r, mayManage, mayOwner) {
     const roleWord = roleChip(r.account_role);
     if (!mayManage) {
-      return `${roleWord}<div class="ds-cell-sub" style="white-space:normal">${esc(ROLE_WHAT[r.account_role] || 'This role is not one this screen has words for; the database is the authority on what it allows.')}</div>`;
+      return `${roleWord}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc(ROLE_WHAT[r.account_role] || 'This role is not one this screen has words for; the database is the authority on what it allows.')}</div>`;
     }
     /* An admin may set any role below owner, their own included, and may not
        set or remove owner. That is team_05's NX_TEAM_OWNER_ROLE_IS_OWNER_ONLY,
@@ -1741,33 +1759,33 @@ SCREENS.team = async host => {
       .filter(k => mayOwner || (k !== 'owner' && r.account_role !== 'owner'))
       .map(k => `<option value="${esc(k)}"${k === r.account_role ? ' selected' : ''}>${esc(k)}</option>`).join('');
     if (!opts) {
-      return `${roleWord}<div class="ds-cell-sub" style="white-space:normal">Only an account owner may change an owner’s role.</div>`;
+      return `${roleWord}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">Only an account owner may change an owner’s role.</div>`;
     }
-    return `<select data-acrole="${esc(r.auth_user_id)}" aria-label="Account role for ${esc(r.email || 'this person')}">${opts}</select>
-      <button class="btn sm" data-acsave="${esc(r.auth_user_id)}">Save role</button>
-      ${mayOwner ? '' : '<div class="ds-cell-sub" style="white-space:normal">The owner role is not on this list because only an account owner may grant or remove it.</div>'}`;
+    return `<select class="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface" data-acrole="${esc(r.auth_user_id)}" aria-label="Account role for ${esc(r.email || 'this person')}">${opts}</select>
+      <button class="${BTN.secondary}" data-acsave="${esc(r.auth_user_id)}">Save role</button>
+      ${mayOwner ? '' : '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">The owner role is not on this list because only an account owner may grant or remove it.</div>'}`;
   }
 
   function acStaffCell(r, mayManage) {
     const linked = r.staff_user_id
-      ? `${esc(r.staff_name || 'a staff record with no name on it')}${r.staff_job_title ? ` <span class="ds-cell-sub">· ${esc(r.staff_job_title)}</span>` : ''}`
-      : '<span class="t-warm">Not linked to a staff record</span>';
+      ? `${esc(r.staff_name || 'a staff record with no name on it')}${r.staff_job_title ? ` <span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">· ${esc(r.staff_job_title)}</span>` : ''}`
+      : '<span class="text-amber-700">Not linked to a staff record</span>';
     /* The unlinked case is rbac open item 4 and it is a working defect, not a
        cosmetic gap: leads.assigned_to_id points at the STAFF id, so a sales
        login with no link matches no lead and can edit none of them. It presents
        as "the product is broken" unless something says otherwise, so something
        does. */
     const why = r.staff_user_id ? '' :
-      `<div class="ds-cell-sub" style="white-space:normal"><span class="t-warm">This account can sign in but is not connected to anybody on the staff directory.</span>
+      `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal"><span class="text-amber-700">This account can sign in but is not connected to anybody on the staff directory.</span>
          Leads are filed against a staff record, so ${esc(r.account_role === 'sales' || r.account_role === 'member' ? 'this person can currently edit no leads at all' : 'nothing on this screen can attribute work to them')}.</div>`;
     if (!mayManage) return linked + why;
     const opts = ['<option value="">Not linked</option>'].concat(
       (users || []).map(u => `<option value="${esc(u.id)}"${String(u.id) === String(r.staff_user_id || '') ? ' selected' : ''}>${esc(u.name || u.email || u.id)}</option>`)).join('');
     return `${linked}${why}
       <div style="margin-top:6px">
-        <select data-acstaff="${esc(r.auth_user_id)}" aria-label="Staff record for ${esc(r.email || 'this person')}">${opts}</select>
-        <button class="btn sm" data-aclink="${esc(r.auth_user_id)}">Link</button>
-        ${usersErr ? '<div class="ds-cell-sub t-warm" style="white-space:normal">The staff directory could not be read on this page load, so this list is empty rather than short.</div>' : ''}
+        <select class="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface" data-acstaff="${esc(r.auth_user_id)}" aria-label="Staff record for ${esc(r.email || 'this person')}">${opts}</select>
+        <button class="${BTN.secondary}" data-aclink="${esc(r.auth_user_id)}">Link</button>
+        ${usersErr ? '<div class="font-body-sm text-body-sm text-amber-700 mt-0.5" style="white-space:normal">The staff directory could not be read on this page load, so this list is empty rather than short.</div>' : ''}
       </div>`;
   }
 
@@ -1777,15 +1795,15 @@ SCREENS.team = async host => {
     const rows = acRows || [];
     const pend = acPend || [];
 
-    const head = `<div class="card-head"><div>
-        <div class="card-title">Who has access</div>
-        <div class="card-sub">Every NEXUS login that can open this dealership’s data, and what the database lets each of them do.
+    const head = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Who has access</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every NEXUS login that can open this dealership’s data, and what the database lets each of them do.
           This is not the staff directory above: a staff record is not a login and grants nothing.
           ${mayManage ? '' : 'Changing any of this is an owner or admin decision, so the controls are not offered on this account.'}</div>
       </div></div>`;
 
     const msg = acMsg
-      ? `<div style="padding:0 20px 12px"><div class="banner ${acMsgTone === 'ok' ? 'ok' : 'hot'}">
+      ? `<div style="padding:0 20px 12px"><div class="${bannerClass(acMsgTone === 'ok' ? 'ok' : 'hot')}">
            <span class="material-symbols-outlined">${acMsgTone === 'ok' ? 'check_circle' : 'error'}</span>
            <div style="white-space:normal">${esc(acMsg)}</div></div></div>`
       : '';
@@ -1807,9 +1825,9 @@ SCREENS.team = async host => {
         return `<div style="padding:14px 20px;border-top:1px solid var(--line)">
           <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
             <div style="flex:2;min-width:220px">
-              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="ds-cell-sub">· you</span>' : ''}</div>
-              <div class="ds-cell-sub mono">${esc(r.email || 'no address on the account')}</div>
-              <div class="ds-cell-sub">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
+              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">· you</span>' : ''}</div>
+              <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${esc(r.email || 'no address on the account')}</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
                 ? `last signed in ${esc(ago(r.last_sign_in_at))}`
                 : 'has never signed in'}</div>
             </div>
@@ -1820,28 +1838,28 @@ SCREENS.team = async host => {
                     has STATED who may approve, which is a different answer from
                     "this person may not". */''}
               ${r.is_approver === true
-                ? `${pill('Can approve', 'ok')}<div class="ds-cell-sub">by their account role</div>`
+                ? `${pill('Can approve', 'ok')}<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">by their account role</div>`
                 : r.is_approver === false
-                  ? '<span class="t-muted">Not an approver</span>'
-                  : `<span class="t-muted">Not stated</span><div class="ds-cell-sub" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
+                  ? '<span class="text-on-surface-variant">Not an approver</span>'
+                  : `<span class="text-on-surface-variant">Not stated</span><div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
             </div>
             <div style="flex:0 0 auto">
               ${mayManage && !confirming
-                ? `<button class="btn sm ghost" data-acrevoke="${esc(r.auth_user_id)}">Remove access</button>`
-                : mayManage ? '' : '<span class="ds-cell-sub">—</span>'}
+                ? `<button class="${BTN.tertiary}" data-acrevoke="${esc(r.auth_user_id)}">Remove access</button>`
+                : mayManage ? '' : '<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">—</span>'}
             </div>
           </div>
-          ${confirming ? `<div class="banner hot" style="margin-top:10px">
+          ${confirming ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:10px">
             <span class="material-symbols-outlined">warning</span>
             <div style="white-space:normal">
               <div style="font-weight:500">Remove ${esc(r.email || r.staff_name || 'this account')} from ${esc(r.tenant_name || 'this dealership')}?</div>
-              <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
-              <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${n == null
+              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">${n == null
                 ? 'They are not linked to a staff record, so no lead on this screen is filed against them.'
                 : `${num(n)} of the ${num((leads || []).length)} leads read on this screen ${n === 1 ? 'is' : 'are'} assigned to their staff record and will stay assigned${leadsCapped ? ', and that read is capped so there may be more' : ''}.`}</div>
               <div style="margin-top:10px">
-                <button class="btn sm" data-acrevokeyes="${esc(r.auth_user_id)}">Confirm removal</button>
-                <button class="btn sm ghost" data-acrevokeno>Cancel</button>
+                <button class="${BTN.secondary}" data-acrevokeyes="${esc(r.auth_user_id)}">Confirm removal</button>
+                <button class="${BTN.tertiary}" data-acrevokeno>Cancel</button>
               </div>
             </div></div>` : ''}
         </div>`;
@@ -1856,15 +1874,15 @@ SCREENS.team = async host => {
           'This is the pending list only; the access list above is unaffected.')}</div>`
       : pend.length
         ? `<div style="border-top:1px solid var(--line)">
-            <div style="padding:14px 20px 4px"><div class="label-caps">Waiting for a first sign-in</div>
-              <div class="ds-cell-sub" style="white-space:normal">${esc(NO_CREDENTIAL)}</div></div>
+            <div style="padding:14px 20px 4px"><div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Waiting for a first sign-in</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal">${esc(NO_CREDENTIAL)}</div></div>
             ${pend.map(p => `<div style="padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
-              <div style="flex:2;min-width:220px"><span class="mono">${esc(p.email)}</span>
-                <div class="ds-cell-sub">Recorded ${esc(ago(p.recorded_at))} as ${roleChip(p.account_role)}${
+              <div style="flex:2;min-width:220px"><span class="font-label-numeric-sm">${esc(p.email)}</span>
+                <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Recorded ${esc(ago(p.recorded_at))} as ${roleChip(p.account_role)}${
                   p.staff_name ? ` · to be linked to ${esc(p.staff_name)}` : ''}</div>
-                ${p.has_login ? `<div class="ds-cell-sub t-warm" style="white-space:normal">A NEXUS login already exists for this address but the role has not been taken up. That should not happen through this screen; report it rather than re-adding them.</div>` : ''}
+                ${p.has_login ? `<div class="font-body-sm text-body-sm text-amber-700 mt-0.5" style="white-space:normal">A NEXUS login already exists for this address but the role has not been taken up. That should not happen through this screen; report it rather than re-adding them.</div>` : ''}
               </div>
-              ${mayManage ? `<div><button class="btn sm ghost" data-accancel="${esc(p.email)}">Cancel</button></div>` : ''}
+              ${mayManage ? `<div><button class="${BTN.tertiary}" data-accancel="${esc(p.email)}">Cancel</button></div>` : ''}
             </div>`).join('')}
           </div>`
         : '';
@@ -1876,26 +1894,26 @@ SCREENS.team = async host => {
     const staffOpts = ['<option value="">Link to a staff record later</option>'].concat(
       (users || []).map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || u.id)}</option>`)).join('');
     const addBox = !mayManage ? '' : `<div style="border-top:1px solid var(--line);padding:16px 20px">
-        <div class="label-caps" style="margin-bottom:8px">Add a colleague</div>
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:8px">Add a colleague</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
           <div style="flex:2;min-width:240px">
-            <input type="email" id="acEmail" placeholder="the address they will sign in with" aria-label="Email address" style="width:100%" />
+            <input type="email" id="acEmail" class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary" placeholder="the address they will sign in with" aria-label="Email address" style="width:100%" />
           </div>
           <div>
-            <select id="acAddRole" aria-label="Account role">
+            <select id="acAddRole" class="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface" aria-label="Account role">
               ${ROLE_ORDER.filter(k => mayOwner || k !== 'owner')
                 .map(k => `<option value="${esc(k)}"${k === 'sales' ? ' selected' : ''}>${esc(k)}</option>`).join('')}
             </select>
           </div>
-          <div><select id="acAddStaff" aria-label="Staff record">${staffOpts}</select></div>
-          <div><button class="btn primary" id="acAdd">Add</button></div>
+          <div><select id="acAddStaff" class="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface" aria-label="Staff record">${staffOpts}</select></div>
+          <div><button class="${BTN.primary}" id="acAdd">Add</button></div>
         </div>
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:12px">
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:12px">
           ${ROLE_ORDER.filter(k => mayOwner || k !== 'owner')
             .map(k => `<div style="margin-bottom:4px">${roleChip(k)} ${esc(ROLE_WHAT[k])}</div>`).join('')}
         </div>
-        ${mayOwner ? '' : '<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">The owner role is not on this list because only an account owner may grant it.</div>'}
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:10px">${esc(NO_CREDENTIAL)}</div>
+        ${mayOwner ? '' : '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:6px">The owner role is not on this list because only an account owner may grant it.</div>'}
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="white-space:normal;margin-top:10px">${esc(NO_CREDENTIAL)}</div>
       </div>`;
 
     access.innerHTML = head + msg + list + pendBox + addBox;
@@ -1925,6 +1943,10 @@ SCREENS.team = async host => {
       acBusy = false;
       acConfirm = null;
       await acLoad();
+  const foot = el('div');
+  foot.innerHTML = trustFooter({ source: 'users · v_team_performance · leads · nexus_team_roster', asOf: dubaiStamp(new Date().toISOString()),
+    evidence: `${num(roster.length)} on the roster${leads ? ` · ${num(leads.length)} leads read` : ''}`, actor: actor() });
+  root.appendChild(foot);
     }
   }
 
@@ -1993,8 +2015,8 @@ SCREENS.team = async host => {
     });
   }
 
-  access.innerHTML = `<div class="card-head"><div><div class="card-title">Who has access</div>
-      <div class="card-sub">Reading the accounts that can open this dealership’s data.</div></div></div>${stateLoading(3)}`;
+  access.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Who has access</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Reading the accounts that can open this dealership’s data.</div></div></div>${stateLoading(3)}`;
   await acLoad();
 
   /* ── One rep, in full ──────────────────────────────────────────────────── */
@@ -2015,19 +2037,19 @@ SCREENS.team = async host => {
     }
 
     const leadList = !leads
-      ? `<div class="ds-cell-sub">Leads could not be read (${esc(leadsErr || 'unknown error')}), so this rep's book cannot be listed.</div>`
+      ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Leads could not be read (${esc(leadsErr || 'unknown error')}), so this rep's book cannot be listed.</div>`
       : !r.id
-        ? '<div class="ds-cell-sub">This person has no user id on the roster, so no lead can be matched to them.</div>'
+        ? '<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">This person has no user id on the roster, so no lead can be matched to them.</div>'
         : !owned.length
           ? stateEmpty('No leads on this rep',
               leadsCapped
                 ? `Nothing in the ${LEAD_LIMIT} most recent leads is assigned to them; older leads are not on this page.`
                 : 'No lead in the table names them as owner.', 'person_search')
-          : `<div>${owned.slice(0, 10).map(l => `<div class="list-item" style="cursor:default">
+          : `<div>${owned.slice(0, 10).map(l => `<div class="flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-low transition-colors" style="cursor:default">
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
                   ${esc(maskText(l.name || 'Unnamed lead'))} ${leadPhone(l)}</div>
-                <div class="ds-cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
+                <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
                   ${/* A null here is NOT "nobody answered". This printed
                         ' · no reply recorded' in HOT red until 1 Sep 2026 — a
                         claim about a customer, made by a screen that only knows
@@ -2043,112 +2065,112 @@ SCREENS.team = async host => {
                         leads.js's, lib/lead-drawer.js's and customers.js's, so
                         the four surfaces that render this column say one
                         thing. */''}${!timingTrusted
-                    ? ` · <span class="t-warm" title="${esc(NO_TIMING)}">reply time not measurable</span>`
+                    ? ` · <span class="text-amber-700" title="${esc(NO_TIMING)}">reply time not measurable</span>`
                     : rtOf(l) == null
-                      ? ` · <span class="t-warm" title="${esc(NULL_RT)}">no first reply timed</span>`
+                      ? ` · <span class="text-amber-700" title="${esc(NULL_RT)}">no first reply timed</span>`
                       : ` · answered in ${esc(mins(l.response_time_minutes))}`}
-                  ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
+                  ${l.escalated_at ? ` · <span class="text-amber-700">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>
               ${l.status ? pill(l.status, undefined, { verbatim: true }) : ''}
-              <div class="num ds-cell-sub">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
+              <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
             </div>`).join('')}
-            ${owned.length > 10 ? `<div class="ds-cell-sub" style="padding:8px 0">and ${num(owned.length - 10)} more.</div>` : ''}</div>`;
+            ${owned.length > 10 ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="padding:8px 0">and ${num(owned.length - 10)} more.</div>` : ''}</div>`;
 
     openDrawer(`
-      <div class="drawer-head">
-        <div class="avatar">${esc(initials(r.name))}</div>
+      <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
+        <div class="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-label-numeric-sm text-label-numeric-sm font-bold shrink-0">${esc(initials(r.name))}</div>
         <div style="flex:1">
           <h2 style="font-size:18px">${esc(r.name || 'Unnamed')}</h2>
-          <div class="ds-cell-sub">${esc(r.role || 'No role set')} · ${esc(r.email || 'No email on file')}</div>
-          <div class="ds-cell-sub mono">${esc(r.id ?? 'no user id')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(r.role || 'No role set')} · ${esc(r.email || 'No email on file')}</div>
+          <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">${esc(r.id ?? 'no user id')}</div>
         </div>
-        <button class="btn ghost sm" id="tClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+        <button class="${BTN.tertiary}" id="tClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
-      <div class="drawer-body">
-        <div class="section">
-          <div class="label-caps">Identity &amp; contact</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Email</dt><dd>${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</dd>
-            <dt>Phone</dt><dd><span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 no column to hold one</span></dd>
-            <dt>Slack</dt><dd>${r.slack ? `<span class="mono">${esc(r.slack)}</span>` : '<span class="t-muted">No Slack id on file</span>'}</dd>
-            <dt>User id</dt><dd class="mono">${esc(r.id ?? 'none')}</dd>
-            <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="t-muted">(${esc(dt(r.created_at))})</span>` : '<span class="t-muted">Not recorded on this row</span>'}</dd>
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+        <div class="flex flex-col gap-1">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Identity &amp; contact</div>
+          <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0" style="margin-top:8px">
+            <dt>Email</dt><dd>${r.email ? esc(r.email) : '<span class="text-on-surface-variant">No email on file</span>'}</dd>
+            <dt>Phone</dt><dd><span class="text-on-surface-variant" title="${esc(NO_STAFF_PHONE)}">\u2014 no column to hold one</span></dd>
+            <dt>Slack</dt><dd>${r.slack ? `<span class="font-label-numeric-sm">${esc(r.slack)}</span>` : '<span class="text-on-surface-variant">No Slack id on file</span>'}</dd>
+            <dt>User id</dt><dd class="font-label-numeric-sm">${esc(r.id ?? 'none')}</dd>
+            <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="text-on-surface-variant">(${esc(dt(r.created_at))})</span>` : '<span class="text-on-surface-variant">Not recorded on this row</span>'}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
-            Their leads below each show their own number, because <span class="mono">The phone number on the lead record</span> does exist.</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
+            Their leads below each show their own number, because <span class="font-label-numeric-sm">The phone number on the lead record</span> does exist.</div>
         </div>
 
-        <div class="section">
-          <div class="label-caps">Account</div>
+        <div class="flex flex-col gap-1">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Account</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${statusPill(r)}${r.unlinked ? pill('Not in the user directory', 'warm', { verbatim: false }) : ''}
           </div>
-          ${isPending(r) ? `<div class="banner warm" style="margin-top:12px">
+          ${isPending(r) ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm mb-space-sm" style="margin-top:12px">
             <span class="material-symbols-outlined">mark_email_unread</span>
             <div>This person cannot sign in, cannot be alerted and cannot be assigned a lead until the account exists.
             This screen recorded the seat and the role, and sends no mail. The invitation itself is sent by NEXUS from the Team card on Settings.</div></div>` : ''}
-          ${r.unlinked ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
-            This row came from <span class="mono">The team figures</span> and matched nobody in <span class="mono">users</span> by id,
+          ${r.unlinked ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">
+            This row came from <span class="font-label-numeric-sm">The team figures</span> and matched nobody in <span class="font-label-numeric-sm">users</span> by id,
             email or name. They have activity against their name but no account record.</div>` : ''}
         </div>
 
-        <div class="section">
-          <div class="label-caps">Performance</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Leads assigned</dt><dd class="num">${leadsAssigned(r) == null ? notReported : num(leadsAssigned(r))}</dd>
-            <dt>HOT leads</dt><dd class="num">${hotLeads(r) == null ? notReported : num(hotLeads(r))}</dd>
-            <dt>Avg response</dt><dd class="num">${!timingTrusted
-              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`
+        <div class="flex flex-col gap-1">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Performance</div>
+          <dl class="grid grid-cols-[minmax(120px,180px)_1fr] gap-x-4 gap-y-2.5 font-body-sm text-body-sm [&>dt]:font-table-header [&>dt]:text-table-header [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt]:pt-0.5 [&>dd]:text-on-surface [&>dd]:min-w-0" style="margin-top:8px">
+            <dt>Leads assigned</dt><dd class="font-label-numeric-sm">${leadsAssigned(r) == null ? notReported : num(leadsAssigned(r))}</dd>
+            <dt>HOT leads</dt><dd class="font-label-numeric-sm">${hotLeads(r) == null ? notReported : num(hotLeads(r))}</dd>
+            <dt>Avg response</dt><dd class="font-label-numeric-sm">${!timingTrusted
+              ? `<span class="text-amber-700" title="${esc(NO_TIMING)}">Not measurable</span>`
               : avgResponse(r) == null
-                ? '<span class="t-muted">Not measured</span>'
-                : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="ds-cell-sub">· one lead, not an average</span>' : ''}`}</dd>
-            <dt>Within 5 min</dt><dd class="num">${!timingTrusted
-              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
+                ? '<span class="text-on-surface-variant">Not measured</span>'
+                : `<span class="${avgResponse(r) > 5 ? 'text-red-700' : 'text-emerald-700'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">· one lead, not an average</span>' : ''}`}</dd>
+            <dt>Within 5 min</dt><dd class="font-label-numeric-sm">${!timingTrusted
+              ? `<span class="text-amber-700" title="${esc(NO_TIMING)}">Not scored</span>`
               : !m
-                ? '<span class="t-muted">Nothing measured</span>'
+                ? '<span class="text-on-surface-variant">Nothing measured</span>'
                 : m < MIN_RATE_SAMPLE
-                  ? `${num(w ?? 0)} / ${num(m)} <span class="ds-cell-sub">· one lead, so no percentage</span>`
+                  ? `${num(w ?? 0)} / ${num(m)} <span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">· one lead, so no percentage</span>`
                   : `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}`}</dd>
-            <dt>Breached</dt><dd class="num">${!timingTrusted
-              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
-              : b == null ? notReported : `<span class="${b > 0 ? 't-hot' : ''}">${num(b)}</span>`}</dd>
-            <dt>Open pipeline</dt><dd class="num">${!leads
-              ? '<span class="t-muted">Leads could not be read, so open pipeline could not be summed</span>'
+            <dt>Breached</dt><dd class="font-label-numeric-sm">${!timingTrusted
+              ? `<span class="text-amber-700" title="${esc(NO_TIMING)}">Not scored</span>`
+              : b == null ? notReported : `<span class="${b > 0 ? 'text-red-700' : ''}">${num(b)}</span>`}</dd>
+            <dt>Open pipeline</dt><dd class="font-label-numeric-sm">${!leads
+              ? '<span class="text-on-surface-variant">Leads could not be read, so open pipeline could not be summed</span>'
               : openPipelineOf(r) != null
                 ? aed(openPipelineOf(r))
                 : openLeadsOf(r).length
-                  ? `<span class="t-muted">No budget on file across ${num(openLeadsOf(r).length)} open ${plural(openLeadsOf(r).length, 'lead', 'leads')}</span>`
-                  : '<span class="t-muted">No open lead held</span>'}</dd>
+                  ? `<span class="text-on-surface-variant">No budget on file across ${num(openLeadsOf(r).length)} open ${plural(openLeadsOf(r).length, 'lead', 'leads')}</span>`
+                  : '<span class="text-on-surface-variant">No open lead held</span>'}</dd>
           </dl>
           ${/* Said in the drawer as well as the header, because this is where a
                 manager checks one person's number against what they believe. */''}
-          <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">Open pipeline is <span class="font-label-numeric-sm">budget_aed</span> summed over the
             leads read on this screen that are assigned to this person and are not in a won or dead state${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads` : ''}.
             the team's own pipeline figure is not shown in its place. Until 2 Sep 2026 it summed every lead ever assigned,
             disqualified and lost ones included; it now counts open leads only, on the same rule as the figure above. It is still not the number shown
             here, because this one can be traced to the leads listed below and says when its read was capped.</div>
-          ${!r.perf ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+          ${!r.perf ? `<div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:12px;white-space:normal">
             ${perfErr ? `The performance view could not be read (${esc(perfErr)}).`
                       : 'The performance view has no row for this person, so nothing has been recorded against them yet.'}</div>` : ''}
         </div>
 
-        <div class="section">
-          <div class="label-caps">Their leads</div>
+        <div class="flex flex-col gap-1">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Their leads</div>
           <div style="margin-top:8px">${leadList}</div>
         </div>
 
-        <div class="section">
-          <div class="label-caps">Why there is no delete</div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">
+        <div class="flex flex-col gap-1">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Why there is no delete</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-top:8px;white-space:normal">
             ${esc(NO_DELETE)}${strandBits.length
               ? ` They have ${strandBits.join(' and ')} — every one of those would be handed back to the unassigned queue, with nothing on the row to say it had ever had an owner.`
               : ''}
           </div>
         </div>
       </div>
-      <div class="drawer-foot">
-        <button class="btn primary" id="tGoAccessDrawer" title="${esc(isPending(r) ? NO_INVITE : NO_ROLE_WRITE)}">Manage access</button>
-        <button class="btn ghost" id="tGoLeadsDrawer">Open the leads screen</button>
+      <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+        <button class="${BTN.primary}" id="tGoAccessDrawer" title="${esc(isPending(r) ? NO_INVITE : NO_ROLE_WRITE)}">Manage access</button>
+        <button class="${BTN.secondary}" id="tGoLeadsDrawer">Open the leads screen</button>
       </div>`);
     $('tClose').addEventListener('click', closeDrawer);
     /* One button, because "send invite" and "change role" were two dead
