@@ -338,7 +338,7 @@ grant select on public.data_provenance_attestation  to authenticated;
 -- the address on leads.id = 38. The vehicle text matches unit NX-1011 at exactly
 -- its list price and NX-1011 is still Available -- ops/truth-dashboard/SPEC.md:141
 -- already says "the text matches perfectly and proves nothing". The row was
--- created 74 minutes after the ALBA tenant row itself.
+-- created 74 minutes after the Tenant A tenant row itself.
 --
 -- None of that settles it. So it stays UNKNOWN, which is true, and the question
 -- goes to the owner. A migration that guessed REAL here would be the exact

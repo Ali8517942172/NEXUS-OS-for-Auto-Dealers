@@ -99,9 +99,9 @@ All columnar numbers use `font-variant-numeric: tabular-nums`.
 
 **Navigation is role-aware.** Owner, Sales Manager, BDC, Finance and Admin get different trees *and different densities*. Permissions shape the experience, not just hide menu items.
 
-**Topbar** — command trigger, persistent tenant identity, density, theme, notifications, user. Tenant is always visible: `ALBA CARS · Dubai · Production`. Tenant switching clears filters and results and announces itself. Wrong-tenant actions are an operational risk the UI must design against.
+**Topbar** — command trigger, persistent tenant identity, density, theme, notifications, user. Tenant is always visible: `Tenant A · Dubai · Production`. Tenant switching clears filters and results and announces itself. Wrong-tenant actions are an operational risk the UI must design against.
 
-**Context strip** — breadcrumb (`ALBA CARS → Revenue → Money Leaks`) plus freshness (`Live · updated 14 sec ago · Dubai time`, or `Data may be stale · last sync 3h 14m ago`). Never show stale data as current.
+**Context strip** — breadcrumb (`Tenant A → Revenue → Money Leaks`) plus freshness (`Live · updated 14 sec ago · Dubai time`, or `Data may be stale · last sync 3h 14m ago`). Never show stale data as current.
 
 ---
 

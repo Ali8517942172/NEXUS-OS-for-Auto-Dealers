@@ -7,7 +7,7 @@
 --   It creates tenants. Production's nexus_scoped_tenant_id() returns a
 --   dealership only while exactly ONE active non-quarantine tenant exists;
 --   creating a second one there would silently break Ask-AI and the nightly
---   syncs for the live ALBA CARS pilot.
+--   syncs for the live Tenant A pilot.
 --
 --   Built 2026-09-17. Schema read from production read-only (pg_get_functiondef,
 --   information_schema, pg_policies, pg_constraint, pg_indexes, pg_trigger).
@@ -42,7 +42,7 @@
 --     back. The teardown in Part 1 is NOT rolled back and is NOT reversible.
 --
 --     Consequence, stated plainly: pointed at production dsvuoovivysszdoiorch
---     this file DESTROYS the live ALBA CARS dealership data -- every lead,
+--     this file DESTROYS the live Tenant A dealership data -- every lead,
 --     every vehicle, every conversation, the audit trail -- with no undo and
 --     no backup taken by this script. It is for the STAGING project
 --     wwspuxrbiyagnrnzgate and for nothing else. Never paste it into a
@@ -1040,7 +1040,7 @@ begin
   a := public.zz_scalar('service_role', null, 'select coalesce(public.nexus_scoped_tenant_id()::text,''(null)'')');
   perform public.zz_assert('10. nexus_scoped_tenant_id() with '||n_active||' active tenants', 'service_role', '(function)',
     '(null) -- goes silent rather than guess', a, a = '(null)',
-    'On production TODAY there is exactly 1 active non-quarantine tenant, so it returns ALBA CARS. The day a 2nd active tenant exists it returns NULL for every service_role caller.');
+    'On production TODAY there is exactly 1 active non-quarantine tenant, so it returns Tenant A. The day a 2nd active tenant exists it returns NULL for every service_role caller.');
   a := public.zz_scalar('service_role', null, 'select coalesce(public.nexus_default_tenant_id()::text,''(null)'')');
   perform public.zz_assert('10b. nexus_default_tenant_id() as service_role', 'service_role', '(function)',
     'the QUARANTINE tenant', a, a = '0c1c0000-0000-4000-8000-00000000000c',

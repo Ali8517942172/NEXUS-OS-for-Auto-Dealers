@@ -156,7 +156,7 @@ into the placeholder and nowhere else:
 
 ```sql
 select public.nexus_lead_ingest_secret_put(
-  p_endpoint_id  => '4d4f5cf2-f966-4d4e-9d9e-605757c615b7',  -- meta_lead_ads_facebook, ALBA CARS
+  p_endpoint_id  => '4d4f5cf2-f966-4d4e-9d9e-605757c615b7',  -- meta_lead_ads_facebook, Tenant A
   p_kind         => 'meta_page_access_token',
   p_secret       => '<<< paste the System User token here, then clear your clipboard >>>',
   p_installed_by => 'owner: <your name>, per ops/n8n-meta-lead-ads/OWNER-RUNBOOK.md step 6'

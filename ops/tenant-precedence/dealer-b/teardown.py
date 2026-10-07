@@ -6,12 +6,12 @@ setup.py --apply created (tenants B/C, member users A/B/C, memberships),
 read back from ~/.nexus-dealer-b.json, plus every NEXUS-TEST lead and
 audit_log row journeys.py wrote for dealers B and C's test tenants, and
 every NEXUS-TEST lead/audit_log row filed under dealer A's tenant (the
-real ALBA tenant -- teardown never deletes the tenant or dealer A's own
+real Tenant A tenant -- teardown never deletes the tenant or dealer A's own
 membership row unless setup created it, but it always cleans up the
 NEXUS-TEST rows journeys.py put there, since those are never
 pre-existing data).
 
-Anything setup found already existing (a pre-existing ALBA membership for
+Anything setup found already existing (a pre-existing Tenant A membership for
 dealer A, say) is left alone -- tenants/users/memberships are only
 deleted when their *_created_by_setup / *membership_created flag is true
 in the state file. NEXUS-TEST leads/audit_log rows are always deleted
@@ -24,7 +24,7 @@ the NEXUS-TEST marker in the row's own text.
 
 Order matters: NEXUS-TEST leads/audit_log rows first (nothing else
 depends on them), then memberships (FK to both tenants and auth.users),
-then the test tenant rows (B/C only -- dealer A/ALBA is never dropped),
+then the test tenant rows (B/C only -- dealer A/Tenant A is never dropped),
 then the auth users last, matching create order in reverse. On success
 with --apply the state file itself is removed.
 """
@@ -187,7 +187,7 @@ def main():
                 "membership_created": state.get("dealer_b_membership_created"),
             }
 
-    print("\n--- NEXUS-TEST leads/audit_log rows (all dealers, including ALBA) ---")
+    print("\n--- NEXUS-TEST leads/audit_log rows (all dealers, including Tenant A) ---")
     delete_nexus_test_rows(api, "leads", "name")
     delete_nexus_test_rows(api, "audit_log", "lead_name")
 
@@ -198,7 +198,7 @@ def main():
         else:
             print(f"[member:{key}] not created by setup (or already removed), skipping")
 
-    print("\n--- test tenants (dealer A / ALBA is never dropped) ---")
+    print("\n--- test tenants (dealer A / Tenant A is never dropped) ---")
     for key, d in dealers.items():
         if d.get("tenant_created_by_setup"):
             delete_tenant(api, d.get("tenant_id"))

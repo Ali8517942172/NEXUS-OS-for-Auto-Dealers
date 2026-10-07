@@ -4,7 +4,7 @@
 (35.224.126.225) was not touched.
 
 - staging    `wwspuxrbiyagnrnzgate`  (staging-alpha, 7 logins; staging-bravo, 2)
-- production `dsvuoovivysszdoiorch`  (ALBA CARS — live, one login)
+- production `dsvuoovivysszdoiorch`  (Tenant A — live, one login)
 
 ---
 
@@ -293,7 +293,7 @@ this pass did not add a third.
 ### 3h. Production, after applying — all rolled back, nothing left behind
 
 ```
-P1 roster as Ali        1 row: owner, ALBA CARS, is_approver true / TENANT_ROLE,
+P1 roster as Ali        1 row: owner, Tenant A, is_approver true / TENANT_ROLE,
                         staff Ali Asgher (senior_rep), last sign-in 06:23 today
 P2 pending              []
 P3 consent events       []          <- zero rows, and rendered as "nothing recorded"

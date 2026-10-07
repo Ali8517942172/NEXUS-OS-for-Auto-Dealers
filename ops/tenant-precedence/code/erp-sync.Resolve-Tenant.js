@@ -47,7 +47,7 @@
 //   $('Resolve Tenant').item.json._nexus_tenant_id
 // It is now always a valid UUID when this node returns -- the old `null`
 // ("TENANT UNRESOLVED") outcome has become a refusal instead.
-const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS
+const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // Tenant A
 const NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let nexusMap = {};
 try { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }

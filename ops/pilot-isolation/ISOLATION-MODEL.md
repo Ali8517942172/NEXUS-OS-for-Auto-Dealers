@@ -340,9 +340,9 @@ select r.name, r.audit_name, r.audit_aliases, r.category, r.description,
 ```
 
 `exists (select 1 from …)` is a **membership test, not a filter**. Any member of any
-active dealership gets **all 18 rows**. Today that is ALBA's own view of the vendor's
+active dealership gets **all 18 rows**. Today that is Tenant A's own view of the vendor's
 register and harmless. On the day dealership 2 is activated, dealership 2's owner
-reads ALBA's automation register — every workflow name, category, description and
+reads Tenant A's automation register — every workflow name, category, description and
 active flag. Gate `L2` in `two-tenant-proof` F6 is correctly red and **this is why**.
 **H1.**
 
@@ -368,7 +368,7 @@ end if;
 ```
 
 **The day a second dealership is activated, Ask AI returns nothing to everyone,
-including ALBA.** That is a refusal, not a leak — the safe direction — but it is a
+including Tenant A.** That is a refusal, not a leak — the safe direction — but it is a
 feature outage on activation day and it is not in `BLOCKERS.md`. **H7.**
 
 The same body carries the honest comment about its own class: *"SECURITY INVOKER on
@@ -567,7 +567,7 @@ quarantine rows. Both halves are wrong.** The `audit_log` writers are identified
 nine named n8n workflows, all 20 rows written in a 43-minute window on 6 September,
 and **nothing has been written to quarantine `audit_log` since**
 (`max(logged_at) = 2026-09-06 15:02:53`, three days ago; 122 audit rows in the last
-three days all carry ALBA). That was a smoke-test run, not a leak.
+three days all carry Tenant A). That was a smoke-test run, not a leak.
 
 **H12 — but the `communication_logs` quarantine row is a different and worse story,
 and it is live.** The single row is:
@@ -582,12 +582,12 @@ select id, lead_email, channel, direction, created_at, left(message,60)
 ```sql
 select tenant_id, count(*), min(created_at), max(created_at)
   from communication_logs where message like '[SILENCE%' group by 1;
--- ALBA        4 · 2026-08-26 19:03 → 2026-09-08 03:04
+-- Tenant A        4 · 2026-08-26 19:03 → 2026-09-08 03:04
 -- quarantine  1 · 2026-09-08 02:59
 ```
 
 **The silence detector has two write paths: one names the tenant and one does not,
-and they ran five minutes apart on the same night.** Four markers landed on ALBA, one
+and they ran five minutes apart on the same night.** Four markers landed on Tenant A, one
 landed under nobody — so it is invisible to the dealership it describes, and
 `v_lead_recovery.silence_markers_on_file` undercounts by one for a real customer.
 At one dealership this is a lost row. At two, it is the exact shape that files

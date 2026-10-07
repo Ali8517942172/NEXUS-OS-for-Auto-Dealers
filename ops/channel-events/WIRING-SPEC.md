@@ -170,7 +170,7 @@ union all select 'communication_logs',             count(*) from communication_l
 | `whatsapp_customer_message_seen` | **0** | zero |
 | `whatsapp_message_usage` | **0** | zero |
 | `whatsapp_conversation_state` | **0** | zero |
-| `channel_registry` | **2** | both tenant `fff6a2b5…` (ALBA CARS): WAHA session `default`, Cloud phone_number_id `1306545252542419` |
+| `channel_registry` | **2** | both tenant `fff6a2b5…` (Tenant A): WAHA session `default`, Cloud phone_number_id `1306545252542419` |
 | `communication_logs` | **142** | **not 120** — it has grown since the last measurement; the whatsapp/inbound bucket is still being written every day (latest row `2026-09-08 17:24:39Z`) |
 
 The whole messaging layer below `channel_registry` is empty. Every claim about
@@ -1037,5 +1037,5 @@ because they were found by reading it, and both belong to other owners.
 
 6. **Is a second dealership on WAHA in the plan?** If yes, D6 blocks it — the
    registry's uniqueness is global and the one live WAHA session is called
-   `default`. If ALBA CARS is the only WAHA tenant and every future dealership
+   `default`. If Tenant A is the only WAHA tenant and every future dealership
    goes straight to Cloud, D6 never fires and can be left.

@@ -33,7 +33,7 @@ Marketing site: form → `nexus_intake.submit_sales_lead` delivers (4 real rows)
 ## Backend items that the frontend depends on
 - Meta Lead Ads and Google Ads receivers: 0 executions ever — no real ad lead has ever arrived.
 - Replies go out on WAHA `session:'default'` in BDC, Drip and KYC — wrong dealership's number at dealer #2. The tenant-scoped BDC candidate exists but is unpublished.
-- Bitrix24 is one shared webhook (ALBA's) — only ALBA may sync (enforced by NX1001).
+- Bitrix24 is one shared webhook (Tenant A's) — only Tenant A may sync (enforced by NX1001).
 - Error Handler / Health Probe: save errors only → alerting is unproven. Make them record successes.
 - Master Router LLM/HTTP nodes have no per-node timeout (execution 16068 hung 10 min).
 - Test dealers B/C and their NEXUS TEST rows are still in production.

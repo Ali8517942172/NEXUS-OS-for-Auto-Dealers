@@ -29,7 +29,7 @@ prove anything about live data.
 **What I could not verify, stated plainly:**
 
 - **No browser against the live site.** Nothing here is evidence about what a
-  real signed-in ALBA CARS session renders today. Two things in particular are
+  real signed-in Tenant A session renders today. Two things in particular are
   unverified against production: that `authenticated` really does now get a
   `v_workflow_health` without the three columns (I read the migration; I did not
   read the live catalogue), and that no *other* row of live data carries vendor

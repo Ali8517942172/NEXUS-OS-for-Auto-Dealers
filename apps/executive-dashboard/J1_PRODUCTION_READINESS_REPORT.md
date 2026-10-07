@@ -104,7 +104,7 @@ the send node.
 | `WAHA_WEBHOOK_SECRET` | **unset or empty** | the gate reported `mode:"DORMANT"`, which is the only mode it emits when `EXPECTED` is falsy. Since 3 Sep the gate tags `_gate` in *every* state, so this is a positive signal, not the absence of one. |
 | `WAHA_WEBHOOK_ENFORCE` | **not `true`** | implied by DORMANT; and were it true with no secret, the gate now returns `[]` (fail closed) rather than passing everything |
 | session allowlist (`Resolve Tenant`) | **live and refusing** | unknown session → zero items, twice |
-| `NEXUS_TENANT_MAP` | **not externally observable — do not claim it is unset** | the *effective* map resolves `default` → ALBA CARS and refuses everything else. That is identical whether the env var is absent (built-in fallback) or present with `default` as a key. Only the box can distinguish them. |
+| `NEXUS_TENANT_MAP` | **not externally observable — do not claim it is unset** | the *effective* map resolves `default` → Tenant A and refuses everything else. That is identical whether the env var is absent (built-in fallback) or present with `default` as a key. Only the box can distinguish them. |
 | `saveDataSuccessExecution` | **`"all"`** | fetched from the published settings. The trap CLAUDE.md warned about — enforcing blind because MONITOR executions were never saved — is closed. |
 
 ### Distance from the required end state
@@ -289,7 +289,7 @@ Files changed: `apps/executive-dashboard/QUALITY_GATE.mjs` (catalogue SQL gains
 
 Confirmed live rather than assumed:
 
-- `public.tenants` — **1 row**: ALBA CARS, `is_unattributed_default = true`.
+- `public.tenants` — **1 row**: Tenant A, `is_unattributed_default = true`.
 - `public.tenant_members` — **1 row**, role `owner`.
 - `public.inventory_action_policy` — `approver_tenant_roles = {owner, admin, manager}`, `approver_staff_roles = {}`.
 - `auth.users` — 1.
@@ -389,7 +389,7 @@ trail.
 
 | Fixture | Definition |
 |---|---|
-| Tenant A | restored ALBA CARS, `is_unattributed_default` **cleared** |
+| Tenant A | restored Tenant A, `is_unattributed_default` **cleared** |
 | Tenant B | a second dealership, its own inventory / leads / actions |
 | Quarantine tenant Q | holds `is_unattributed_default`, no staff, never read by a screen |
 | `a_owner` | member of A, role `owner` — approver |
@@ -452,7 +452,7 @@ Only these. Not wishes.
 
 Not blockers, but they must not be lost:
 
-- `tenants.is_unattributed_default = true` on the live dealership — every omitted `tenant_id` lands in ALBA CARS.
+- `tenants.is_unattributed_default = true` on the live dealership — every omitted `tenant_id` lands in Tenant A.
 - `whatsapp-send` grants the sole configured tenant to a member of none.
 - All 11 endpoints start an execution before refusing; ten of them write a refusal row an unauthenticated caller can trigger.
 - `ask-ai` and `audit-kyc` do not save successful executions, so their behaviour is unobservable in the execution list.

@@ -21,7 +21,7 @@ dealership.
 
 **Never, on any run:**
 
-1. **Never against production.** `dsvuoovivysszdoiorch` holds ALBA CARS, the one
+1. **Never against production.** `dsvuoovivysszdoiorch` holds Tenant A, the one
    real dealership, and its counts are what every claim in
    `commercial/WHAT-WE-CLAIM.md` rests on. Lab rows in that database poison all
    of them. Every script in this Lab must carry the same two guards

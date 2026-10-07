@@ -95,7 +95,7 @@ it. Therefore, on the morning the column ships:
 > `where data_origin = 'REAL'` returns **zero rows**, and Confirmed revenue on all nine
 > screens reads **AED 0 / nothing on file**.
 
-That is the honest number — ALBA has sold nothing through NEXUS. It is also a dashboard
+That is the honest number — Tenant A has sold nothing through NEXUS. It is also a dashboard
 that has gone from "AED 585,000" to "nothing" overnight, and **the owner must choose that
 knowingly rather than discover it.** Ship it behind a one-line decision, not a migration
 footnote.
@@ -173,7 +173,7 @@ select count(*) filter (where d ilike '%is_quarantine%') from v where d ilike '%
 in their own definitions, and a quarantine tenant already exists
 (`02c86264-6653-4522-b055-1c3f359a82fe`, *"UNATTRIBUTED - QUARANTINE (not a dealership)"*).
 RLS on the table is `tenant_id IN (nexus_current_tenant_ids())`, and `tenant_members`
-holds exactly one member, ALBA-only — so a single `UPDATE … set tenant_id = <quarantine>`
+holds exactly one member, Tenant-A-only — so a single `UPDATE … set tenant_id = <quarantine>`
 would make the row invisible to the four screens that read the table directly as well.
 
 Why it is still the wrong shape:

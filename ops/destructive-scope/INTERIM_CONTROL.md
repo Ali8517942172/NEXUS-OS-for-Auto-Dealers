@@ -97,7 +97,7 @@ anything is stopping it.
 ## The order, when you do say yes
 
 1. `PROPOSED_recompute_inventory_derived.sql` (nx984) — the smallest and safest;
-   with the backfill it leaves ALBA CARS' numbers identical.
+   with the backfill it leaves Tenant A' numbers identical.
 2. `PROPOSED_guard_extension.sql` sections A and B — A must go in the same
    window as the workflow swap, because A guards `processed_messages` and the
    current workflow deletes from it directly.

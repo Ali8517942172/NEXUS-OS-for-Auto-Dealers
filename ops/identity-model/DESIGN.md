@@ -1010,7 +1010,7 @@ so that count is stale and the conclusion is not.) Adding one to `leads` is an
    permanently unmergeable. Which error do you want?
 
 3. **How many days of silence end an opportunity?** §3.3 proposes 45 with no
-   evidence for it. A number from ALBA CARS' actual experience is worth more
+   evidence for it. A number from Tenant A' actual experience is worth more
    than anything derivable from five leads. It is a tenant setting, so it can be
    changed later without a migration — but the first value ships as the default
    for every dealership after you.
@@ -1112,7 +1112,7 @@ they split and the number stops being an identifier.
 Once a number is in `im_shared_key` it never identifies anybody again. Measured:
 **three inbound calls on a shared line produced three throwaway customers.** On a
 busy company switchboard that is one junk record per call, forever, until a human
-works the `im_identity_review` queue — and that queue is work ALBA does not do
+works the `im_identity_review` queue — and that queue is work Tenant A does not do
 today. This is not solved. It is priced, and the price is a person's time.
 
 ### 8.4 Normalisation is where the silent damage is, not identity

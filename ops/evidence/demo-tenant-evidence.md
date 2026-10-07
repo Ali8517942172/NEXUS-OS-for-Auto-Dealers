@@ -290,7 +290,7 @@ missed the first-response target, 11 open enquiries checked."* The same six are
 listed by name in register 4 as `sla_breach` alerts **on the same page**, so the
 screen contradicts itself.
 
-Invisible on production because ALBA has one open enquiry. It is exactly
+Invisible on production because Tenant A has one open enquiry. It is exactly
 CLAUDE.md's *"check captions against the branch they sit in"*, and it is the
 eighth instance.
 
@@ -306,7 +306,7 @@ database resolves to a lead record."* Measured here: `v_conversations` returns
 The rows filed under the verdict are correctly characterised — all three are
 unidentified handles, because `v_needs_attention` only surfaces threads whose
 last message is inbound and within 7 days. But the sentence is a claim about the
-whole database that happened to be true of ALBA and is false of any dealership
+whole database that happened to be true of Tenant A and is false of any dealership
 whose customers are on file. Same shape as finding 1: a sentence and its branch
 disagreeing.
 
@@ -343,7 +343,7 @@ pre-filter removes the one case that disclosure exists for.
 
 The gap is narrated elsewhere on the page (the caveat banner explains the
 *enquiry* half), so it is a disclosure weakness rather than a false number.
-Invisible on production, where all 12 ALBA units carry cost and price. Passing
+Invisible on production, where all 12 Tenant A units carry cost and price. Passing
 `leaks.filter(unit lines)` and letting `expose()` count the misses would close
 it.
 
@@ -368,7 +368,7 @@ the fix: **`deal_rescue_prerequisites` has no `tenant_id`, and its
 `evidence_today` column contains one dealership's measured counts as stored
 prose.** Production's rows say *"leads = 3 (2 of them quarantined wrong-number
 junk), purchase_history = 1, finance_quotes = 0"* and *"12 units"*. Copying them
-to staging would print ALBA's lead count and sale count on the demo
+to staging would print Tenant A's lead count and sale count on the demo
 dealership's screen — and, more seriously, **on a second real dealership's
 screen the day one is onboarded.** It is a cross-tenant disclosure of measured
 facts through a platform-scoped text column, and it is not in the readiness gate
@@ -416,7 +416,7 @@ money-leaks register 4's `VERDICT` map to **"NO RULE"** — *"neither counted as
 leak nor cleared… somebody should decide which it is."* That is honest, and it
 is also 7 of 22 alerts sitting in limbo on the flagship screen. Both kinds are
 things a dealership would call money leaks. It never showed on production because
-ALBA has no HOT unassigned lead and no recent measured breach.
+Tenant A has no HOT unassigned lead and no recent measured breach.
 
 ### Finding 9 — an `auth.users` row inserted by SQL breaks sign-in in a way nothing in the row looks wrong
 
@@ -450,11 +450,11 @@ guard_b_staging_fixtures_present             : false
 Both fire. Either alone stops the script before its first `DELETE`.
 
 **Fired deliberately on staging**, because a guard that has never gone red is
-decoration. Inside one `DO` block: plant a tenant named `ALBA CARS (probe)`,
+decoration. Inside one `DO` block: plant a tenant named `Tenant A (probe)`,
 evaluate the real predicate, `RAISE`:
 
 ```
-ERROR: NX999: GUARD FIRED AS DESIGNED: an ALBA-looking tenant is present,
+ERROR: NX999: GUARD FIRED AS DESIGNED: an Tenant-A-looking tenant is present,
        so the demo scripts refuse. This probe is now rolled back.
 ```
 

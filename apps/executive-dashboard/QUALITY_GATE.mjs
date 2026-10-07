@@ -3874,7 +3874,7 @@ function stubRest(url, method, body) {
   }
 
   const row = fabricate(name);
-  if (name === 'tenants') return { status: 200, body: [{ ...row, id: 't1', name: 'ALBA CARS', slug: 'alba-cars', status: 'active', is_unattributed_default: true }] };
+  if (name === 'tenants') return { status: 200, body: [{ ...row, id: 't1', name: 'Tenant A', slug: 'alba-cars', status: 'active', is_unattributed_default: true }] };
   if (name === 'tenant_members') return { status: 200, body: [{ tenant_id: 't1', auth_user_id: 'u1', role: 'member', staff_user_id: 's1', created_at: '2026-09-01T00:00:00Z' }] };
 
   if (name === 'v_inventory_profit_sentinel')

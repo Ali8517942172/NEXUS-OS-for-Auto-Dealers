@@ -33,7 +33,7 @@ begin
               where lower(slug) like '%alba%' or lower(name) like '%alba%') then
     raise exception using
       errcode = 'NX999',
-      message = 'REFUSED: this database contains the ALBA CARS tenant, which identifies it as NEXUS PRODUCTION.',
+      message = 'REFUSED: this database contains the Tenant A tenant, which identifies it as NEXUS PRODUCTION.',
       detail  = 'This script deletes rows. It is written for a synthetic demo tenant that exists only on '
              || 'staging, and it must never be pointed at the database that holds the one real dealership.',
       hint    = 'Run this against the staging project (wwspuxrbiyagnrnzgate) only.';

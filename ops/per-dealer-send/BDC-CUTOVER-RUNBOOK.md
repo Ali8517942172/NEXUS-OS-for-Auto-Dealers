@@ -11,7 +11,7 @@ Reasoning, read against production and against `ops/tenant-scope-bdc/STATUS.md`:
    eight `communication_logs`/`whatsapp_contacts`/`processed_messages`/`audit_log`
    calls file under `nexus_default_tenant_id()`; the idempotency key on
    `Claim Message Id` collides across dealers; and the agent's system prompt
-   hard-codes ALBA's discount ceiling, opening band, make allowlist, and even a
+   hard-codes Tenant A's discount ceiling, opening band, make allowlist, and even a
    real closed price (`AED 538,200`) into every dealership's negotiation.
    Patching only the WAHA send node leaves all eight other leaks live.
 2. `LTBExI7QzFeANeFg` (`whatsapp_bdc_ai_agent.TENANT_SCOPED.json`) already fixes
@@ -31,7 +31,7 @@ Reasoning, read against production and against `ops/tenant-scope-bdc/STATUS.md`:
 `LTBExI7QzFeANeFg`'s `Resolve WAHA Send Channel` node resolves **only**
 `whatsapp_waha_session` from `channel_registry` — it has no WhatsApp Cloud
 preference. Per the binding decision (WhatsApp Cloud `phone_number_id`
-preferred, WAHA session legacy-only for ALBA), it needs the same
+preferred, WAHA session legacy-only for Tenant A), it needs the same
 Fetch → Resolve(Cloud-preferred) → IF → {Reveal Cloud Token → Graph POST} /
 {WAHA POST with dynamic session} pattern already built and validated in this
 task for Drip, KYC and Dashboard Reply
@@ -77,10 +77,10 @@ The gap this runbook named above — `LTBExI7QzFeANeFg` resolving only `whatsapp
 5. **Activate** `LTBExI7QzFeANeFg` (`active: true`) and **deactivate**
    `BiyHk9ZXxJUVGbf6` (`active: false`) in the same change window, so the old
    workflow cannot also fire from its own webhook trigger concurrently.
-6. **Canary**: send one WAHA-session test message through the ALBA tenant only
+6. **Canary**: send one WAHA-session test message through the Tenant A tenant only
    (the one dealership on WAHA today) and confirm: reply leaves from the
-   session `channel_registry` names for ALBA's `tenant_id`, `Claim Message Id`
-   writes with ALBA's `tenant_id`, and `communication_logs` rows carry it too.
+   session `channel_registry` names for Tenant A's `tenant_id`, `Claim Message Id`
+   writes with Tenant A's `tenant_id`, and `communication_logs` rows carry it too.
 7. **Watch window**: 24h on `channel_send_directive`/executions for
    `LTBExI7QzFeANeFg`, error rate vs. `BiyHk9ZXxJUVGbf6`'s trailing 7-day
    baseline.
@@ -252,21 +252,21 @@ MATCH byte-for-byte.** 1 ADDED: `Hand Off To BDC Agent (Cloud)`. Plus
   `Require Cloud Context From Receiver`, and `Cloud Window Decision`'s real
   `jsCode` (extracted straight from the patched JSON, not reimplemented)
   under stubbed n8n globals (`$input`, `$`, `$env`) for the five required
-  scenarios — WAHA ALBA, Cloud ALBA, Cloud unregistered (refuses,
+  scenarios — WAHA Tenant A, Cloud Tenant A, Cloud unregistered (refuses,
   `BDC_CLOUD_CONTEXT_INCOMPLETE`), Cloud dealer B (resolves B independently
-  of ALBA, sends from B's own `phone_number_id`), and outside-24h
+  of Tenant A, sends from B's own `phone_number_id`), and outside-24h
   (`TEMPLATE_REQUIRED` → `Cloud Window Open?` false → `Note: Cloud Window
   Closed` produces a `BLOCKED` audit row). 10/10 assertions pass.
 
 ### What is still blocking an actual Cloud send today (checked live, 2026-09-21)
 
 `channel_registry` has exactly **one** active `whatsapp_cloud_phone_number_id`
-row and it belongs to ALBA (`external_identifier = 1306545252542419`,
+row and it belongs to Tenant A (`external_identifier = 1306545252542419`,
 `integration_id = 9129126e-da78-4340-a89d-ca703b9fc169`) — so this patch has
 a real tenant to exercise, not only the synthetic "dealer B" in the offline
 test. **But that channel has no `channel_secret` row** (`kind =
 'meta_system_user_token'`) — confirmed with a direct read of
-`channel_registry` joined to `channel_secret` for ALBA's `tenant_id`. Until a
+`channel_registry` joined to `channel_secret` for Tenant A's `tenant_id`. Until a
 token is installed (via the onboarding flow behind `nexus_channel_register_cloud_number`
 / the `Channel Test Send` workflow), `Reveal Cloud Token (BDC)` will fail
 every time with `nexus_channel_secret_reveal`'s own `NX930 NO_CREDENTIAL`,
@@ -278,7 +278,7 @@ code.
 
 ### Deploy order (when someone runs this deliberately, outside this session)
 
-1. Confirm a token exists for ALBA's Cloud channel (`channel_secret` row,
+1. Confirm a token exists for Tenant A's Cloud channel (`channel_secret` row,
    `kind='meta_system_user_token'`) — or accept that Cloud replies will
    refuse-and-log until one does; either is a safe state to deploy into.
 2. Apply `ops/bdc-cloud-send/patched/LTBExI7QzFeANeFg.json` to
@@ -297,7 +297,7 @@ code.
 4. Re-run `wf.py verify` against both to confirm the applied state matches
    these patched files exactly.
 5. Canary exactly as this runbook's existing Step 6 describes, but send the
-   test message over WhatsApp Cloud to ALBA's number instead of WAHA, and
+   test message over WhatsApp Cloud to Tenant A's number instead of WAHA, and
    additionally confirm: `Reply Channel Is Cloud?` took the true branch
    (visible in the execution), the reply left from `1306545252542419` (not
    any WAHA session), and `audit_log` carries a `Cloud BDC Send` row either

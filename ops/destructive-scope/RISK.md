@@ -50,14 +50,14 @@ list loses credibility on the items that *are* real.
 |---|---|---|
 | `* 0.05` (VAT) | `round(b.price * 0.05)` | VAT is a jurisdiction rate. A dealer outside the UAE gets a wrong tax figure, silently. |
 | `* 0.05` (commission) | `round((gross − holding) * 0.05)` | Commission is a commercial policy each dealership sets. |
-| `'Asia/Dubai'` | `today_dubai date := (now() at time zone 'Asia/Dubai')::date` | `public.tenant_configuration.timezone` already exists as a column. The function does not read it. (Measured: it is `NULL` for ALBA CARS, so it is an unset field, not a populated one — a fix must say what happens when it is NULL rather than assume a value is there.) |
+| `'Asia/Dubai'` | `today_dubai date := (now() at time zone 'Asia/Dubai')::date` | `public.tenant_configuration.timezone` already exists as a column. The function does not read it. (Measured: it is `NULL` for Tenant A, so it is an unset field, not a populated one — a fix must say what happens when it is NULL rather than assume a value is there.) |
 | no `p_tenant_id` | function signature is `()` | A `service_role` call still sweeps **every** active dealership at once. That is defensible for a nightly batch, but there is no way to recompute one dealership, and no way to cap the blast radius of a bad run. |
 
 ---
 
 ## 1. The four destructive statements
 
-Measured on production today: **2 tenant rows** — `ALBA CARS` (active) and
+Measured on production today: **2 tenant rows** — `Tenant A` (active) and
 `UNATTRIBUTED - QUARANTINE (not a dealership)` (quarantine). So exactly one
 live dealership. `kyc_documents` holds **9** rows, all with a `storage_path`,
 all in the `kyc/YYYY/MM/uuid.ext` shape. `processed_messages` holds **173**

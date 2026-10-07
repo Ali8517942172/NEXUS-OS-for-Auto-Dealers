@@ -123,7 +123,7 @@ const refuse = (status, code, why, extra) => [{ json: Object.assign(
    ('google','google_webhook_id', <public_key from the URL>). The vault answers
    with the endpoint and tenant that own the secret; both must be the endpoint
    this delivery already resolved to, or nothing is compared.
-   $env[secret_ref] is the LEGACY per-endpoint path (ALBA's first endpoint) and
+   $env[secret_ref] is the LEGACY per-endpoint path (Tenant A's first endpoint) and
    is only read when the vault holds nothing for this endpoint. It is still
    per-endpoint -- the name comes from our own row -- never one box-wide key. */
 const GOOGLE_SECRET_KIND = 'google_lead_form_key';

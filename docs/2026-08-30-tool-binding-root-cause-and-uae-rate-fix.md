@@ -125,18 +125,18 @@ quote accuracy more than any further tuning of the bands.
 
 ## Two decisions that are Ali's, not the system's
 
-1. **Does ALBA CARS earn commission from a bank for arranging finance?** This is now more than a
+1. **Does Tenant A earn commission from a bank for arranging finance?** This is now more than a
    business question. CBUAE 5.2.3.3 requires commission arrangements to be *disclosed to the consumer*
    with controls against conflict of interest. An AI agent that steers customers toward financing while
    the dealership earns undisclosed commission is precisely the arrangement that rule addresses. The
-   only reliable source for the number is ALBA CARS' own bank agreements.
-2. **Whether ALBA CARS is contractually an "agent"** of any bank under CBUAE 5.1.1.80 — banks are held
+   only reliable source for the number is Tenant A' own bank agreements.
+2. **Whether Tenant A is contractually an "agent"** of any bank under CBUAE 5.1.1.80 — banks are held
    responsible for their agents' conduct, and those agreements may carry their own rate-quoting clauses.
 
 ---
 
-**Note added 8 September 2026.** The two questions above are ALBA CARS' questions
-because ALBA CARS is tenant #1 and the pilot. They are not one-off business
+**Note added 8 September 2026.** The two questions above are Tenant A' questions
+because Tenant A is tenant #1 and the pilot. They are not one-off business
 questions about a single dealer: **every dealership NEXUS is sold to has its own
 bank agreements, its own commission arrangement, and its own answer to whether it
 is contractually an agent of a bank.** So the answers belong in per-tenant

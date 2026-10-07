@@ -34,7 +34,7 @@ if (!email && !phone) {
 // with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is
 // filed under the quarantine tenant instead of being appended to some real
 // dealership's audit trail.
-const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS
+const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // Tenant A
 const NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let nexusMap = {};
 try { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }

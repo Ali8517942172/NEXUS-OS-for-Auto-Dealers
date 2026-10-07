@@ -1,7 +1,7 @@
 # NEXUS tenant-precedence -- live adversarial results
 
 `live_adversarial.py --live --i-understand-side-effects`, 2026-09-20 ~11:29-11:31 UTC,
-against all 3 real active tenants (ALBA + test dealer B + test dealer C).
+against all 3 real active tenants (Tenant A + test dealer B + test dealer C).
 
 **This report has been rewritten by `live_adversarial.py --reverify ADVERSARIAL-RUN.json`.**
 The harness itself has been fixed (see below) and every verdict below comes
@@ -66,7 +66,7 @@ carries `X`.
 | qTnh3nwWheFJbFkU (kyc) | B-no-claim | **INCONCLUSIVE** | PASS (HTTP 200) | same -- no execution created; the HTTP 200 the original harness saw was **not evidence the workflow ever ran** |
 | bxNBzBrcOtcFpMPn (erp-sync) | A-claims-B | **FAIL** | FAIL (HTTP 200) | execution 15964: **no refusal was ever thrown -- ran to `status: success`**; see "REVISED FINDING" below (previous report's claim that this execution ended `status: error` does not match the execution data) |
 | bxNBzBrcOtcFpMPn (erp-sync) | B-claims-A | **FAIL** | FAIL (HTTP 200) | execution 15965: same -- ran to `status: success`, never refused, resolver output ended up carrying the forbidden tenant_id (see below for why that's not quite what it sounds like) |
-| bxNBzBrcOtcFpMPn (erp-sync) | B-no-claim | **FAIL** | PASS (HTTP 200) | execution 15966: resolved/output tenant_id is ALBA's, not dealer B's -- see "REVISED FINDING" below |
+| bxNBzBrcOtcFpMPn (erp-sync) | B-no-claim | **FAIL** | PASS (HTTP 200) | execution 15966: resolved/output tenant_id is Tenant A's, not dealer B's -- see "REVISED FINDING" below |
 | KI6P1Qcf3MIZakNa (lead-escalation) | A-claims-B | PASS | INCONCLUSIVE (HTTP 500) | execution 15967 refused at `Resolve Tenant`: `[NEXUS-UNATTRIBUTED] Escalation rejected: ...` |
 | KI6P1Qcf3MIZakNa (lead-escalation) | B-claims-A | PASS | INCONCLUSIVE (HTTP 500) | execution 15969, mirror claim, refused the same way |
 | KI6P1Qcf3MIZakNa (lead-escalation) | B-no-claim | **PASS** | FAIL (HTTP 500) | execution 15971: `Tenant For JWT User` correctly resolved tenant_id=9060a854-... (dealer B); the execution then failed 3 nodes later at a deliberate `No Lead To Escalate` stop (no pre-existing escalated lead matched the synthetic probe's email) -- a real, separate, pre-existing bug (see below), but **not a tenancy failure**, so this case now correctly PASSES the tenant-precedence check it's actually testing |
@@ -103,14 +103,14 @@ for either malicious claim.
 
 Tracing execution `15964`'s node list end to end: `ErpSyncWebhook` ->
 `Verify JWT` -> `Tenant For JWT User` (correctly resolves the caller's real
-membership, ALBA, from their JWT) -> `Auth Gate` -> **`Fetch HOT Leads from
+membership, Tenant A, from their JWT) -> `Auth Gate` -> **`Fetch HOT Leads from
 Supabase`** -- with no resolver node in between that ever compares the
 caller's real tenant against the body's claimed `tenant_id`. This door's
 "Resolve Tenant" node (seen later in the chain) doesn't derive anything
 from the caller's identity or claim at all -- `Fetch HOT Leads from
 Supabase` pulls an already-queued, **unfiltered-by-tenant** batch of "HOT"
 leads (this run's batch happened to contain both dealer B's own
-`NEXUS TEST Dealer B Customer 3` and ALBA's real, pre-existing
+`NEXUS TEST Dealer B Customer 3` and Tenant A's real, pre-existing
 `WhatsApp customer 2172`, regardless of which dealer's JWT triggered the
 call), and each item in that batch simply carries whatever `tenant_id` its
 own row already had in Supabase. So:
@@ -120,7 +120,7 @@ own row already had in Supabase. So:
   * "resolved tenant_id" for this door, as read off the execution, is not a
     single per-request value the way it is on the other 6 doors -- it's
     whichever tenant's lead happened to be processed last in that batch
-    (ALBA's, in all three of this run's calls, since ALBA's `WhatsApp
+    (Tenant A's, in all three of this run's calls, since Tenant A's `WhatsApp
     customer 2172` row was the second item in every batch).
 
 This is the **same pre-existing defect** already flagged in this file's
@@ -189,7 +189,7 @@ harness bugs this re-run exposed (`now_iso_floor`'s 5s clock-skew buffer, and
 | door | case | verdict | execution | detail |
 |---|---|---|---|---|
 | erp-sync | A-claims-B | PASS | 16063 | resolved tenant_id=fff6a2b5... (dealer A's own real tenant; the claimed dealer-B id was never read) |
-| erp-sync | B-claims-A | PASS | 16064 | resolved tenant_id=9060a854... (dealer B's own real tenant; the claimed ALBA id was never read) |
+| erp-sync | B-claims-A | PASS | 16064 | resolved tenant_id=9060a854... (dealer B's own real tenant; the claimed Tenant A id was never read) |
 | erp-sync | B-no-claim | PASS | 16066 | resolved tenant_id=9060a854... (dealer B's own real tenant) |
 | kyc | A-claims-B | INCONCLUSIVE | none | HTTP 500; no execution exists for this workflow, ever (`saveDataErrorExecution`/`saveDataSuccessExecution` = `"none"` on the workflow itself) |
 | kyc | B-claims-A | INCONCLUSIVE | none | HTTP 500; same cause |

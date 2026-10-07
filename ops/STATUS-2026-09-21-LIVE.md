@@ -133,7 +133,7 @@ pattern as section 1 above, applied to `Resolve WAHA Send Channel` / `Fetch WAHA
 `Send Reply via WAHA HTTP API`), re-verify all 15+ Supabase calls still carry
 `tenant_id`/`p_tenant`, re-confirm no drift since 2026-08-30, and only then run the runbook's
 Steps 4–7 (repoint Master Router's two `executeWorkflow` nodes, activate/deactivate in the
-same window, canary on the ALBA WAHA tenant, 24h watch window).
+same window, canary on the Tenant A WAHA tenant, 24h watch window).
 
 ## Verification method
 

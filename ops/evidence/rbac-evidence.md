@@ -4,7 +4,7 @@
 no git command was run. The n8n box was not touched.
 
 - staging   `wwspuxrbiyagnrnzgate`  (2 synthetic tenants — where every control was built and broken first)
-- production `dsvuoovivysszdoiorch` (ALBA CARS — live)
+- production `dsvuoovivysszdoiorch` (Tenant A — live)
 
 ---
 

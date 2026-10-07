@@ -5,7 +5,7 @@
 > executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
 > `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
 > to real dealerships on a subscription — the UAE market first, then worldwide.
-> It is a multi-tenant product by design, not a build for one dealer; **ALBA
+> It is a multi-tenant product by design, not a build for one dealer; **Tenant A
 > CARS is tenant #1 and the pilot**, the proving ground rather than the customer
 > it was built for. Judge changes by whether they make it sellable and keep it
 > sellable. The honest commercial position today is a

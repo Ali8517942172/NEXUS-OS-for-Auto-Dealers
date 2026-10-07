@@ -1618,7 +1618,7 @@ SCREENS.moneyleaks = async host => {
       const VERDICT = {
         /* ── Two of these were asserted, and one of them was false ──────────
            `unanswered_chat` said "Not one WhatsApp thread in this database
-           resolves to a lead record". That is true of ALBA CARS today and false
+           resolves to a lead record". That is true of Tenant A today and false
            of a dataset where fourteen of seventeen resolve — a caption asserting
            a database-wide fact from inside a static map, which is the thing
            CLAUDE.md's "check captions against the branch they sit in" rule

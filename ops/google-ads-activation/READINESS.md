@@ -69,7 +69,7 @@ document exists to prevent.
 
 ## What the owner must supply
 
-1. A Google Ads account connected to ALBA, with a lead form asset (component 13).
+1. A Google Ads account connected to Tenant A, with a lead form asset (component 13).
 2. The shared secret value, set on the n8n VM under the name in `secret_ref`,
    and pasted into the Google Ads lead form's webhook "key" field. It must never
    be typed into this repo, a migration, or a chat.

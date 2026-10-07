@@ -57,7 +57,7 @@ hop refused and whether Google kept or destroyed the lead.
 | Hop | What to check | Where the evidence lives | What a pass looks like |
 |---|---|---|---|
 | 1. Webhook received | n8n execution list for workflow `EYva4c2bMV5MGq0o` | n8n execution store **only** | One execution exists. This proves the request arrived. It proves nothing else |
-| 2. Key resolved to a tenant | output of the `Resolve Endpoint` node | n8n execution; confirm against `public.lead_ingest_endpoint` | One row, and its `tenant_id` is ALBA's. Zero rows means the migration was not applied, or the tenant is not `active` |
+| 2. Key resolved to a tenant | output of the `Resolve Endpoint` node | n8n execution; confirm against `public.lead_ingest_endpoint` | One row, and its `tenant_id` is Tenant A's. Zero rows means the migration was not applied, or the tenant is not `active` |
 | 3. Body secret verified | output of `Verify And Redact` | n8n execution | `verdict` starts with `ACCEPT`. Anything else: read `reason_code`, not the HTTP code alone |
 | 4. Normalisation | `normalized` and `normalized_defect` in the same node output | n8n execution, then `public.lead_event.normalized` | For a test lead, whatever Google fabricated. `stripped_secret_keys` / `annotated_values` show the redaction ran |
 | 5. `lead_event` written | the row itself | **`public.lead_event`** | `select event_id, source_key, phase, origin_verified, external_event_id from public.lead_event where source_key='google_ads_lead_form';` → one new row. Count goes 1 → 2. `phase` is **`QUARANTINED`** for a test lead, and `origin_verified='shared_secret_in_body'` |

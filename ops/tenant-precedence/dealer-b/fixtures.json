@@ -29,11 +29,11 @@
     "  and .../20260902112540_mt_keys_drop_leads_email_global_unique.sql for the",
     "  schema decision this fixture is built to exercise.",
     "",
-    "Dealer A is NOT a test tenant -- it is the real, existing ALBA CARS tenant",
+    "Dealer A is NOT a test tenant -- it is the real, existing Tenant A tenant",
     "(fff6a2b5-cfd5-4460-8383-875bc5826de0). setup.py never creates or deletes",
     "that tenant; it only ensures a test MEMBER user + membership on it, same as",
     "the existing dealer-b two-tenant script already did. journeys.py therefore",
-    "writes real NEXUS-TEST rows into the production ALBA tenant -- they are",
+    "writes real NEXUS-TEST rows into the production Tenant A tenant -- they are",
     "all marked and all removable by teardown.py, but they are not sandboxed."
   ],
   "phones": {
@@ -44,7 +44,7 @@
   "dealers": [
     {
       "key": "a",
-      "label": "Dealer A (ALBA, real tenant)",
+      "label": "Dealer A (Tenant A, real tenant)",
       "is_existing_tenant": true,
       "tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
       "slug": null,

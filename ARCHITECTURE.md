@@ -7,7 +7,7 @@
 > already trusts, reasons across them, and acts.
 >
 > **It is a multi-tenant product by design, sold to auto dealerships on a
-> subscription — the UAE market first, then worldwide.** ALBA CARS is tenant #1
+> subscription — the UAE market first, then worldwide.** Tenant A is tenant #1
 > and the pilot, not the dealership NEXUS was built for. By design is not yet in
 > operation: read every measured figure below as a **one-tenant** figure, because
 > production runs one active dealership plus a quarantine tenant and
@@ -152,7 +152,7 @@ is in any live path. No MongoDB. No Odoo. No FastAPI. No React. No Socket.io.
 
 ## 3. What is built
 
-**Live in production, on one dealership (ALBA CARS):** twenty screens, of which
+**Live in production, on one dealership (Tenant A):** twenty screens, of which
 the five revenue engines — Revenue Recovery, Lead Recovery, Deal Rescue,
 Attribution, Policy — shipped on 3 September. The AI BDC (WhatsApp) is proven
 end to end. The Action Center records a proposal, a named approver, and a

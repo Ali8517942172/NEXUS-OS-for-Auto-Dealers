@@ -5,7 +5,7 @@ which of the real n8n nodes each one exercises.
 
 **Measured 4 September 2026** against the live n8n box (21 workflows, read
 through the published definitions) and against Supabase projects
-`dsvuoovivysszdoiorch` (production, ALBA CARS) and `wwspuxrbiyagnrnzgate`
+`dsvuoovivysszdoiorch` (production, Tenant A) and `wwspuxrbiyagnrnzgate`
 (synthetic two-tenant staging). Every count in this file came from one of those
 two places. Where a figure could not be measured from here, it says so.
 
@@ -2106,7 +2106,7 @@ run needs a zombie check before and after, and never two journeys in flight.
 ## B4 — There is one dealership in production, and it is a real one
 
 Production `dsvuoovivysszdoiorch` holds **1 tenant, 1 tenant member, 1 user,
-3 leads, 12 units, 1 sale**. That tenant is ALBA CARS — an actual dealership
+3 leads, 12 units, 1 sale**. That tenant is Tenant A — an actual dealership
 whose book these numbers are, and **tenant #1 of a product built for dealerships
 generally**, not the dealership NEXUS was built for.
 

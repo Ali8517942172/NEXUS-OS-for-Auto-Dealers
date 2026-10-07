@@ -372,7 +372,7 @@ const verify = node({
         "   ('google','google_webhook_id', <public_key from the URL>). The vault answers\n" +
         "   with the endpoint and tenant that own the secret; both must be the endpoint\n" +
         "   this delivery already resolved to, or nothing is compared.\n" +
-        "   $env[secret_ref] is the LEGACY per-endpoint path (ALBA's first endpoint) and\n" +
+        "   $env[secret_ref] is the LEGACY per-endpoint path (Tenant A's first endpoint) and\n" +
         "   is only read when the vault holds nothing for this endpoint. It is still\n" +
         "   per-endpoint -- the name comes from our own row -- never one box-wide key. */\n" +
         "const GOOGLE_SECRET_KIND = 'google_lead_form_key';\n" +

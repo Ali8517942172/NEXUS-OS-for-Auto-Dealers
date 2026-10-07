@@ -199,7 +199,7 @@ console.log('\nSignature verification');
 
 console.log('\nTwo dealerships, two secrets — the whole point of today');
 {
-  const A = { pnid: '111111111111111', secret: 'alba-app-secret', tenant: 'T-ALBA' };
+  const A = { pnid: '111111111111111', secret: 'alba-app-secret', tenant: 'T-Tenant A' };
   const B = { pnid: '222222222222222', secret: 'other-app-secret', tenant: 'T-OTHER' };
   const helpers = () => makeHelpers({ vault: {
     [A.pnid]: { secret: A.secret, tenant_id: A.tenant },

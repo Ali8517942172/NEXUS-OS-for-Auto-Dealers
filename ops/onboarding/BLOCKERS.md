@@ -7,12 +7,12 @@
 ## The short answer
 
 **A dealer can be given a working NEXUS account today. They cannot be given a
-working WhatsApp channel today, and creating their tenant degrades ALBA.**
+working WhatsApp channel today, and creating their tenant degrades Tenant A.**
 
 The account half — tenant, staff, memberships, isolation, lead capture from the
 showroom floor and the phone — was rehearsed end to end on staging and **passed**.
 The channel half — the dealer's own Meta credentials, which is the entire product
-promise — has **never been executed once, for anybody, including ALBA**.
+promise — has **never been executed once, for anybody, including Tenant A**.
 
 ---
 
@@ -39,7 +39,7 @@ dealership. The gate is dormant, and dormant reads as green.
 The database's own words for the consequence: *"the Customer 360 nightly batch
 syncs nobody, writes no audit row, so the first symptom is a dealership asking why
 its customer list emptied … identity resolution stops matching, so inbound messages
-create duplicate people."* That hits **ALBA**, not just the new dealer.
+create duplicate people."* That hits **Tenant A**, not just the new dealer.
 
 **Narrower than `nexus_multi_tenant_blockers()` claims.** That function name-matches
 `prosrc` including comments and lists 8 callers. Stripping comments, only
@@ -69,15 +69,15 @@ than the runbook says.
 **Evidence — production:**
 - `select count(*) from public.channel_secret` → **0**
 - `select * from public.nexus_meta_onboarding_status()` → `meta_app_secret`,
-  `meta_system_user_token`, `meta_verify_token` all **`MISSING`** for ALBA's number
+  `meta_system_user_token`, `meta_verify_token` all **`MISSING`** for Tenant A's number
   `1306545252542419`
-- ALBA's `channel_registry.credential_ref` → `env:META_APP_SECRET+META_WA_TOKEN`
+- Tenant A's `channel_registry.credential_ref` → `env:META_APP_SECRET+META_WA_TOKEN`
 
 So NX930 built the vault, `nexus_channel_secret_put()` /
 `nexus_channel_secret_reveal()` exist and are `SECURITY DEFINER`, and **not one
 credential has ever been stored in it**. Dealer #1 runs on a single global env var
 on the n8n box. Dealer #2 arrives with a different app secret, the receiver checks
-the X-Hub signature against ALBA's, and refuses — correctly and fatally.
+the X-Hub signature against Tenant A's, and refuses — correctly and fatally.
 
 `ops/n8n-whatsapp-cloud/verify-or-refuse.node.js` *does* call
 `nexus_channel_secret_reveal` — but it is source in the repo, not a deployed n8n
@@ -118,7 +118,7 @@ is `external_identifier='default'`, `credential_ref='env:WAHA_API_KEY'` — one
 container, one key, one number. `SCHEMA_GAPS.md` G1/G2 add that `channel_registry`
 has **no endpoint/URL column at all** and `nexus_channel_secret_reveal()` is
 hard-coded to `channel_type='whatsapp_cloud_phone_number_id'`, so a WAHA secret has
-no schema home. A second dealership on WAHA would send from ALBA's number.
+no schema home. A second dealership on WAHA would send from Tenant A's number.
 
 Relevant only if dealer #2 is offered WAHA rather than Cloud API. ADR-004's answer
 is Cloud API (path B), so treat this as "do not offer WAHA to dealer #2."
@@ -127,7 +127,7 @@ is Cloud API (path B), so treat this as "do not offer WAHA to dealer #2."
 
 ## 5 · Paid-ad lead ingestion is disabled, for everyone · HIGH
 
-Production `lead_ingest_endpoint` for ALBA: `meta_lead_ads_facebook`,
+Production `lead_ingest_endpoint` for Tenant A: `meta_lead_ads_facebook`,
 `meta_lead_ads_instagram`, `google_ads_lead_form` and
 `marketplace_email_notification` are all **`status='disabled'`**. Only `walk_in`
 and `phone_call` — both `operator_recorded`, both typed in by a human at
@@ -156,7 +156,7 @@ end after the licence lands.** (Not legal advice — this restates ADR-004.)
   the `auth.users` row was missing.
 - `nexus_register_channel(p_tenant_slug, p_channel_type, p_external_identifier,
   p_credential_ref, p_status)` registered a new number and **refused** to re-point
-  ALBA's live `phone_number_id` to another dealership.
+  Tenant A's live `phone_number_id` to another dealership.
 - `tenant_member_invite` + the `auth.users` trigger
   `trg_nexus_claim_pending_membership` auto-created a `sales` membership on first
   sign-in and marked the invite claimed. No manual membership insert needed.
@@ -180,7 +180,7 @@ end after the licence lands.** (Not legal advice — this restates ADR-004.)
 **Dealer #2 can be signed up and given a dashboard today.** They will see their own
 leads, their own team, and nobody else's. That much is tested.
 
-**Dealer #2 cannot be put on WhatsApp today**, and attempting it would break ALBA's
+**Dealer #2 cannot be put on WhatsApp today**, and attempting it would break Tenant A's
 identity resolution and Customer 360 at the same time.
 
 Two things must ship before the second onboarding is booked: **the explicit-tenant

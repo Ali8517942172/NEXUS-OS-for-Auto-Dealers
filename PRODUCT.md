@@ -33,7 +33,7 @@ Four questions the product must answer, in this order:
 The UAE market first, then worldwide.** It is not a bespoke build for one
 dealer, and no document in this repository should read as though it were.
 
-**ALBA CARS is tenant #1 and the pilot.** It supplies the real stock, the real
+**Tenant A is tenant #1 and the pilot.** It supplies the real stock, the real
 enquiries and the real WhatsApp traffic that everything here is measured
 against, and it is the first dealership the product has to be good enough for —
 but it is the proving ground, not the client. The practical test on every

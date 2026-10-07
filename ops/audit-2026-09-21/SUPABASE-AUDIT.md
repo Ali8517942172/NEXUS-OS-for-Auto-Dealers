@@ -25,26 +25,26 @@ Read-only. 2026-09-21.
 ## 5. Product truth (row counts, 2026-09-21)
 | Capability | Status | Detail |
 |---|---|---|
-| leads | HAS REAL DATA | 28 total (ALBA 21, test-dealer-b 4, test-dealer-c 3). By source: nexus-master-router 26, walk_in 1, whatsapp-whatsapp_cloud 1. By scoring_state: SCORED 25 / PENDING 3. **By score_source: AI_SCORE_UNKNOWN 25, RULES 3 — zero leads carry a real AI score_source.** |
-| lead_event | TEST DATA ONLY | 1 row total (ALBA). |
-| conversation | TEST DATA ONLY | 1 row (ALBA). |
-| communication_logs (messages) | HAS REAL DATA | ALBA 425; test-dealer-b 12, test-dealer-c 7, quarantine 12. |
-| channel_message_events | TEST DATA ONLY | 2 rows (ALBA). |
+| leads | HAS REAL DATA | 28 total (Tenant A 21, test-dealer-b 4, test-dealer-c 3). By source: nexus-master-router 26, walk_in 1, whatsapp-whatsapp_cloud 1. By scoring_state: SCORED 25 / PENDING 3. **By score_source: AI_SCORE_UNKNOWN 25, RULES 3 — zero leads carry a real AI score_source.** |
+| lead_event | TEST DATA ONLY | 1 row total (Tenant A). |
+| conversation | TEST DATA ONLY | 1 row (Tenant A). |
+| communication_logs (messages) | HAS REAL DATA | Tenant A 425; test-dealer-b 12, test-dealer-c 7, quarantine 12. |
+| channel_message_events | TEST DATA ONLY | 2 rows (Tenant A). |
 | appointments | **EMPTY** | 0 rows. |
 | notification outbox by status | **EMPTY (effectively)** | 4 rows total, all `PENDING` — nothing has ever advanced to SENT/FAILED. |
-| tenant_subscription / subscription_state | **EMPTY** | 0 rows — no tenant, including ALBA, has a subscription row. |
-| channel_registry by type+status | TEST DATA ONLY | 2 active (ALBA): 1 whatsapp_waha_session, 1 whatsapp_cloud_phone_number_id. |
-| lead_ingest_endpoint | TEST DATA ONLY | 6 rows (ALBA only). |
-| audit_log (7d) | HAS REAL DATA | ALBA 632; test-dealer-b 25, quarantine 24, test-dealer-c 9. |
-| rag_documents | TEST DATA ONLY | 15 rows (ALBA only). |
-| inventory | TEST DATA ONLY | 12 rows (ALBA only). |
-| deals / purchase_history | TEST DATA ONLY | ALBA 1, test-dealer-b 1. |
-| customer_360_profiles | TEST DATA ONLY | ALBA 18, test-dealer-b 5, test-dealer-c 3. |
-| deals_embeddings | TEST DATA ONLY | ALBA 1, test-dealer-b 1. |
+| tenant_subscription / subscription_state | **EMPTY** | 0 rows — no tenant, including Tenant A, has a subscription row. |
+| channel_registry by type+status | TEST DATA ONLY | 2 active (Tenant A): 1 whatsapp_waha_session, 1 whatsapp_cloud_phone_number_id. |
+| lead_ingest_endpoint | TEST DATA ONLY | 6 rows (Tenant A only). |
+| audit_log (7d) | HAS REAL DATA | Tenant A 632; test-dealer-b 25, quarantine 24, test-dealer-c 9. |
+| rag_documents | TEST DATA ONLY | 15 rows (Tenant A only). |
+| inventory | TEST DATA ONLY | 12 rows (Tenant A only). |
+| deals / purchase_history | TEST DATA ONLY | Tenant A 1, test-dealer-b 1. |
+| customer_360_profiles | TEST DATA ONLY | Tenant A 18, test-dealer-b 5, test-dealer-c 3. |
+| deals_embeddings | TEST DATA ONLY | Tenant A 1, test-dealer-b 1. |
 | finance_quotes | **EMPTY** | 0 rows. |
 | kyc_documents | TEST DATA ONLY | 19 rows total. |
 | attribution (v_attribution_events/edges/link_map) | HAS REAL DATA | events 467, edges 448, link_map 48. |
 
 ## 6. Test fixtures still present in production
-- Tenants `NEXUS TEST DEALER B` (`9060a854-ec38-4f0d-a39c-54372f1998b1`, slug `test-dealer-b`) and `NEXUS TEST DEALER C` (`d6c3bc16-83e0-4568-9547-07bd4468415c`, slug `test-dealer-c`) both exist, created 2026-09-20, with live rows in `leads`, `communication_logs`, `customer_360_profiles`, `purchase_history`, `deals_embeddings`, `audit_log`. These are not just tenant registrations — they carry populated business data in the same tables ALBA's data lives in.
+- Tenants `NEXUS TEST DEALER B` (`9060a854-ec38-4f0d-a39c-54372f1998b1`, slug `test-dealer-b`) and `NEXUS TEST DEALER C` (`d6c3bc16-83e0-4568-9547-07bd4468415c`, slug `test-dealer-c`) both exist, created 2026-09-20, with live rows in `leads`, `communication_logs`, `customer_360_profiles`, `purchase_history`, `deals_embeddings`, `audit_log`. These are not just tenant registrations — they carry populated business data in the same tables Tenant A's data lives in.
 - Quarantine tenant `02c86264-6653-4522-b055-1c3f359a82fe` also holds live rows (12 communication_logs, 24 audit_log entries in 7d).

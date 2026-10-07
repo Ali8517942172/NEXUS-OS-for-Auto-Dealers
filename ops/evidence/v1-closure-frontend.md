@@ -1,7 +1,7 @@
 # V1 release-closure gate — frontend items 1, 13, 14
 
 Run 6 September 2026 against **https://nexus-os-dashboard-six.vercel.app/**, signed in as
-Ali Asgher (`senior_rep · owner`), dealership **ALBA CARS**
+Ali Asgher (`senior_rep · owner`), dealership **Tenant A**
 (`fff6a2b5-cfd5-4460-8383-875bc5826de0`).
 
 Repo: `/home/claude/repo`. Database reads: Supabase `dsvuoovivysszdoiorch`, **read-only**.

@@ -1,4 +1,4 @@
-# `tenants.is_unattributed_default` pointed at ALBA CARS — measured, fixed, proved
+# `tenants.is_unattributed_default` pointed at Tenant A — measured, fixed, proved
 
 STAGE 1.5. 5 September 2026.
 Staging `wwspuxrbiyagnrnzgate`. Production `dsvuoovivysszdoiorch`.
@@ -12,7 +12,7 @@ No git command was run. The n8n box was not contacted.
 
 ```
 production  select id, slug, name, status, is_unattributed_default from public.tenants;
-  fff6a2b5-cfd5-4460-8383-875bc5826de0 | alba-cars | ALBA CARS | active | TRUE
+  fff6a2b5-cfd5-4460-8383-875bc5826de0 | alba-cars | Tenant A | active | TRUE
   (one row)
 
 staging     11111111-…  staging-alpha | Alpha Motors (staging) | active | false
@@ -45,8 +45,8 @@ Measured live, as the MCP connection (`postgres`, role setting `none`):
 
 | | production | staging |
 |---|---|---|
-| `nexus_default_tenant_id()` | **`fff6a2b5…` = ALBA CARS** | `NULL` |
-| `nexus_scoped_tenant_id()` | `fff6a2b5…` = ALBA CARS | `NULL` (2 active tenants) |
+| `nexus_default_tenant_id()` | **`fff6a2b5…` = Tenant A** | `NULL` |
+| `nexus_scoped_tenant_id()` | `fff6a2b5…` = Tenant A | `NULL` (2 active tenants) |
 
 **So: any backend write that omitted `tenant_id` was filed under the one real
 dealership.** That is the defect, stated as a measurement rather than a reading
@@ -71,7 +71,7 @@ of the code.
 
 ### 1.4 Were any production rows already filed this way?
 
-Every `tenant_id` on production is ALBA's, on all 23 tables that hold any rows
+Every `tenant_id` on production is Tenant A's, on all 23 tables that hold any rows
 (swept with dynamic SQL over every `public` base table carrying the column). The
 only exceptions are `policy_rule` (13) and `policy_rule_event` (7), which are
 NULL by design and mean platform scope.
@@ -128,7 +128,7 @@ An `active` quarantine tenant would have made the active count 2 **on production
 today**, silencing Customer 360 and the RAG search as a side effect of a security
 fix. A `status='quarantine'` tenant is excluded from all five **with no edit to
 any of them**, and cannot be the target of a message. Verified: production active
-tenant count is still 1 and `nexus_scoped_tenant_id()` still returns ALBA CARS.
+tenant count is still 1 and `nexus_scoped_tenant_id()` still returns Tenant A.
 
 ### 2.3 What was built
 
@@ -142,7 +142,7 @@ Migration `20260905201206_tenancy_quarantine_replaces_dealership_default`:
   Re-pointing the default at a dealership now requires dropping a named
   constraint, which is a reviewable diff.
 - `tenants_one_quarantine` partial unique index.
-- The flag cleared from ALBA and given to a new row:
+- The flag cleared from Tenant A and given to a new row:
   `__unattributed__` / `UNATTRIBUTED - QUARANTINE (not a dealership)` /
   `status='quarantine'`, production id `02c86264-6653-4522-b055-1c3f359a82fe`.
 - `nexus_default_tenant_id()` — fallback predicate `status='active'` replaced by
@@ -150,7 +150,7 @@ Migration `20260905201206_tenancy_quarantine_replaces_dealership_default`:
 - `nexus_scoped_tenant_id()` — **decoupled from the flag entirely.** It answers
   "which dealership is this batch for", which is a different question; it now
   falls back to the sole `active`, non-quarantine dealership. Behaviour on
-  production is unchanged (ALBA), and a nightly batch can never be pointed at the
+  production is unchanged (Tenant A), and a nightly batch can never be pointed at the
   bin.
 - `nexus_onboard_dealership()` — raises if the slug names a quarantine tenant.
   Without this its `ON CONFLICT (slug) DO UPDATE SET name` would silently rename
@@ -249,13 +249,13 @@ Production probe, one transaction, rolled back
 
 | # | probe | result |
 |---|---|---|
-| P1 | `service_role` INSERT into `leads` omitting `tenant_id` | **UNATTRIBUTED - QUARANTINE (not a dealership)** — was ALBA CARS before this work |
-| P7 | ALBA tries to take the unattributed default | refused, `23514` |
+| P1 | `service_role` INSERT into `leads` omitting `tenant_id` | **UNATTRIBUTED - QUARANTINE (not a dealership)** — was Tenant A before this work |
+| P7 | Tenant A tries to take the unattributed default | refused, `23514` |
 | P8 | quarantine tries to become `active` | refused, `23514` |
 | P9 | census as `service_role` | 1 table with rows — the probe row was found |
-| P4 | ALBA's real owner session sees quarantine tenant rows | **0** |
-| P5 | ALBA's real owner session sees quarantined leads | **0** |
-| P6 | ALBA's session with a forged claim naming the quarantine tenant | resolved to **ALBA CARS** |
+| P4 | Tenant A's real owner session sees quarantine tenant rows | **0** |
+| P5 | Tenant A's real owner session sees quarantined leads | **0** |
+| P6 | Tenant A's session with a forged claim naming the quarantine tenant | resolved to **Tenant A** |
 | P10 | quarantine rows in `v_attribution_events` for that session | **0** |
 | P11 | `anon` reading `tenants` | `42501 permission denied` |
 
@@ -267,7 +267,7 @@ Production state after, as `service_role`:
 
 ```
 default_tenant          = UNATTRIBUTED - QUARANTINE (not a dealership)
-scoped_tenant           = ALBA CARS          <- unchanged, Customer 360 not silenced
+scoped_tenant           = Tenant A          <- unchanged, Customer 360 not silenced
 active_tenants          = 1                  <- unchanged
 quarantine_members      = 0
 census_rows             = 0
@@ -354,7 +354,7 @@ same names.
    17 of 21 stamp it; the four that do not are not named anywhere I could read,
    the repo's workflow JSON is a 30 Aug export with **zero** occurrences of
    `tenant_id`, and the box was out of scope. Those writers' rows now go to
-   quarantine instead of to ALBA. They are retained, recoverable and invisible to
+   quarantine instead of to Tenant A. They are retained, recoverable and invisible to
    the dealership — a visible, fixable misfiling instead of a silent
    cross-dealership one. **`nexus_quarantine_census()` must be run within 24
    hours and then daily** until it is stable; that is the first time this

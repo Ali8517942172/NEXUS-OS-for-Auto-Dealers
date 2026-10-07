@@ -35,10 +35,10 @@
 -- This migration does not add a fourth. It makes (3) read (1), because (1) is
 -- the only one of the three that a dealership can configure and the only one
 -- that already treats the question as a per-tenant economic setting rather than
--- a constant. If ALBA decides `model_only` is good enough to act on, the answer
+-- a constant. If Tenant A decides `model_only` is good enough to act on, the answer
 -- is one UPDATE on their settings row — not an edit to a view.
 --
--- WHAT THIS CHANGES, and it is not small. ALBA's setting is `{exact,strong}`.
+-- WHAT THIS CHANGES, and it is not small. Tenant A's setting is `{exact,strong}`.
 -- Production holds no `exact` or `strong` competitor rows at all — 9 null,
 -- 4 `model_only`, 9 `weak`. So:
 --

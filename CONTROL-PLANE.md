@@ -333,7 +333,7 @@ wrong in the same direction.
 
 The control-plane addition is the **cross-tenant** view: the same workflow
 across every dealership, so Ali can tell "Competitor Price Scraping is broken
-for ALBA CARS" from "Competitor Price Scraping is broken for everyone", which
+for Tenant A" from "Competitor Price Scraping is broken for everyone", which
 is the difference between a support ticket and a release.
 
 *What changes:* one broken workflow across ten tenants is a hotfix. One broken
@@ -446,7 +446,7 @@ either a breach, a commercial injury, or a support call Ali will lose.
 
 | Never shown | Why |
 |---|---|
-| **Any other dealership** — name, count, existence, or a total that implies one | The whole tenancy proof rests on this. A count of "12 dealerships" tells ALBA CARS their competitors are on the same system. |
+| **Any other dealership** — name, count, existence, or a total that implies one | The whole tenancy proof rests on this. A count of "12 dealerships" tells Tenant A their competitors are on the same system. |
 | **NEXUS's revenue, MRR, pricing, margin or plan economics** | Ali's business, and the fastest route to a renegotiation. |
 | **Global AI cost, token spend, or per-message model cost** | Two harms: it is Ali's cost base, and CLAUDE.md records that `whatsapp_message_usage` has **zero numeric columns** on purpose — a messaging cost may not be invented, and rendering a platform cost as a dealership's cost invents one. |
 | **Provider API keys — OpenRouter, Groq, Apify, Meta** | Obvious, and stated because "masked" is not an exception: a masked key still confirms which key is installed. |

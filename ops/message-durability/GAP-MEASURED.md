@@ -83,7 +83,7 @@ Found by enumerating `pg_class` in `public`, not by assuming. Counts are exact
 | `whatsapp_contacts` | 14 | — | — | `Upsert WhatsApp Contact` | per-person, not per-message |
 | `audit_log` | 898 | — | 2026-09-09 01:00:36Z | every workflow's `Audit Log` node | per-**run**, carries no message id |
 | `kyc_documents` | 3 | — | — | KYC branch | per-document |
-| `channel_registry` | 2 | — | — | seed | both ALBA: WAHA `default`, Cloud `1306545252542419` |
+| `channel_registry` | 2 | — | — | seed | both Tenant A: WAHA `default`, Cloud `1306545252542419` |
 | `channel_send_form` | 9 | — | — | seed | catalogue |
 
 **Six of the seven purpose-built messaging tables hold zero rows.** Every claim

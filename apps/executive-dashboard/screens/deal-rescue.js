@@ -442,7 +442,7 @@ SCREENS.dealrescue = async host => {
                is what is true of NEXUS for every dealership alike; `measured_now`
                is what is true of THIS dealership, counted on this read through
                its own row-level security. They used to be one column called
-               evidence_today, which stored ALBA CARS' counts and printed them to
+               evidence_today, which stored Tenant A's counts and printed them to
                whoever opened the screen - see migration 20260906070947. */
             { label: 'What is true of NEXUS, for every dealership',
               render: p => wrap(muted(esc(str(p.platform_evidence))

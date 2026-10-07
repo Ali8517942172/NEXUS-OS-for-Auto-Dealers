@@ -1,5 +1,5 @@
 -- =============================================================================
--- NEXUS / ALBA CARS — SCHEMA OF RECORD
+-- NEXUS / Tenant A — SCHEMA OF RECORD
 -- Supabase project: dsvuoovivysszdoiorch  ·  schema: public
 --
 -- Generated 2026-09-02 05:01 UTC by direct introspection of the live catalogue

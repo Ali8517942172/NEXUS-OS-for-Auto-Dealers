@@ -191,7 +191,7 @@ console.log('\nThe allowlist, and the one door it cannot cover');
   const withToken = graph({
     platform: 'facebook',
     access_token: 'EAA' + 'x'.repeat(150),
-    page: { client_secret: 'nope', name: 'ALBA CARS' },
+    page: { client_secret: 'nope', name: 'Tenant A' },
     surprise_field_meta_adds_next_year: 'whatever',
     field_data: [
       { name: 'full_name', values: ['Ahmed'] },

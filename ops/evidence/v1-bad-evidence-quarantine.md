@@ -309,7 +309,7 @@ model-dependent, and the evidence fix is neither.
 
 ## 5. What the dealership now sees on Conversations
 
-Proved by **reachability**, as the real ALBA CARS owner (`21460dfd-…`) with a real
+Proved by **reachability**, as the real Tenant A owner (`21460dfd-…`) with a real
 JWT claim, in a rolled-back transaction — not from ACL metadata, which CLAUDE.md
 records as the wrong witness:
 

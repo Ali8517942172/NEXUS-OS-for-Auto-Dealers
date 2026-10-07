@@ -23,7 +23,7 @@ This screen is entirely in that column. Three consequences, and they are
 structural, not stylistic:
 
 1. **It may aggregate across dealerships.** That is the point: "is source
-   ingestion working" is a question about NEXUS, not about ALBA CARS.
+   ingestion working" is a question about NEXUS, not about Tenant A.
 2. **A dealership must never reach it.** Not "is not linked from their nav" —
    not reachable. The dealer bundle is served to the dealership's own browser;
    a screen inside it is one nav id and one `import` away from being rendered.

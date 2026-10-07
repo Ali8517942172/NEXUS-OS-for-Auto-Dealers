@@ -8,7 +8,7 @@ Continues `/home/claude/out/v1-closure-n8n.md`.
 
 | task | subject | verdict |
 |---|---|---|
-| 1 | Anonymous callers stamp ALBA CARS on 8 of 9 endpoints | **PASS** — 8/8 fixed, measured before and after; 9/9 now quarantine |
+| 1 | Anonymous callers stamp Tenant A on 8 of 9 endpoints | **PASS** — 8/8 fixed, measured before and after; 9/9 now quarantine |
 | 1′ | A legitimate request still stamps the correct dealership | **PASS** — live, on real traffic |
 | 2 | Phase 6 node ordering; retire-and-stop loop | **PASS — and published.** Marker written, lead retired, second run does nothing |
 | 3 | `deals/closed-won` answers 200 with an empty body on rejection | **PASS** — now 401 + JSON body; success path unchanged |
@@ -21,13 +21,13 @@ field corrected. No credential, no secret and no env var was touched.
 
 ---
 
-## Task 1 — eight endpoints stamped an anonymous caller to ALBA CARS: **PASS**
+## Task 1 — eight endpoints stamped an anonymous caller to Tenant A: **PASS**
 
 ### It was two writers, not eight
 
 The first thing worth recording is that the defect was **not** eight separate
 workflows each getting tenancy wrong. Read from the audit rows the previous pass
-left behind, the eight ALBA-stamped rows came from exactly **two** writers:
+left behind, the eight Tenant-A-stamped rows came from exactly **two** writers:
 
 | endpoint | who wrote the row |
 |---|---|
@@ -59,7 +59,7 @@ quarantine tenant. Omit → quarantine. That is the whole contract.
 
 The error handler's node already knew it could not attribute — its own note says
 *"an error trigger reports which workflow failed, not whose customer it was"* —
-and then named ALBA anyway, because with `NEXUS_TENANT_MAP` unset its built-in
+and then named Tenant A anyway, because with `NEXUS_TENANT_MAP` unset its built-in
 one-key map made `sole configured dealership` resolve.
 
 **Blanket-omitting there would have been worse than the defect.** Measured over
@@ -69,7 +69,7 @@ one-key map made `sole configured dealership` resolve.
 WhatsApp BDC AI Agent   161 FAILED rows,  0 unauthorized, 152 via the error handler
 ```
 
-Those are genuine ALBA automation failures and they belong on ALBA's Automation
+Those are genuine Tenant A automation failures and they belong on Tenant A's Automation
 screen. A blanket omit would have moved all 152 into quarantine and blinded the
 dealership to its own broken automations.
 
@@ -121,7 +121,7 @@ cliff.
 Its `Audit Log` node was **already** using ask-ai's omit pattern correctly. The
 defect was upstream: `Calculate Equity & Tier` refuses an unauthenticated caller
 by *returning* an error item, so the item flowed on to `Resolve Tenant`, whose
-`sole_configured_tenant` fallback named ALBA. `Resolve Tenant` now detects
+`sole_configured_tenant` fallback named Tenant A. `Resolve Tenant` now detects
 "arrived over the public webhook AND `Verify JWT` produced no user" and skips the
 fallback — `tenant_source: 'unauthenticated'`, tenant null, key omitted. The tool
 path and the authenticated webhook path are untouched.
@@ -134,19 +134,19 @@ Before: 14:35:03–14:35:27Z. After: 14:45:26–14:45:56Z. Confirming sweep:
 
 | # | endpoint | writer | HTTP (before → after) | row landed BEFORE | row landed AFTER |
 |---|---|---|---|---|---|
-| 1 | `audit-kyc` | error handler | 500 → 500 | **ALBA CARS** | **QUARANTINE** |
-| 2 | `deals/closed-won` | own node (new) | 200 empty → **401 JSON** | **ALBA CARS** | **QUARANTINE** |
-| 3 | `erp-sync` | error handler | 200 → 200 | **ALBA CARS** | **QUARANTINE** |
-| 4 | `finance-calc` | own node | 200 → 200 | **ALBA CARS** | **QUARANTINE** |
-| 5 | `lead-escalation` | error handler | 500 → 500 | **ALBA CARS** | **QUARANTINE** |
-| 6 | `lead-trigger` | error handler | 200 → 200 | **ALBA CARS** | **QUARANTINE** |
-| 7 | `nexus-inbound-lead` | error handler | 200 → 200 | **ALBA CARS** | **QUARANTINE** |
-| 8 | `slack-command` | error handler | 200 → 200 | **ALBA CARS** | **QUARANTINE** |
+| 1 | `audit-kyc` | error handler | 500 → 500 | **Tenant A** | **QUARANTINE** |
+| 2 | `deals/closed-won` | own node (new) | 200 empty → **401 JSON** | **Tenant A** | **QUARANTINE** |
+| 3 | `erp-sync` | error handler | 200 → 200 | **Tenant A** | **QUARANTINE** |
+| 4 | `finance-calc` | own node | 200 → 200 | **Tenant A** | **QUARANTINE** |
+| 5 | `lead-escalation` | error handler | 500 → 500 | **Tenant A** | **QUARANTINE** |
+| 6 | `lead-trigger` | error handler | 200 → 200 | **Tenant A** | **QUARANTINE** |
+| 7 | `nexus-inbound-lead` | error handler | 200 → 200 | **Tenant A** | **QUARANTINE** |
+| 8 | `slack-command` | error handler | 200 → 200 | **Tenant A** | **QUARANTINE** |
 | — | `ask-ai` (control) | own node | 401 → 401 | QUARANTINE | QUARANTINE |
 | — | `whatsapp-send` | writes no audit row | 200 → 200 | (none) | (none) |
 
 **8 of 8 moved. 9 of 9 endpoints that write a row now file it under quarantine.
-Zero anonymous rows reach ALBA CARS.**
+Zero anonymous rows reach Tenant A.**
 
 Every HTTP status and every response body is unchanged except `deals/closed-won`,
 which is Task 3.
@@ -160,7 +160,7 @@ published handler, a `WhatsApp BDC AI Agent` failure at `Log Incoming Message`):
 
 ```
 summary      : "The service was not able to process your request · Failed at node: …"
-unattributed : false          ->  t stays ALBA CARS, tenant_id sent
+unattributed : false          ->  t stays Tenant A, tenant_id sent
 ```
 
 **(b) Injection resistance** (execution `10507`): an error whose *message*
@@ -175,9 +175,9 @@ Phase 6 run in Task 2 is a genuine internal escalation through
 `KI6P1Qcf3MIZakNa`, a workflow I edited. It wrote, at 14:55:
 
 ```
-audit_log       Lead Escalation           SUCCESS   -> ALBA CARS
-audit_log       Phase 6 Silence Detector  SUCCESS   -> ALBA CARS
-communication_logs  [SILENCE-ESCALATED]   internal  -> ALBA CARS
+audit_log       Lead Escalation           SUCCESS   -> Tenant A
+audit_log       Phase 6 Silence Detector  SUCCESS   -> Tenant A
+communication_logs  [SILENCE-ESCALATED]   internal  -> Tenant A
 ```
 
 Legitimate work still stamps the correct dealership, on production, after the change.
@@ -245,7 +245,7 @@ misfiring and belongs on its Automation screen.
 Per workflow: restore the immediately preceding version in n8n's version
 history. The eight gate edits are independent of one another; the handler edit
 is the only shared one, and reverting it alone returns every endpoint to
-stamping ALBA.
+stamping Tenant A.
 
 ---
 
@@ -329,12 +329,12 @@ communication_logs 358ebebd-d148-4f3b-8477-8905cf7b2b23
   lead_email  shabbir53ujjainwala@gmail.com
   channel     system      direction  internal
   message     [SILENCE-ESCALATED] Silent for 103h since 2026-09-02T07:27:20.809284+00:00
-  tenant      ALBA CARS (fff6a2b5-…)   -- NOT the quarantine tenant
+  tenant      Tenant A (fff6a2b5-…)   -- NOT the quarantine tenant
   created_at  2026-09-06 14:55:39.266+00
 ```
 
 ```
-audit_log   Phase 6 Silence Detector   SUCCESS   ALBA CARS   "all 2 claimed steps verified"
+audit_log   Phase 6 Silence Detector   SUCCESS   Tenant A   "all 2 claimed steps verified"
 ```
 
 That row was **FAILED** on the previous pass. `direction='internal'`, so
@@ -462,7 +462,7 @@ as a marked backstop for the manual/direct path.
 POST /webhook/deals/closed-won   (no Authorization header)
   before : HTTP 200   body: (empty)
   after  : HTTP 401   body: {"error":"Unauthorized","message":"A valid Supabase session token is required in the Authorization header."}
-  audit  : ALBA CARS  ->  QUARANTINE
+  audit  : Tenant A  ->  QUARANTINE
 ```
 
 Reproduced on the confirming sweep at 15:02:31Z.

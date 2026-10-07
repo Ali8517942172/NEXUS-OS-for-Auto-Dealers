@@ -5,7 +5,7 @@ production n8n box (`35.224.126.225`) was not contacted.
 
 - staging **`wwspuxrbiyagnrnzgate`** — staging-alpha (7 logins, all six roles),
   staging-bravo (2), demo-northwind (3). Where the writes happened.
-- production **`dsvuoovivysszdoiorch`** — ALBA CARS, one login. Touched **only**
+- production **`dsvuoovivysszdoiorch`** — Tenant A, one login. Touched **only**
   inside transactions ending in an unconditional `RAISE EXCEPTION`. Counts before
   and after are identical and are printed in §9.
 
@@ -144,7 +144,7 @@ vehicles when the SQL arm ran and **12** when the REST arm ran — the REST arm
 needed seven disposable `RBACDEL-<role>` units so that each actor's DELETE had its
 own target, and those seven were removed afterwards (§11). Every role saw the same
 number as every other role in the same arm, and the bravo owner saw **1** in both.
-Production returned **12** for every role, which is ALBA's true count.
+Production returned **12** for every role, which is Tenant A's true count.
 
 REST and SQL arms agree on every cell above. The bravo-owner column's zeros are
 **not** an empty table: in the same session, `GET inventory?tenant_id=eq.<bravo>`

@@ -47,7 +47,7 @@
       buttons are rendered and disabled with the database's own refusal sentence
       on them, and a banner explains why. Hiding them would teach the operator
       that the feature does not exist; the database refuses the call either way.
-      Measured 2 Sep 2026: ALBA CARS has one staff row (Ali Asgher, job title
+      Measured 2 Sep 2026: Tenant A has one staff row (Ali Asgher, job title
       senior_rep) and no manager. He can approve because he is the ACCOUNT OWNER
       (tenant_members.role = 'owner'), not because of his job title, and the
       record stores which of the two it was. */

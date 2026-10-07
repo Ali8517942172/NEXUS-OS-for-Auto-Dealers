@@ -293,7 +293,7 @@ const MIN_DOWN_PAYMENT_PCT_CBUAE = 20;                            // legal floor
 const MAX_LTV_PCT_CBUAE = 100 - MIN_DOWN_PAYMENT_PCT_CBUAE;       // 80%, the floor expressed as an LTV
 
 /* The ASSUMPTION, kept deliberately apart from the floor above. UAE banks
-   commercially cap USED cars at 70% LTV and ALBA CARS sells used cars, so a
+   commercially cap USED cars at 70% LTV and Tenant A sells used cars, so a
    customer who states no deposit is assumed to bring 30%. Ten points of vehicle
    value separate the two — on a 290,000 car, 29,000 of the customer's own money
    — which is the whole reason they are not one constant. The CALCULATOR applies

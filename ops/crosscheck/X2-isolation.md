@@ -72,7 +72,7 @@ and irrelevant to the defect, which is in the `or`.
 
 **Verdict: CONFIRMED, and it is the only hole of the five for which a second
 dealership adds nothing to the proof.** Dealership 2's first authenticated call reads
-ALBA's automation register. NOT RUN as a second dealership only because none exists.
+Tenant A's automation register. NOT RUN as a second dealership only because none exists.
 
 ---
 
@@ -282,7 +282,7 @@ select t.slug, count(*), min(cl.created_at), max(cl.created_at)
 
 Not 4 and 1. **7 and 2 — and the newest quarantine row is 2026-09-12 07:00:08, today.**
 It is also the **only** `communication_logs` row written to quarantine in the last 72
-hours (1 quarantine vs 55 ALBA). This is not a 8-Sep incident; it is a recurring
+hours (1 quarantine vs 55 Tenant A). This is not a 8-Sep incident; it is a recurring
 defect that has now fired twice, four days apart.
 
 The discriminator the sibling did not find:
@@ -300,9 +300,9 @@ select t.slug, cl.created_at, cl.direction, cl.sent_by, cl.evidence_state, left(
 ```
 
 **`direction` separates the two writers perfectly: 2/2 quarantine rows are
-`outbound`; 4/4 ALBA rows since 8 Sep are `internal`.** The path that writes
+`outbound`; 4/4 Tenant A rows since 8 Sep are `internal`.** The path that writes
 `direction='outbound'` is the path that fails to resolve a tenant. (The two oldest
-ALBA rows, 26 and 31 Aug, are also `outbound` — so the outbound writer *used* to
+Tenant A rows, 26 and 31 Aug, are also `outbound` — so the outbound writer *used* to
 attribute correctly and stopped. Something changed between 31 Aug and 8 Sep; finding
 what is a code question I did not reach.) `sent_by` is NULL on all nine, so it
 identifies nothing.
@@ -316,9 +316,9 @@ select count(*) from leads l join tenants t on t.id=l.tenant_id
 select count(*) from leads l join tenants t on t.id=l.tenant_id where t.is_quarantine; -- 0
 ```
 
-**That lead is ALBA's. The quarantine tenant owns zero leads.** So the row is not an
+**That lead is Tenant A's. The quarantine tenant owns zero leads.** So the row is not an
 unattributable orphan the quarantine bucket caught doing its job — it is a marker
-about a known ALBA customer, filed where ALBA cannot see it, with
+about a known Tenant A customer, filed where Tenant A cannot see it, with
 `evidence_state='ADMISSIBLE'` on a row no dealership can read. At one tenant that is
 a silent undercount in `v_lead_recovery.silence_markers_on_file`. At two it is
 dealership A's evidence in a bucket neither dealership can open.
@@ -329,7 +329,7 @@ Also confirmed, in the sibling's favour: **quarantine `audit_log` is still froze
 only.
 
 **Verdict: CONFIRMED, ESCALATED. Live today. The sibling called it a Pilot-B blocker;
-on this evidence it is a Pilot-A blocker — it is losing a real ALBA customer's
+on this evidence it is a Pilot-A blocker — it is losing a real Tenant A customer's
 escalation evidence right now, with one tenant, no second dealership required.**
 
 ---

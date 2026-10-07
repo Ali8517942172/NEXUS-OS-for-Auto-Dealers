@@ -141,7 +141,7 @@ update public.inventory_profit_settings
  where commission_rate_pct is null;
 
 -- NOTE FOR ALI, deliberately not hidden in a comment further down:
--- the backfill above means ALBA CARS sees IDENTICAL numbers after this
+-- the backfill above means Tenant A sees IDENTICAL numbers after this
 -- migration. A NEW dealership onboarded after it gets NULL rates and therefore
 -- NULL vat_amount and NULL recommended_commission until somebody states their
 -- rates. That is the intended behaviour — an empty field a human must fill,
@@ -321,7 +321,7 @@ begin
                -- It is now per dealership, from public.tenant_configuration.
                --
                -- MEASURED 2026-09-17: tenant_configuration.timezone is NULL for
-               -- ALBA CARS. So the coalesce below is what will actually run
+               -- Tenant A. So the coalesce below is what will actually run
                -- tonight, and this migration on its own changes NOTHING about
                -- the working day until somebody fills that field in. Said plainly
                -- rather than left to be discovered: the fallback is the old

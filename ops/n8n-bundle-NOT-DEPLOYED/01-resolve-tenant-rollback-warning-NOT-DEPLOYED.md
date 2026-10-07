@@ -34,9 +34,9 @@ fff6a2b5-cfd5-4460-8383-875bc5826de0  alba-cars         active      false       
 
 `public.communication_logs.tenant_id` and `public.processed_messages.tenant_id`
 both carry `DEFAULT nexus_default_tenant_id()` (confirmed in `pg_attrdef` today),
-and both are `NOT NULL`. So with `Resolve Tenant` disabled, a live ALBA WhatsApp
+and both are `NOT NULL`. So with `Resolve Tenant` disabled, a live Tenant A WhatsApp
 message is written under `02c86264-…` — **retained, but invisible to the
-dealership** — instead of under ALBA.
+dealership** — instead of under Tenant A.
 
 ## Exact before / after
 
@@ -46,7 +46,7 @@ dealership** — instead of under ALBA.
 
 ```
 ROLLBACK WARNING — changed 5 Sep 2026. Disabling this node NO LONGER falls back
-to ALBA CARS. public.nexus_default_tenant_id() now returns the UNATTRIBUTED
+to Tenant A. public.nexus_default_tenant_id() now returns the UNATTRIBUTED
 quarantine tenant (02c86264-6653-4522-b055-1c3f359a82fe), so every row written
 while this node is off is retained but INVISIBLE to the dealership until it is
 re-attributed. Do not delete those rows.

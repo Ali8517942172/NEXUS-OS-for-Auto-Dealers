@@ -5,9 +5,9 @@ this repository, from the production database `dsvuoovivysszdoiorch`, or from an
 n8n execution — or **asserted**, and the two are kept apart on purpose. Nothing
 here carries a date by which anything will happen.
 
-NEXUS is sold to dealerships. ALBA CARS is tenant #1, not the customer this is
+NEXUS is sold to dealerships. Tenant A is tenant #1, not the customer this is
 built for, so every step below is written per tenant and none of it may depend
-on facts that are true only of ALBA — one particular phone number, one
+on facts that are true only of Tenant A — one particular phone number, one
 particular WAHA container, one particular owner who answers his own WhatsApp.
 
 **The one sentence this plan exists for:** the Cloud receiver only receives.
@@ -77,7 +77,7 @@ send path:
 And one row in the database:
 `channel_registry` `75d67b05-1cd4-4f81-8afd-3c2186f25590` →
 `whatsapp_waha_session` / `default` / `env:WAHA_API_KEY`, status `active`,
-tenant `fff6a2b5-cfd5-4460-8383-875bc5826de0` (ALBA CARS). Seeded by
+tenant `fff6a2b5-cfd5-4460-8383-875bc5826de0` (Tenant A). Seeded by
 `supabase/migrations/20260903193652_chanreg_05_seed_alba_cars_waha_session.sql`.
 
 ### 1c. What WAHA does *not* do, which matters for the exit
@@ -142,7 +142,7 @@ A customer who messages the Cloud number gets a `200` and silence.
 
 | gap | what closes it |
 |---|---|
-| No Cloud channel registered for any tenant except ALBA's test number | one `nexus_register_channel(tenant_slug, 'whatsapp_cloud_phone_number_id', <phone_number_id>, <credential_ref>, 'active')` per dealership |
+| No Cloud channel registered for any tenant except Tenant A's test number | one `nexus_register_channel(tenant_slug, 'whatsapp_cloud_phone_number_id', <phone_number_id>, <credential_ref>, 'active')` per dealership |
 | No non-expiring Cloud token | a Meta System User token. The developer-UI token expires in 24 hours. Owner's account, owner's action |
 | Test number recipient allowlist (five verified numbers) | either stay on the test number for the proof, or move to a real number (§3) |
 | The window rule is `NOT_VERIFIED` | one `policy_platform_verify_rule()` call by a named human (§4) — this is config in the sense that it is one call, and *not* config in the sense that nobody can make it up |
@@ -272,7 +272,7 @@ of it.
 
 A dealership buying NEXUS does not have this problem and does not want it. The
 product's answer is: **the dealership registers a business line, and NEXUS never
-touches a personal number.** ALBA CARS being the exception is a tenant-one
+touches a personal number.** Tenant A being the exception is a tenant-one
 artefact, and continuing it would make the personal-handset arrangement look
 like the supported design.
 
@@ -734,7 +734,7 @@ What can be said without looking anything up:
    on Meta's current rules for moving a number off the WhatsApp Business app.
    Read once, on 7 September, from Business Suite. Not re-checked.
 
-6. **Whether any dealership other than ALBA CARS exists to migrate.**
+6. **Whether any dealership other than Tenant A exists to migrate.**
    `channel_registry` holds two rows, both tenant
    `fff6a2b5-cfd5-4460-8383-875bc5826de0`. The per-tenant framing in §5 is
    therefore a design commitment, not a description of something that has been

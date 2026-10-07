@@ -23,11 +23,11 @@ import { SUPABASE_URL } from '../lib/env.js';
    really one dealership's configuration belongs in per-tenant data, never in a
    constant and never in code." This was a step worse than that: it was not even
    the reader's own configuration, so a second dealership on its own deployment
-   would have been handed ALBA's endpoint and told it was theirs.
+   would have been handed Tenant A's endpoint and told it was theirs.
 
    Derived from SUPABASE_URL instead, which lib/env.js has already trimmed of
    trailing slashes — the exact defect that turned every path into `//functions`
-   and answered 404. On ALBA's deployment the derived string is byte-identical
+   and answered 404. On Tenant A's deployment the derived string is byte-identical
    to the literal it replaces, so nothing a reader sees changes today; on any
    other deployment it now follows that deployment.
 

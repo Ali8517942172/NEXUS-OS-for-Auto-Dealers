@@ -460,7 +460,7 @@ Classify this conversation now.
 
 ```
 [1] customer (2026-09-02 06:07): salam
-[2] us (2026-09-02 06:07): Hello! Welcome to ALBA CARS…
+[2] us (2026-09-02 06:07): Hello! Welcome to Tenant A…
 [3] customer (2026-09-03 11:20): how much for the Patrol
 ```
 

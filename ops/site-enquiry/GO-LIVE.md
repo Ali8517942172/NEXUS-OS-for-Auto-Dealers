@@ -67,7 +67,7 @@ and everything above still works; `lead.js` treats this path as instrumentation
 and a failure here never fails a request.
 
 Read the held file first. It **creates a new tenant**, because production has
-only ALBA CARS (a real dealership) and the quarantine tenant (status
+only Tenant A (a real dealership) and the quarantine tenant (status
 `quarantine`, which the endpoint resolver rejects) — neither is usable and the
 file says why. Paste it into the Supabase SQL editor, run it, then run the
 `SELECT` at the foot of it and copy the `public_key`.
@@ -117,7 +117,7 @@ which step is missing: `notify_secret_not_configured` → step 3;
    Expect `status = 'SUCCESS'`.
 4. **A `lead_event` row**, only if you did step 4 —
    `select event_id, tenant_id, phase, source_key, occurred_at from public.lead_event order by occurred_at desc limit 5;`
-   `tenant_id` must be `00000000-51b0-4000-a000-000000000001`, never ALBA's.
+   `tenant_id` must be `00000000-51b0-4000-a000-000000000001`, never Tenant A's.
 
 **A green n8n execution is not proof.** The Gmail node runs with
 `onError: continueRegularOutput`, which means a failed send leaves the execution

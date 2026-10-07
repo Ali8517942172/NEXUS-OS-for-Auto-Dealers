@@ -18,7 +18,7 @@ account through the live REST API — not read out of a privileged SQL session.*
 > Cause: `screens/money-leaks.js` tests `sla_state === 'BREACHED'`, and
 > `v_lead_recovery` emits **`BREACHED_SLA`**. One word, and a check that can
 > never fail reports itself clear. It has never shown on production because
-> ALBA has one open enquiry.
+> Tenant A has one open enquiry.
 >
 > **Until it is fixed: do not open the clear register in front of a buyer**, or
 > open it and say the truth — *"that line is wrong, here is why, and I would
@@ -32,7 +32,7 @@ that the demo is read-only: it needs no WhatsApp, no consent fix, no Meta
 attestation. This file is how you actually run it.
 
 **The deployed dashboard points at PRODUCTION and must keep pointing there.**
-Production holds ALBA CARS, the one real dealership, and its counts are the
+Production holds Tenant A, the one real dealership, and its counts are the
 counts every claim in `commercial/WHAT-WE-CLAIM.md` rests on. You demo from a
 **local build pointed at staging**, and you put it back afterwards. Section 6
 is how.
@@ -361,7 +361,7 @@ competitor's dashboard would put on your morning list as a finding.
   database resolves to a lead record."* The three threads **under** that verdict
   genuinely resolve to nobody — but the sentence overstates: 14 of this
   dealership's 17 threads do resolve to an enquiry. It is a hard-coded sentence
-  that happened to be true of ALBA's data. If asked: *"that sentence is too
+  that happened to be true of Tenant A's data. If asked: *"that sentence is too
   broad — it is right about these three and wrong about the database, and it is
   on my list."*
 - The `inventory_aging` rows show a title and **no detail at all**, because
@@ -631,7 +631,7 @@ the Land Cruiser is 214 days old whenever you seed.
   exist — measured on production: **false**, so both scripts stop again.
 
 Guard (a) was fired deliberately on staging inside a rolled-back probe that
-planted an ALBA-looking tenant: it raised, and the plant did not persist. A
+planted an Tenant-A-looking tenant: it raised, and the plant did not persist. A
 guard that has never gone red is decoration.
 
 **If either guard ever refuses on staging, do not edit it out.** It means

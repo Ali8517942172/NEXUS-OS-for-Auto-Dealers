@@ -11,7 +11,7 @@ Creates:
     marks a dealer is_existing_tenant=false and it does not already exist
   * tenant "NEXUS TEST DEALER C" (slug test-dealer-c) -- same
   * one auth user per dealer (A/B/C), each a member of exactly that
-    dealer's tenant. Dealer A's tenant is the REAL ALBA tenant
+    dealer's tenant. Dealer A's tenant is the REAL Tenant A tenant
     (fff6a2b5-cfd5-4460-8383-875bc5826de0, from fixtures.json) -- this
     script never creates or touches that tenant row itself, only the test
     member user + membership on it, exactly as the original dealer-b
@@ -216,7 +216,7 @@ def ensure_tenant(api, dealer):
     is never inserted or looked up here -- its tenant_id comes straight
     from fixtures.json."""
     if dealer["is_existing_tenant"]:
-        print(f"[tenant:{dealer['key']}] pre-existing (ALBA), not created: "
+        print(f"[tenant:{dealer['key']}] pre-existing (Tenant A), not created: "
               f"{dealer['tenant_id']}")
         return dealer["tenant_id"], False
 

@@ -45,7 +45,7 @@ term this contract does not touch: **attested ≠ accurate.**
 ## 3. Attestation is only as good as the attester, and there is exactly one
 
 Measured: `tenant_members` holds **1** row on production, and `users` holds 1.
-ALBA has a single member. So "requires `owner` or `admin`" is, today, "requires
+Tenant A has a single member. So "requires `owner` or `admin`" is, today, "requires
 that one person", and a role check against a one-row table is closer to
 ceremony than to control. It becomes a real control at the third member, and not
 before.
@@ -120,7 +120,7 @@ On the day this ships, **every** row on production is `UNKNOWN`: 5 leads, 12
 units, 1 sale. Every tile reads "0 real, 0 test, 18 unknown". That is true and it
 is unsatisfying, and the pressure to make the dashboard look normal will take one
 of two forms — treat UNKNOWN as real (which is exactly today's behaviour and how
-a preflight got into team performance) or treat it as test (which deletes ALBA's
+a preflight got into team performance) or treat it as test (which deletes Tenant A's
 history from every screen). Both are one-line changes in a view.
 
 The three-way split of `CONTRACT.md` §2.1 exists to make the collapse visible
@@ -172,5 +172,5 @@ each would be settled by a single apply on staging:
    and from `ops/channel-events/WIRING-SPEC.md`; not executed.
 3. That `add column … not null default 'UNKNOWN'` takes no rewrite lock long
    enough to matter. True of Postgres 11+ generally; not timed on a table of any
-   size here, and ALBA's largest scoped table is 12 rows, so this is untested at
+   size here, and Tenant A's largest scoped table is 12 rows, so this is untested at
    any scale that would reveal a problem.

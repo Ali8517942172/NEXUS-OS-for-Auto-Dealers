@@ -31,7 +31,7 @@ is allowed is the dealer's own unanswered enquiries.
 
 **Nothing below is a result claim.** No recovered revenue. No percentage
 uplift. No "dealers using NEXUS see…". No testimonial. No named dealership.
-No logo. **ALBA Cars does not appear anywhere** — it is tenant #1 and the
+No logo. **Tenant A does not appear anywhere** — it is tenant #1 and the
 pilot, not a customer and not a reference.
 
 ### Phrases that must never be written
@@ -41,7 +41,7 @@ pilot, not a customer and not a reference.
 > "Ahmed from Al Quoz says…" · "Don't lose another sale" (a claim about the
 > reader's losses) · anything with a countdown, "only 3 spots", or a fake
 > deadline · any manufacturer or marketplace trademark (Toyota, Dubizzle,
-> YallaMotor) · the ALBA Cars name or premises.
+> YallaMotor) · the Tenant A name or premises.
 
 ### Voice note
 
