@@ -1280,6 +1280,20 @@ UPDATE grant on `leads` — the one kept because "revoking it breaks the screen"
 separate decision: check n8n first, because `service_role` does not need it but
 something else might.~~
 
+> **FIXED 7 October 2026 — option 1, SECURITY DEFINER.** Migration
+> `20261007160000_owner_assignment_runs_as_definer_because_the_grant_is_gone`,
+> applied to production (staging was `INACTIVE`, so it was proved on production
+> in rolled-back transactions instead). Before: a real owner session got
+> `42501 permission denied for table leads`. After, same session: unassign and
+> reassign both succeed with the reason recorded and `actor_authority =
+> tenant_member`; a rep handing their lead to someone else, a rep taking a lead
+> not theirs, another dealership's member, another dealership's staff as the new
+> owner and a call with no session are all refused `NX001` by name.
+> `authenticated` still holds **no** UPDATE on `leads` — the grant was not put
+> back. The function carries its own copy of `leads_role_update`, built from the
+> same three helpers; **if that policy changes, this function must change with
+> it.** Level: PRODUCTION-DEPLOYED, not yet exercised by a real click.
+>
 > **It was revoked, and it broke this RPC. Measured 27 September 2026:**
 > `authenticated` holds no UPDATE on `leads` at table or column level, while
 > `nexus_lead_assign_owner` is **still `SECURITY INVOKER`** — so the UPDATE two
@@ -2469,6 +2483,20 @@ held, is now genuinely applicable. ~~Its preflight still refuses while
 its UPDATE as the caller), so that refusal is correct and the migration stays
 unapplied until someone decides which of the two shapes to keep.~~
 
+> **FIXED 7 October 2026 — option 1, SECURITY DEFINER.** Migration
+> `20261007160000_owner_assignment_runs_as_definer_because_the_grant_is_gone`,
+> applied to production (staging was `INACTIVE`, so it was proved on production
+> in rolled-back transactions instead). Before: a real owner session got
+> `42501 permission denied for table leads`. After, same session: unassign and
+> reassign both succeed with the reason recorded and `actor_authority =
+> tenant_member`; a rep handing their lead to someone else, a rep taking a lead
+> not theirs, another dealership's member, another dealership's staff as the new
+> owner and a call with no session are all refused `NX001` by name.
+> `authenticated` still holds **no** UPDATE on `leads` — the grant was not put
+> back. The function carries its own copy of `leads_role_update`, built from the
+> same three helpers; **if that policy changes, this function must change with
+> it.** Level: PRODUCTION-DEPLOYED, not yet exercised by a real click.
+>
 > **OWNER ASSIGNMENT IS BROKEN BY PRIVILEGE. Measured 27 September 2026,
 > re-measured by hand:**
 >
