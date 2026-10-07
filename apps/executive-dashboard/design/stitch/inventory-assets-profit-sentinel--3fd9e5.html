@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"primary-fixed-dim":"#afc6ff","tertiary-fixed":"#a0efff","on-surface":"#131b2d","surface-container-lowest":"#ffffff","surface-container-highest":"#dbe2fb","on-tertiary-container":"#b1f1ff","secondary-fixed":"#d9e2ff","surface-tint":"#155ac0","on-error":"#ffffff","on-primary":"#ffffff","inverse-surface":"#283043","tertiary-fixed-dim":"#44d8f0","secondary":"#4c5e87","background":"#faf8ff","error":"#ba1a1a","outline-variant":"#c2c6d5","surface-container":"#e9edff","on-tertiary-fixed-variant":"#004e59","on-primary-fixed-variant":"#004398","surface-container-low":"#f2f3ff","surface-bright":"#faf8ff","on-error-container":"#93000a","on-surface-variant":"#424753","tertiary":"#005864","primary":"#004ba8","secondary-fixed-dim":"#b4c6f5","outline":"#737784","on-primary-container":"#dee6ff","surface-dim":"#d2d9f3","on-secondary-container":"#465780","on-secondary":"#ffffff","inverse-primary":"#afc6ff","on-secondary-fixed":"#041a40","primary-container":"#2563c9","error-container":"#ffdad6","on-primary-fixed":"#001a43","primary-fixed":"#d9e2ff","secondary-container":"#bccefe","surface-container-high":"#e1e8ff","surface":"#faf8ff","on-background":"#131b2d","tertiary-container":"#007281","inverse-on-surface":"#edf0ff","on-tertiary-fixed":"#001f25","surface-variant":"#dbe2fb","on-secondary-fixed-variant":"#34466e","on-tertiary":"#ffffff"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"space-sm":"0.5rem","space-xs":"0.25rem","space-md":"1rem","space-xl":"2rem","margin":"1.5rem","gutter":"1rem","space-lg":"1.5rem"},fontFamily:{"headline-lg":["Inter"],"body-lg":["Inter"],"body-md":["Inter"],"body-sm":["Inter"],"label-numeric-sm":["JetBrains Mono"],"label-numeric-md":["JetBrains Mono"],"headline-md":["Inter"],"headline-xl":["Inter"],"table-header":["Inter"],"label-numeric-lg":["JetBrains Mono"]},fontSize:{"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}]}}}};</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container"><aside class="fixed left-0 top-0 h-screen w-72 bg-inverse-surface text-inverse-on-surface z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col flex-1 min-h-0"><div class="h-16 px-space-md flex items-center justify-between border-b border-outline/20 flex-shrink-0"><div class="flex items-center gap-space-sm"><div class="w-7 h-7 rounded bg-primary-container flex items-center justify-center text-on-primary font-headline-md text-headline-md tracking-tight">N</div><div class="flex flex-col"><span class="font-headline-md text-headline-md text-surface-container-lowest tracking-tight">NEXUS<span class="text-tertiary-fixed">OS</span></span><span class="font-label-numeric-sm text-label-numeric-sm text-outline-variant tracking-wider uppercase">UAE REV COCKPIT</span></div></div><span class="font-label-numeric-sm text-label-numeric-sm px-space-xs py-0.5 rounded bg-surface-container-highest/20 text-tertiary-fixed">v4.2</span></div><div class="flex-1 overflow-y-auto px-space-sm py-space-md space-y-space-md"><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline-variant tracking-wider">PRIMARY NAVIGATION</div><nav class="space-y-0.5" data-active-classes="bg-primary-container text-on-primary font-medium rounded"><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="overview" href="#">Overview</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="owner-brief" href="#">Owner Brief</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="todays-money-leaks" href="#">Today's Money Leaks</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="leads" href="#">Leads</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="record-a-lead" href="#">Record a Lead</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="action-center" href="#">Action Center</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="deals" href="#">Deals</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="appointments" href="#">Appointments</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="conversations" href="#">Conversations</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="campaigns" href="#">Campaigns</a></nav></div><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline-variant tracking-wider">INTELLIGENCE &amp; ASSETS</div><nav class="space-y-0.5" data-active-classes="bg-primary-container text-on-primary font-medium rounded"><a aria-current="page" class="flex items-center px-space-sm py-1.5 transition-colors bg-primary-container text-on-primary font-medium rounded" data-path="inventory" href="#">Inventory</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="vehicle-360" href="#">Vehicle 360</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="competitors" href="#">Competitors</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="finance-desk" href="#">Finance Desk</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="customer-360" href="#">Customer 360</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="ask-ai" href="#">Ask AI</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="dealership-event-graph" href="#">Dealership Event Graph</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="dealer-benchmarking" href="#">Dealer Benchmarking</a></nav></div><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline-variant tracking-wider">OPERATIONS &amp; INFRASTRUCTURE</div><nav class="space-y-0.5" data-active-classes="bg-primary-container text-on-primary font-medium rounded"><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="customer-portal" href="#">Customer Portal</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="lead-sources" href="#">Lead Sources</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="channels" href="#">Channels</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="integrations" href="#">Integrations</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="policy-house-rules" href="#">Policy &amp; House Rules</a><a class="flex items-center px-space-sm py-1.5 rounded text-inverse-on-surface/80 hover:bg-surface-container-highest/10 hover:text-surface-container-lowest transition-colors font-body-sm text-body-sm" data-path="compliance-kyc" href="#">Compliance &amp; KYC</a></nav></div></div></div><div class="p-space-sm border-t border-outline/20 bg-inverse-surface flex items-center justify-between"><div class="flex items-center gap-space-sm min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="flex flex-col min-w-0"><span class="font-body-sm text-body-sm font-semibold text-surface-container-lowest truncate">Faris M.</span><span class="font-label-numeric-sm text-label-numeric-sm text-outline-variant truncate">GM / Sales Dir</span></div></div><button aria-label="Logout" class="p-1 text-outline-variant hover:text-surface-container-lowest transition-colors"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-16 bg-surface/90 backdrop-blur-xl z-40 flex items-center justify-between px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-primary text-[20px]">store</span><span class="font-headline-md text-headline-md text-on-surface">Demo Motors</span><span class="font-label-numeric-sm text-label-numeric-sm px-space-xs py-0.5 rounded bg-surface-container text-secondary font-medium">Dubai Showroom</span><span class="font-label-numeric-sm text-label-numeric-sm px-space-xs py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-semibold">SZR</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="inline-flex items-center gap-1.5 px-space-xs py-0.5 rounded bg-surface-container-low text-tertiary font-label-numeric-sm text-label-numeric-sm"><span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span><span class="font-semibold">LIVE SYNC</span><span>42ms</span></div></div><div class="flex items-center gap-space-md"><div class="relative flex items-center w-80"><span class="material-symbols-outlined absolute left-2.5 text-outline text-[18px]">search</span><input class="w-full pl-8 pr-space-sm py-1.5 bg-surface-container-lowest rounded border border-outline-variant text-on-surface placeholder:text-outline font-body-sm text-body-sm focus:outline-none focus:border-primary" placeholder="Quick search leads, VIN, deals, customer..." type="search"/><kbd class="absolute right-2.5 font-label-numeric-sm text-label-numeric-sm px-1 py-0.5 rounded bg-surface-container text-on-surface-variant text-[10px]">⌘K</kbd></div><div class="h-6 w-px bg-outline-variant"></div><div class="flex items-center gap-space-sm px-space-sm py-1 rounded bg-surface-container-lowest"><span class="material-symbols-outlined text-tertiary text-[18px]">point_of_sale</span><div class="flex flex-col text-right"><span class="font-table-header text-table-header text-on-surface-variant uppercase">Cash Drawer</span><div class="flex items-baseline gap-1"><span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">AED</span><span class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">1,248,500</span></div></div></div><button aria-label="Notifications" class="relative p-2 rounded hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest"></span></button><div class="flex items-center gap-space-xs pl-space-xs"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><span class="font-body-sm text-body-sm font-semibold text-on-surface">Faris M.</span></div></div></header><main class="relative pt-16 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Dynamic Operational Sub-Header (Cockpit Status Bar) -->
+<div class="bg-surface-container-low px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-y-2">
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-on-surface tracking-tight">Inventory</span>
+<span class="text-outline-variant font-body-sm text-body-sm">/</span>
+<span class="font-body-md text-body-md font-semibold text-secondary">Assets &amp; Profit Sentinel</span>
+</div>
+<div class="flex items-center gap-1.5 px-space-xs py-0.5 rounded bg-surface-container-highest text-tertiary font-label-numeric-sm text-label-numeric-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-ping"></span>
+<span class="font-semibold tracking-wider">LIVE SYNC (DMS / CSV FEED)</span>
+<span class="text-outline">14:45:00 GST</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm text-body-sm">
+<div class="flex items-center bg-surface-container-lowest rounded p-0.5">
+<button class="px-space-xs py-0.5 rounded bg-primary text-on-primary font-label-numeric-sm text-label-numeric-sm font-semibold shadow-sm">AED</button>
+<button class="px-space-xs py-0.5 rounded text-on-surface-variant font-label-numeric-sm text-label-numeric-sm hover:text-on-surface">USD</button>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-body-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">verified_user</span>
+<span>Auth: <strong class="text-on-surface font-medium">Rashid Al-Maktoum (Principal)</strong></span>
+</div>
+</div>
+</div>
+<!-- Main Viewport Layout with Drawer Slot -->
+<div class="relative w-full p-space-lg flex flex-col gap-space-lg">
+<!-- KPI Snapshot Strip -->
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-space-md">
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Total Floor Value</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">AED</span>
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-semibold">28.42M</span>
+</div>
+<span class="font-body-sm text-body-sm text-tertiary mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">trending_up</span> 42 Active Units
+        </span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Holding Cost Drain</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-sm text-label-numeric-sm text-error">AED</span>
+<span class="font-label-numeric-lg text-label-numeric-lg text-error font-semibold">14,280<span class="text-body-sm font-normal text-on-surface-variant">/day</span></span>
+</div>
+<span class="font-body-sm text-body-sm text-error mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">warning</span> 15 Units &gt;45d Lot
+        </span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Gross Unrealized Margin</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">AED</span>
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-semibold">3.18M</span>
+</div>
+<span class="font-body-sm text-body-sm text-secondary mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">lock</span> 11.2% Floor Target
+        </span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Avg Days to Sale (GCC)</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-semibold">34.2</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Days</span>
+</div>
+<span class="font-body-sm text-body-sm text-primary mt-1">Market Benchmark: 38d</span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Unmatched Leads</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-lg text-label-numeric-lg text-tertiary font-semibold">38</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Buyers</span>
+</div>
+<span class="font-body-sm text-body-sm text-tertiary mt-1">14 High-intent chats</span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Price Position index</span>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-semibold">P64</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Avg Regional</span>
+</div>
+<span class="font-body-sm text-body-sm text-secondary mt-1">+2.8% vs Dubizzle comps</span>
+</div>
+</div>
+<!-- Filter Bar, Preset Views, and Layout Switcher -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex flex-col gap-space-md shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Filter Pills -->
+<div class="flex flex-wrap items-center gap-1.5">
+<button class="px-space-sm py-1 rounded bg-primary text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-1 shadow-sm">
+<span>All Stock</span>
+<span class="font-label-numeric-sm text-label-numeric-sm bg-primary-container px-1 rounded">42</span>
+</button>
+<button class="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span>High Margin Risk</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline px-1">6</span>
+</button>
+<button class="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors">
+<span class="w-2 h-2 rounded-full bg-secondary-container"></span>
+<span>Ageing &gt;45d</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline px-1">9</span>
+</button>
+<button class="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span>High Demand Match</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline px-1">14</span>
+</button>
+<button class="px-space-sm py-1 rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm flex items-center gap-1 transition-colors">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+<span>Missing Market Benchmark</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline px-1">4</span>
+</button>
+</div>
+<!-- View Controllers -->
+<div class="flex items-center gap-space-sm">
+<!-- Saved Views Dropdown -->
+<div class="relative">
+<button class="px-space-sm py-1.5 rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-body-sm text-body-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-outline">tune</span>
+<span>Saved views: <strong class="font-semibold">All Active Stock</strong></span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+</div>
+<button class="px-space-sm py-1.5 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-sm text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
+<span>Save view</span>
+</button>
+<button class="px-space-sm py-1.5 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-sm text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">view_column</span>
+<span>Columns</span>
+</button>
+<!-- Grid / Table View Switcher -->
+<div class="flex items-center bg-surface-container-low rounded p-0.5">
+<button class="p-1 px-2.5 rounded bg-surface-container-lowest text-primary shadow-sm flex items-center gap-1 font-body-sm text-body-sm font-semibold transition-all" id="view-grid-btn" onclick="switchView('grid')">
+<span class="material-symbols-outlined text-[18px]">grid_view</span>
+<span>Grid</span>
+</button>
+<button class="p-1 px-2.5 rounded text-outline-variant hover:text-on-surface flex items-center gap-1 font-body-sm text-body-sm font-medium transition-all" id="view-table-btn" onclick="switchView('table')">
+<span class="material-symbols-outlined text-[18px]">table_rows</span>
+<span>Table</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Search Omnibar & Refinements -->
+<div class="flex flex-wrap items-center gap-space-sm">
+<div class="relative flex-1 min-w-[320px]">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px]">search</span>
+<input class="w-full pl-9 pr-space-md py-2 bg-surface-container-low rounded text-on-surface placeholder:text-outline font-body-sm text-body-sm focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 transition-all" placeholder="Search by Make, Model, VIN, Stock#, Trim, or Spec details..." type="text"/>
+</div>
+<select class="bg-surface-container-low text-on-surface font-body-sm text-body-sm px-space-sm py-2 rounded focus:outline-none">
+<option>All Makes (Mercedes, Porsche, RR, etc.)</option>
+<option>Mercedes-AMG</option>
+<option>Porsche</option>
+<option>Land Rover</option>
+<option>Rolls-Royce</option>
+<option>Ferrari</option>
+<option>BMW M</option>
+</select>
+<select class="bg-surface-container-low text-on-surface font-body-sm text-body-sm px-space-sm py-2 rounded focus:outline-none">
+<option>Spec: GCC Standard / Official</option>
+<option>GCC Spec Only</option>
+<option>Import Spec (US/Euro/Japan)</option>
+</select>
+<select class="bg-surface-container-low text-on-surface font-body-sm text-body-sm px-space-sm py-2 rounded focus:outline-none">
+<option>Sort: Days on Lot (High → Low)</option>
+<option>Sort: List Price (High → Low)</option>
+<option>Sort: Margin Risk (Urgent First)</option>
+<option>Sort: Lead Demand Match</option>
+</select>
+<button class="px-space-md py-2 bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold rounded hover:bg-surface-variant flex items-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[18px]">file_download</span>
+<span>Export CSV</span>
+</button>
+</div>
+</div>
+<!-- MAIN VIEW CONTAINER: GRID VIEW -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-lg" id="grid-view">
+<!-- CARD 1: 2023 Mercedes-AMG G63 (Highlighted / Active unit) -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Warning Banner -->
+<div class="px-space-md py-1.5 bg-error-container text-on-error-container flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold">
+<span class="material-symbols-outlined text-[16px] text-error">fmd_bad</span>
+<span>HIGH HOLDING RISK (Holding cost: AED 340/day)</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-error text-on-error uppercase font-bold tracking-wider">62 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image & Visual Badges -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A pristine 2023 Mercedes-AMG G63 in matte Magno Black finish parked inside a modern luxury architectural showroom in Dubai Sheikh Zayed Road. Cool blue backlighting, polished concrete reflections, aggressive panamericana front grille, luxury high performance SUV." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCoTKyfW9tZg6hnY3z3X8gOB6rw6_IdvZJdopShQOeT2CP3aq0wyvGE78lJ05AuBHSEswjUP-X_9YmIvQXkuwKv842QNp2nDsDXplqnefXmv2WDoQ-xka8H69kQ95jY_OSvJeAMo1ctgWg_oEo7hY1Ef-SupmdHXmgDMM0Jq7BNxL7rQsaeEFMcMG1BwdV0TaTonBcaZsglYQuKZjapnENdO7FxOZXeDwVho1GrUw"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-8821</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 14,200 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2023 Mercedes-AMG G63</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">V8 BiTurbo 585hp • Magno Night Edition</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 895,000</div>
+</div>
+</div>
+<!-- Market Positioning & Intelligence -->
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-secondary">pie_chart</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-error bg-error-container/60 px-1.5 py-0.5 rounded">
+                ◐ PARTIAL (P78 UAE)
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              +4% above regional median (AED 860k) across 11 Dubizzle &amp; Cars24 live comps.
+            </p>
+</div>
+<!-- Sentinel Recommendation Pill -->
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">auto_awesome</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-primary uppercase font-bold tracking-wider">AI Profit Recommendation</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Markdown AED 25,000 or allocate to Dubai Mall private client VIP pool</span>
+</div>
+</div>
+<!-- Key Financial & Operational Metrics -->
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">AED 68,500</span>
+<span class="material-symbols-outlined text-[14px] text-outline cursor-pointer" title="Locked by Dealer Principal">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary">8 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-semibold text-[11px]">3 High-Intent</span>
+</div>
+</div>
+</div>
+<!-- Open Repair Orders Stub -->
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<!-- Card Footer Trigger -->
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-primary text-on-primary font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-primary-container transition-colors shadow-sm" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors" title="Quick Share PDF">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- CARD 2: 2022 Porsche 911 GT3 Clubsport -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Banner -->
+<div class="px-space-md py-1.5 bg-surface-container-high text-on-surface flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold text-tertiary">
+<span class="material-symbols-outlined text-[16px]">bolt</span>
+<span>LOW RISK / FAST MOVER</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-tertiary text-on-tertiary uppercase font-bold tracking-wider">18 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A track-focused 2022 Porsche 911 GT3 Clubsport in Shark Blue with swan-neck rear wing and carbon bucket seats, parked on a clean reflective tarmac of the Dubai Autodrome paddock, golden hour sunlight highlighting the aerokit lines." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZ9CuDRY654krX4iVX5otFEDX81GFym238bJqaxpFXSsh0R5oOg0r1pJvFdJ7F1b9Cuy5GgxLiNuwotPvr3k5622rDzrYXUMLLb4mozIjMqsoepHqUatIxZKQ8MHGprtLSd8_7kclKCMPjQ-GgG7EwAgLKvlBRVuRUbTssaCSsOF0j0-FgGlwAIIswvc1_O6W7eynS_kN9VlxqTeMQtVBNcX_0hLGZ_BjjiPnFOw"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-9042</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 8,900 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2022 Porsche 911 GT3</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Clubsport Package • Shark Blue • Carbon Ceramic</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 749,000</div>
+</div>
+</div>
+<!-- Market Positioning -->
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-tertiary">balance</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary bg-tertiary-fixed/40 px-1.5 py-0.5 rounded">
+                ◐ PARTIAL (P48 UAE)
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Aligned with UAE fair market benchmark of AED 745,000. Demand index 9.4/10.
+            </p>
+</div>
+<!-- Recommendation Pill -->
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-tertiary text-[18px] shrink-0 mt-0.5">thumb_up</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-tertiary uppercase font-bold tracking-wider">Strategy Guidance</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Hold price firm — 2 active WhatsApp showroom inquiries in flight</span>
+</div>
+</div>
+<!-- Financial / Leads -->
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">AED 82,000</span>
+<span class="material-symbols-outlined text-[14px] text-outline">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary">12 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-semibold text-[11px]">5 Live Chats</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- CARD 3: 2021 Range Rover SV Autobiography -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Banner -->
+<div class="px-space-md py-1.5 bg-error text-on-error flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold">
+<span class="material-symbols-outlined text-[16px]">crisis_alert</span>
+<span>CRITICAL CAPITAL DRAG (Floor Plan Accumulation)</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-error uppercase font-bold tracking-wider">74 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A prestigious 2021 Land Rover Range Rover SV Autobiography Long Wheelbase in Santorini Black with duo-tone tan and black leather interior, parked in front of a modern high-rise in Downtown Dubai with Burj Khalifa reflections on tinted glass." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgNZ7z6k1ZzmQAiG3mcPDAnte4mLcm-ezrMgpMjoW5uyHNfk8ZaH0YHZnY-FkiKC4GeMmADjx3Ly7ZUfP3C0YfPEZtfkShNFdztzdsb68b6XWRwT-3Ebtchueqq_9dQHaKmA_6j8XN-AiTYezSd2GG2sQmiKgYc_Gej3SBRg51k-beScemGnVW4JVwIh3PA63IQepWz9wsp7-Vun7A_tBKF4RfDvJPna5peKeIsw"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-7719</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 38,000 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2021 Range Rover SV</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Autobiography Long Wheelbase 5.0 V8</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 485,000</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-error">trending_down</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-error bg-error-container/60 px-1.5 py-0.5 rounded">
+                ◐ PARTIAL (P86 UAE)
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              AED 28,000 above comparable Dubai listings. Floor plan interest rate escalating.
+            </p>
+</div>
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-error text-[18px] shrink-0 mt-0.5">priority_high</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-error uppercase font-bold tracking-wider">Action Plan</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Bundle 2-yr warranty package or trigger trade-in campaign</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-error">AED 31,000</span>
+<span class="material-symbols-outlined text-[14px] text-outline">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">4 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-surface-container-high text-on-surface-variant font-semibold text-[11px]">Cold</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- CARD 4: 2024 Rolls-Royce Cullinan Black Badge -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Banner -->
+<div class="px-space-md py-1.5 bg-primary-fixed-dim/40 text-on-primary-fixed flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold text-primary">
+<span class="material-symbols-outlined text-[16px]">diamond</span>
+<span>PREMIUM BESPOKE ASSET</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-primary text-on-primary uppercase font-bold tracking-wider">29 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A pristine 2024 Rolls-Royce Cullinan Black Badge finished in deep Diamond Black with vibrant Mandarin orange leather coachline and interior details, sitting parked on a private marina dock in Dubai Palm Jumeirah with luxury yachts in background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBtr3MKqmwvi7gUns2g1ySWsSqj4SKT_0o0L8LorPHIk3T0sYocPsJGa76d782K2YR2lWv7ZPv5YHdztwmOi-niTCP4QDj2qh-Te-wxy3puQulnFhHa4nOAkJnLJfmpXQB8yJUs1HT6F25KQExPvKnmVPg-0kn44q0GRA1RNGrQrDvCaXOyKGT3MCplxUnUJIJI24o-IDlrZcn3d93Oueg7qFo0j4gLfZv7KSgQg"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-9901</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 1,800 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2024 Rolls-Royce Cullinan</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Black Badge Edition • Mandarin Bespoke Interior</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 2,250,000</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-outline">help_outline</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-medium text-outline bg-surface-container px-1.5 py-0.5 rounded">
+                No Market Reference
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Bespoke commission spec. Fewer than 3 verifiable regional comps exist.
+            </p>
+</div>
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">diamond</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-primary uppercase font-bold tracking-wider">VIP Desk Suggestion</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Direct outbound to VIP concierge list (Sheikh Zayed / DIFC buyers)</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">AED 185,000</span>
+<span class="material-symbols-outlined text-[14px] text-outline">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary">6 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-secondary-fixed text-on-secondary-fixed font-semibold text-[11px]">Concierge</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- CARD 5: 2021 Ferrari F8 Tributo -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Banner -->
+<div class="px-space-md py-1.5 bg-surface-container-low text-on-surface flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold text-secondary">
+<span class="material-symbols-outlined text-[16px]">speed</span>
+<span>MODERATE MONITORING</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface uppercase font-bold tracking-wider">39 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A vivid Rosso Corsa red 2021 Ferrari F8 Tributo supercar with carbon fiber side splitters and yellow brake calipers, parked in an ultra-modern Dubai architectural villa driveway with desert palms in background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaq5DowzXqXyyTk0XJ3E2Dp9hvtH8tj4jCZV8AAdIXRpl_Lhqnl5DuthDEmMnJdQmqdh0n5i7ZvFS9hezW-fId6C1uI4q-OzAlpxJj33pO58FkxgfyHbuUs9ECGXCb9NhFqIKINS6Jlg8mIkIThvdQFj7uiQjxvCZEIY98GSpMhs62JnJSNXXJTOtI5YO8osBdEmH8yeNy18njjQ60rLShkRe-H2P5qMHh1H6KKw"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-9118</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 11,400 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2021 Ferrari F8 Tributo</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">3.9L Twin-Turbo V8 710hp • Rosso Corsa</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 995,000</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-tertiary">analytics</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary bg-tertiary-fixed/40 px-1.5 py-0.5 rounded">
+                ◐ PARTIAL (P52 UAE)
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Balanced with UAE supercar market median (AED 990,000). Stable enquiry velocity.
+            </p>
+</div>
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">campaign</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-primary uppercase font-bold tracking-wider">Action Plan</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Feature in Friday Supercar Run newsletter &amp; Instagram VIP story</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">AED 94,000</span>
+<span class="material-symbols-outlined text-[14px] text-outline">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary">7 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-semibold text-[11px]">2 Pre-approved</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- CARD 6: 2023 BMW M8 Competition Gran Coupe -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow relative group">
+<!-- Stock Age Banner -->
+<div class="px-space-md py-1.5 bg-error-container text-on-error-container flex items-center justify-between font-label-numeric-sm text-label-numeric-sm">
+<div class="flex items-center gap-1.5 font-semibold text-error">
+<span class="material-symbols-outlined text-[16px]">hourglass_bottom</span>
+<span>AGEING THRESHOLD BREACH</span>
+</div>
+<span class="px-1.5 py-0.5 rounded bg-error text-on-error uppercase font-bold tracking-wider">51 DAYS ON LOT</span>
+</div>
+<!-- Vehicle Image -->
+<div class="relative h-48 w-full bg-surface-container overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A sleek 2023 BMW M8 Competition Gran Coupe finished in Frozen Marina Bay Blue metallic parked on a private showroom floor in Dubai, aggressive carbon aero kidney grilles, laser lights, luxury four door sports coupe." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDK1eBGk_x8Lw4nZq11izEa_ruCo77VkHko7TSIS3iM2REuMzznC8voESlOBGL-FFVc8AH2sv7VcWtKSlgfcnIkVJYBTGyABAU26tj45iUEmkTBLrHs39R0BaCjHWeSpzQfoeyW5IPb2hWNbIFSCL64Bwbr1ZZHDy3idINq5ymHul2Fx01C-H_AhURSTt6CzLlCiw5cU_7RWgzGDeAtIiFnr-8oDK8QUuMRoiu1Tg"/>
+<div class="absolute top-2 left-2 flex flex-wrap gap-1">
+<span class="px-2 py-0.5 rounded bg-inverse-surface/90 text-inverse-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">STK-8430</span>
+<span class="px-2 py-0.5 rounded bg-surface-container-lowest/95 text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">GCC SPEC</span>
+</div>
+<div class="absolute bottom-2 right-2 px-2 py-1 rounded bg-inverse-surface/80 text-surface-container-lowest font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 backdrop-blur-sm">
+<span class="material-symbols-outlined text-[14px]">speed</span> 16,800 km
+          </div>
+</div>
+<!-- Card Body -->
+<div class="p-space-md flex flex-col gap-space-sm flex-1">
+<div class="flex items-start justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">2023 BMW M8 Competition</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Gran Coupe 4.4L V8 625hp • Frozen Blue</p>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 515,000</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-error">bar_chart</span> Market Benchmark
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-error bg-error-container/60 px-1.5 py-0.5 rounded">
+                ◐ PARTIAL (P72 UAE)
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              AED 18,000 over comparable M8 inventory in Abu Dhabi &amp; Dubai.
+            </p>
+</div>
+<div class="px-2.5 py-2 rounded bg-surface-container flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">price_change</span>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-primary uppercase font-bold tracking-wider">Desk Action</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium leading-tight">Adjust to AED 499,000 psychological barrier to trigger pending leads</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1 font-body-sm">
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Target Margin</span>
+<div class="flex items-center gap-1.5 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">AED 42,000</span>
+<span class="material-symbols-outlined text-[14px] text-outline">lock</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-2 rounded flex flex-col">
+<span class="text-outline text-table-header uppercase">Lead Affinity</span>
+<div class="flex items-center gap-1 mt-0.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-tertiary">5 Leads</span>
+<span class="font-body-sm text-body-sm px-1 rounded bg-surface-container-high text-on-surface font-semibold text-[11px]">1 Warm</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm text-outline-variant px-1 py-1">
+<span class="flex items-center gap-1 text-[12px]">
+<span class="w-2 h-2 rounded-full bg-outline-variant"></span>
+              Open RO: Coming Soon (Needs DMS integration)
+            </span>
+<span class="text-[12px] font-label-numeric-sm">0 pending</span>
+</div>
+</div>
+<div class="p-space-md pt-0 flex items-center justify-between gap-space-sm">
+<button class="flex-1 py-2 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container transition-colors" onclick="openDrawer()">
+<span>Inspect Unit</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+<button class="p-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+</div>
+<!-- MAIN VIEW CONTAINER: DENSE EXECUTIVE TABLE VIEW (Hidden by default, toggleable) -->
+<div class="hidden bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm" id="table-view">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low h-9 text-table-header uppercase text-outline font-semibold tracking-wider">
+<th class="px-space-md text-left">Stock #</th>
+<th class="px-space-sm text-left">VIN</th>
+<th class="px-space-md text-left">Vehicle &amp; Spec</th>
+<th class="px-space-md text-right">Price (AED)</th>
+<th class="px-space-md text-right">Cost</th>
+<th class="px-space-md text-center">Days</th>
+<th class="px-space-md text-left">Market Position</th>
+<th class="px-space-md text-right">Margin</th>
+<th class="px-space-md text-left">Sentinel Recommendation</th>
+<th class="px-space-md text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm">
+<!-- Row 1 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-8821</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">WDB963...8821</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2023 Mercedes-AMG G63 V8</div>
+<div class="text-[11px] text-outline">14,200 km • GCC Spec • Magno Black</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">895,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">62d (&gt;45d)</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-error font-medium">◐ PARTIAL (P78)</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-primary font-medium text-[11px] truncate max-w-xs">Markdown 25k or VIP concierge pool</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-primary text-on-primary font-body-sm text-body-sm font-semibold hover:bg-primary-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface" title="Vehicle 360">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-9042</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">WP0ZZZ...9042</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2022 Porsche 911 GT3 Clubsport</div>
+<div class="text-[11px] text-outline">8,900 km • GCC Spec • Shark Blue</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">749,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-tertiary font-label-numeric-sm text-label-numeric-sm font-bold">18d</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-medium">◐ PARTIAL (P48)</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-tertiary font-medium text-[11px] truncate max-w-xs">Hold price — 2 active WhatsApp chats</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-7719</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">SALWR2...7719</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2021 Range Rover SV Autobiography LWB</div>
+<div class="text-[11px] text-outline">38,000 km • GCC Spec • Santorini Black</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">485,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-error text-on-error font-label-numeric-sm text-label-numeric-sm font-bold">74d (&gt;60d)</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-error font-medium">◐ PARTIAL (P86)</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-error font-medium text-[11px] truncate max-w-xs">Bundle 2-yr warranty package</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-9901</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">SCA664...9901</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2024 Rolls-Royce Cullinan Black Badge</div>
+<div class="text-[11px] text-outline">1,800 km • GCC Spec • Bespoke Mandarin</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">2,250,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-bold">29d</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-medium">No Market Reference</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-primary font-medium text-[11px] truncate max-w-xs">Direct outbound to VIP concierge list</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-9118</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">ZFF88B...9118</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2021 Ferrari F8 Tributo</div>
+<div class="text-[11px] text-outline">11,400 km • GCC Spec • Rosso Corsa</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">995,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-bold">39d</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-medium">◐ PARTIAL (P52)</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-secondary font-medium text-[11px] truncate max-w-xs">Run supercar VIP campaign story</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 6 -->
+<tr class="h-12 hover:bg-surface-container-low transition-colors group cursor-pointer" onclick="openDrawer()">
+<td class="px-space-md font-label-numeric-sm text-label-numeric-sm font-bold text-primary">STK-8430</td>
+<td class="px-space-sm font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">WBA83E...8430</td>
+<td class="px-space-md">
+<div class="font-semibold text-on-surface">2023 BMW M8 Competition Gran Coupe</div>
+<div class="text-[11px] text-outline">16,800 km • GCC Spec • Frozen Blue</div>
+</td>
+<td class="px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">515,000</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md text-center">
+<span class="px-1.5 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">51d (&gt;45d)</span>
+</td>
+<td class="px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm text-error font-medium">◐ PARTIAL (P72)</span>
+</td>
+<td class="px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-outline">••••••• 🔒</td>
+<td class="px-space-md">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container text-primary font-medium text-[11px] truncate max-w-xs">Adjust to 499k psychological mark</span>
+</td>
+<td class="px-space-md text-right">
+<div class="flex items-center justify-end gap-1">
+<button class="px-2 py-1 rounded bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container">Inspect</button>
+<button class="p-1 rounded text-outline-variant hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- UNIT SLIDE-OVER DRAWER (Active Inspection on STK-8821 2023 Mercedes-AMG G63) -->
+<div class="fixed inset-0 bg-inverse-surface/40 backdrop-blur-xs z-50 transition-opacity duration-300 opacity-100" id="unit-drawer-backdrop" onclick="closeDrawer()"></div>
+<div class="fixed right-0 top-0 bottom-0 w-full max-w-xl bg-surface-container-lowest z-50 shadow-2xl flex flex-col justify-between overflow-y-auto transform transition-transform duration-300 translate-x-0" id="unit-drawer">
+<!-- Drawer Header -->
+<div class="p-space-lg bg-surface-container-low flex flex-col gap-space-sm sticky top-0 z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-primary text-on-primary font-label-numeric-sm text-label-numeric-sm font-semibold">STK-8821</span>
+<span class="px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">62 DAYS ON LOT</span>
+<span class="text-outline-variant font-label-numeric-sm text-label-numeric-sm">WDB9634928821</span>
+</div>
+<button class="p-1 rounded-full text-outline-variant hover:text-on-surface hover:bg-surface-container transition-colors" onclick="closeDrawer()">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<div class="flex items-start justify-between gap-space-sm mt-1">
+<div class="flex gap-space-sm">
+<div class="w-16 h-12 rounded bg-surface-container overflow-hidden shrink-0">
+<img class="w-full h-full object-cover" data-alt="A compact angle thumbnail of the 2023 Mercedes-AMG G63 front grille and dark headlights in Dubai showroom setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzc4x6tqayS2f_Ci-_FILVbbM5QxuY2BqFmk50jEGOR_uILMhZbkfpODflBHbd5Qx_KY2-bJF5kA1qoGodSNVdCeiQthjTYih-sYQ858b5_R73XpXlschjgvoUW_h8WmPrtN6jjOLh7cZ6xCfS4NP2rDnOx9sw3wP6NgxjRPoPGfMq1Yvkqpq7y7l45_oi9SR0isZJi6Xp99BWR6EJrqBuKr0K8DEzH6v9OZ-kbQ"/>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight leading-snug">2023 Mercedes-AMG G63</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">V8 BiTurbo • Magno Black • 14,200 km (GCC Spec)</p>
+</div>
+</div>
+<div class="text-right shrink-0">
+<span class="font-table-header text-table-header uppercase text-outline">List Price</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">AED 895,000</div>
+</div>
+</div>
+<!-- Quick Action CTA to Full Dossier -->
+<a class="mt-2 w-full py-2 rounded bg-primary text-on-primary font-body-sm text-body-sm font-semibold flex items-center justify-center gap-2 hover:bg-primary-container shadow-sm transition-all" href="#">
+<span>Open Vehicle 360 Full Dossier</span>
+<span class="material-symbols-outlined text-[16px]">open_in_new</span>
+</a>
+</div>
+<!-- Drawer Content Stream -->
+<div class="p-space-lg flex flex-col gap-space-lg flex-1">
+<!-- SECTION 1: RISK & PROFIT SUMMARY -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-outline tracking-wider flex items-center gap-1.5">
+<span class="material-symbols-outlined text-error text-[16px]">analytics</span>
+            Risk &amp; Profit Sentinel Summary
+          </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-error bg-error-container px-2 py-0.5 rounded font-bold">
+            HIGH HOLDING COST
+          </span>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<div class="bg-surface-container-lowest p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase">Holding Drain</span>
+<div class="font-label-numeric-md text-label-numeric-md text-error font-bold mt-1">AED 21,080</div>
+<span class="text-[11px] text-outline mt-0.5">AED 340 / day</span>
+</div>
+<div class="bg-surface-container-lowest p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase">Target Margin</span>
+<div class="flex items-center gap-1 mt-1">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface" id="masked-margin">AED 68,500</span>
+<button class="material-symbols-outlined text-[16px] text-outline hover:text-primary" onclick="toggleMargin()">visibility</button>
+</div>
+<span class="text-[11px] text-tertiary mt-0.5">7.65% ROIC</span>
+</div>
+<div class="bg-surface-container-lowest p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase">Market Pos</span>
+<div class="font-label-numeric-md text-label-numeric-md text-on-surface font-bold mt-1">P78 (UAE)</div>
+<span class="text-[11px] text-error mt-0.5">+35k vs P50 med</span>
+</div>
+</div>
+<!-- Strategy Suggestion Box -->
+<div class="bg-surface-container p-space-sm rounded-lg flex items-start gap-2.5">
+<span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">lightbulb</span>
+<div class="text-body-sm text-on-surface">
+<strong class="font-semibold text-primary">Revenue Protection Directive:</strong> 
+            Vehicle holding cost has eroded AED 18,200 of initial front-end gross. Recommending immediate AED 25,000 markdown to reposition at P62, or direct syndication to 3 high-affinity leads below.
+          </div>
+</div>
+</div>
+<!-- SECTION 2: INTERESTED LEADS (Text Match On Stated Interest) -->
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-on-surface tracking-tight">Interested Leads</span>
+<span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-label-numeric-sm text-label-numeric-sm font-bold">3 High Intent</span>
+</div>
+<span class="text-[11px] text-outline font-label-numeric-sm">Natural Language CRM Match</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Matched automatically against unfulfilled buyer criteria and WhatsApp chat transcripts in NEXUS CRM.
+        </p>
+<!-- Lead Cards Stack -->
+<div class="space-y-space-sm mt-1">
+<!-- Lead 1: Tariq Al-Mansoor -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col gap-space-sm hover:bg-surface-container transition-colors">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-body-md text-body-md font-bold text-on-surface">Tariq Al-Mansoor</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">#L-8820</span>
+<span class="px-1.5 py-0.5 rounded bg-tertiary text-on-tertiary font-label-numeric-sm text-label-numeric-sm font-semibold">98% Match</span>
+</div>
+<div class="flex items-center gap-2 text-[12px] text-tertiary mt-0.5">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+<span>WhatsApp active 2h ago</span>
+<span class="text-outline">•</span>
+<span class="text-outline">Assigned: Faris M.</span>
+</div>
+</div>
+<button class="px-space-sm py-1 rounded bg-tertiary text-on-tertiary font-body-sm text-body-sm font-semibold hover:bg-tertiary-container flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[16px]">chat</span>
+<span>Send WhatsApp Offer</span>
+</button>
+</div>
+<!-- Stated Transcript Quote -->
+<div class="p-2 rounded bg-surface-container-lowest font-body-sm text-body-sm text-on-surface italic">
+              "Looking for 2023 G63 Magno Black under AED 900k GCC spec, cash transaction ready."
+            </div>
+</div>
+<!-- Lead 2: Dr. Julian Vance -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col gap-space-sm hover:bg-surface-container transition-colors">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-body-md text-body-md font-bold text-on-surface">Dr. Julian Vance</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">#L-9041</span>
+<span class="px-1.5 py-0.5 rounded bg-secondary text-on-secondary font-label-numeric-sm text-label-numeric-sm font-semibold">91% Match</span>
+</div>
+<div class="flex items-center gap-2 text-[12px] text-on-surface-variant mt-0.5">
+<span>Enquired via Web Portal yesterday</span>
+<span class="text-outline">•</span>
+<span class="text-outline">Unassigned</span>
+</div>
+</div>
+<button class="px-space-sm py-1 rounded bg-surface-container-lowest text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container flex items-center gap-1 shadow-xs">
+<span class="material-symbols-outlined text-[16px]">person_add</span>
+<span>Assign Rep</span>
+</button>
+</div>
+<div class="p-2 rounded bg-surface-container-lowest font-body-sm text-body-sm text-on-surface italic">
+              "AMG G-Wagon or Urus, cash buyer, wants low mileage under 20,000 km with full agency history."
+            </div>
+</div>
+<!-- Lead 3: Hamdan K. -->
+<div class="bg-surface-container-low p-space-md rounded-xl flex flex-col gap-space-sm hover:bg-surface-container transition-colors">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-body-md text-body-md font-bold text-on-surface">Hamdan K.</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">#L-7912</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">88% Match</span>
+</div>
+<div class="flex items-center gap-2 text-[12px] text-on-surface-variant mt-0.5">
+<span>Showroom walk-in 3d ago</span>
+<span class="text-outline">•</span>
+<span class="text-outline">Assigned: Tariq B.</span>
+</div>
+</div>
+<button class="px-space-sm py-1 rounded bg-surface-container-lowest text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container flex items-center gap-1 shadow-xs">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+<span>View Lead File</span>
+</button>
+</div>
+<div class="p-2 rounded bg-surface-container-lowest font-body-sm text-body-sm text-on-surface italic">
+              "G63 Night Package GCC, interested in financing options with 20% down payment."
+            </div>
+</div>
+</div>
+</div>
+<!-- SECTION 3: OPEN REPAIR ORDERS (RO) -->
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md text-on-surface tracking-tight">Open Repair Orders &amp; Workshop</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">DMS Connector</span>
+</div>
+<div class="bg-surface-container-low p-space-md rounded-xl flex items-start gap-space-md">
+<div class="w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center text-outline shrink-0">
+<span class="material-symbols-outlined text-[20px]">build_circle</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Workshop Job Sheet Sync</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-secondary font-label-numeric-sm text-label-numeric-sm font-semibold text-[10px] uppercase">
+                ○ COMING SOON - Needs DMS Integration
+              </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+              Real-time synchronization for mechanical inspection, detailing jobs, and reconditioning expenditure will activate once CDK Global or DealerSocket DMS API keys are configured in Settings &gt; Integrations.
+            </p>
+</div>
+</div>
+</div>
+</div>
+<!-- Drawer Footer Actions -->
+<div class="p-space-md bg-surface-container-low flex items-center justify-between gap-space-sm sticky bottom-0 z-10">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline text-[18px]">lock</span>
+<span class="font-body-sm text-body-sm text-outline">Dealer Principal Authorized Session</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<button class="px-space-md py-2 rounded bg-surface-container-lowest text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container transition-colors" onclick="closeDrawer()">
+          Close
+        </button>
+<button class="px-space-md py-2 rounded bg-primary text-on-primary font-body-sm text-body-sm font-semibold hover:bg-primary-container transition-colors flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[16px]">price_change</span>
+<span>Apply Floor Markdown</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Client-side View Switching and Drawer Micro-interactions -->
+<script>
+  function switchView(mode) {
+    const gridView = document.getElementById('grid-view');
+    const tableView = document.getElementById('table-view');
+    const gridBtn = document.getElementById('view-grid-btn');
+    const tableBtn = document.getElementById('view-table-btn');
+
+    if (mode === 'grid') {
+      gridView.classList.remove('hidden');
+      tableView.classList.add('hidden');
+      gridBtn.className = 'p-1 px-2.5 rounded bg-surface-container-lowest text-primary shadow-sm flex items-center gap-1 font-body-sm text-body-sm font-semibold transition-all';
+      tableBtn.className = 'p-1 px-2.5 rounded text-outline-variant hover:text-on-surface flex items-center gap-1 font-body-sm text-body-sm font-medium transition-all';
+    } else {
+      gridView.classList.add('hidden');
+      tableView.classList.remove('hidden');
+      tableBtn.className = 'p-1 px-2.5 rounded bg-surface-container-lowest text-primary shadow-sm flex items-center gap-1 font-body-sm text-body-sm font-semibold transition-all';
+      gridBtn.className = 'p-1 px-2.5 rounded text-outline-variant hover:text-on-surface flex items-center gap-1 font-body-sm text-body-sm font-medium transition-all';
+    }
+  }
+
+  function openDrawer() {
+    const drawer = document.getElementById('unit-drawer');
+    const backdrop = document.getElementById('unit-drawer-backdrop');
+    drawer.classList.remove('translate-x-full');
+    drawer.classList.add('translate-x-0');
+    backdrop.classList.remove('hidden');
+    backdrop.classList.add('block');
+  }
+
+  function closeDrawer() {
+    const drawer = document.getElementById('unit-drawer');
+    const backdrop = document.getElementById('unit-drawer-backdrop');
+    drawer.classList.remove('translate-x-0');
+    drawer.classList.add('translate-x-full');
+    backdrop.classList.remove('block');
+    backdrop.classList.add('hidden');
+  }
+
+  let marginMasked = false;
+  function toggleMargin() {
+    const marginEl = document.getElementById('masked-margin');
+    if (marginMasked) {
+      marginEl.innerText = 'AED 68,500';
+      marginMasked = false;
+    } else {
+      marginEl.innerText = '••••••• [🔒]';
+      marginMasked = true;
+    }
+  }
+</script></main></div></body></html>

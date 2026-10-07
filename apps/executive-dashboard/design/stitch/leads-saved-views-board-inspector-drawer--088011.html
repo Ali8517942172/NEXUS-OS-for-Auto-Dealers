@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed-variant":"#34466e","on-secondary":"#ffffff","error":"#ba1a1a","on-error":"#ffffff","surface-container-highest":"#dbe2fb","secondary-fixed":"#d9e2ff","on-secondary-fixed":"#041a40","secondary-fixed-dim":"#b4c6f5","background":"#faf8ff","primary":"#004ba8","on-primary-container":"#dee6ff","tertiary-fixed":"#a0efff","surface-dim":"#d2d9f3","on-primary":"#ffffff","on-secondary-container":"#465780","on-background":"#131b2d","on-tertiary-fixed-variant":"#004e59","inverse-primary":"#afc6ff","primary-fixed-dim":"#afc6ff","on-tertiary":"#ffffff","surface-tint":"#155ac0","on-tertiary-container":"#b1f1ff","on-primary-fixed":"#001a43","inverse-surface":"#283043","surface-container":"#e9edff","surface-container-low":"#f2f3ff","on-surface":"#131b2d","primary-container":"#2563c9","tertiary-fixed-dim":"#44d8f0","outline-variant":"#c2c6d5","secondary-container":"#bccefe","secondary":"#4c5e87","tertiary-container":"#007281","on-error-container":"#93000a","inverse-on-surface":"#edf0ff","surface-bright":"#faf8ff","surface":"#faf8ff","on-tertiary-fixed":"#001f25","on-surface-variant":"#424753","on-primary-fixed-variant":"#004398","tertiary":"#005864","surface-container-high":"#e1e8ff","surface-variant":"#dbe2fb","outline":"#737784","error-container":"#ffdad6","surface-container-lowest":"#ffffff","primary-fixed":"#d9e2ff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-xl":"2rem","space-lg":"1.5rem","space-sm":"0.5rem","space-xs":"0.25rem","margin":"1.5rem","space-md":"1rem","gutter":"1rem"},"fontFamily":{"label-numeric-sm":["JetBrains Mono"],"headline-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"table-header":["Inter"],"headline-lg":["Inter"],"label-numeric-md":["JetBrains Mono"],"body-md":["Inter"],"body-sm":["Inter"],"body-lg":["Inter"],"headline-xl":["Inter"]},"fontSize":{"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}]}}}}</script></head><body class="bg-[#F7F8FA] font-body-md text-on-surface min-h-screen antialiased"><aside class="fixed left-0 top-0 h-screen w-[260px] bg-[#16294F] text-[#C7D3EA] z-50 flex flex-col font-body-md select-none border-r border-[#1E3566]"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex flex-col min-w-0"><div class="flex items-center gap-2"><span class="font-headline-md text-white font-bold tracking-tight text-[14px]">NEXUS OS</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-label-numeric-sm font-semibold bg-[#0A3D4D] text-[#38D0E8] border border-[#13667E]">UAE</span></div><span class="text-[9.5px] font-semibold tracking-wider text-[#8598BA] uppercase mt-0.5">AUTOMOTIVE</span></div><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#38D0E8] animate-pulse" title="Cluster Online"></span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-1 text-[10.5px] font-semibold tracking-wider uppercase text-[#8598BA]">Primary Navigation</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#">Overview</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="owner-brief" href="#">Owner Brief</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="todays-money-leaks" href="#">Today's Money Leaks</a><a aria-current="page" class="flex items-center px-[14px] py-1.5 rounded-[6px] transition-colors bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]" data-path="leads" href="#">Leads</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="record-a-lead" href="#">Record a Lead</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#">Action Center</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#">Deals</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#">Appointments</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#">Conversations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#">Campaigns</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[10.5px] font-semibold tracking-wider uppercase text-[#8598BA]">Intelligence &amp; Assets</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#">Inventory</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#">Competitors</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#">Finance Desk</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#">Customer 360</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="ask-ai" href="#">Ask AI</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="dealership-event-graph" href="#">Dealership Event Graph</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="dealer-benchmarking" href="#">Dealer Benchmarking</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[10.5px] font-semibold tracking-wider uppercase text-[#8598BA]">Operations &amp; Infrastructure</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-portal" href="#">Customer Portal</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-sources" href="#">Lead Sources</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="channels" href="#">Channels</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="integrations" href="#">Integrations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="policy-house-rules" href="#">Policy &amp; House Rules</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance-kyc" href="#">Compliance &amp; KYC</a></nav><nav class="space-y-1 pt-2 border-t border-[#1E3566]" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#">Settings</a></nav></div><div class="p-3 border-t border-[#1E3566] shrink-0"><div class="flex items-center justify-between gap-2 p-2 rounded-[6px] bg-[#11203E] border border-[#1E3566]"><div class="flex items-center gap-2.5 min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 border border-[#2563C9]"><span class="material-symbols-outlined text-white text-[16px]">person</span></div><div class="min-w-0 text-left leading-tight"><div class="text-[12px] font-semibold text-white truncate">Rashid Al-Maktoum</div><div class="text-[10px] text-[#8598BA] truncate">Dealer Principal</div></div></div><button class="p-1 text-[#8598BA] hover:text-[#38D0E8] hover:bg-[#1E3566] rounded transition-colors shrink-0" title="Sign out"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></aside><div class="pl-[260px]"><header class="fixed top-0 left-[260px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 flex items-center justify-between px-5 font-body-md"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2 shrink-0 pr-4 border-r border-[#E8EAEF]"><span class="font-headline-md font-bold text-[#0F1729] text-[13.5px] tracking-tight">Demo Motors</span><span class="text-[#737784] text-[13px]">|</span><span class="text-[#424753] text-[12px] font-medium">Dubai, UAE</span><span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[9.5px] font-semibold border border-[#BCE4D6]"><span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>PRODUCTION</span></div><div class="relative max-w-md w-full"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[17px] text-outline">search</span><input class="w-full h-8 pl-8 pr-12 text-[12.5px] bg-surface-container-lowest border border-[#E8EAEF] rounded-[6px] text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Omnibar: Search VIN, Customer, Lead..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm text-outline border border-[#E8EAEF] rounded bg-[#F7F8FA]">⌘K</kbd></div></div><div class="flex items-center gap-3.5 shrink-0"><div class="flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF] text-secondary font-label-numeric-sm text-[11px]"><span class="material-symbols-outlined text-[14px] text-outline">schedule</span><span class="font-semibold text-on-surface">14:45:00 GST</span></div><div class="flex items-center p-0.5 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF]"><button class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-white text-primary shadow-xs border border-[#E8EAEF]">AED</button><button class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-medium text-secondary hover:text-on-surface">USD</button></div><button class="relative p-1.5 rounded-[6px] text-secondary hover:text-on-surface hover:bg-[#F7F8FA] border border-transparent hover:border-[#E8EAEF] transition-colors" title="Alerts"><span class="material-symbols-outlined text-[19px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-error border border-white"></span></button><div class="h-5 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right leading-none"><div class="text-[12.5px] font-semibold text-[#0F1729]">Rashid Al-Maktoum</div><div class="text-[10px] text-secondary font-medium mt-0.5">Dealer Principal</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 border border-[#2563C9]"><span class="material-symbols-outlined text-on-primary text-[17px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen"><div class="flex flex-col w-full">
+<!-- Top Command Ribbon & Header Context -->
+<div class="px-6 py-4 bg-surface-container-lowest shadow-sm flex flex-col gap-3">
+<!-- Breadcrumb & Operational Health Indicator -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="font-table-header text-table-header uppercase tracking-wider text-outline">WORK</span>
+<span class="font-table-header text-table-header text-outline-variant">/</span>
+<span class="font-table-header text-table-header uppercase tracking-wider text-on-surface font-semibold">LEADS &amp; INTAKE</span>
+<span class="ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container text-primary font-label-numeric-sm text-label-numeric-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+          REALTIME INTAKE STREAM
+        </span>
+</div>
+<div class="flex items-center gap-3">
+<!-- View Mode Switcher -->
+<div class="flex items-center p-0.5 bg-surface-container rounded-lg">
+<button class="flex items-center gap-1.5 px-3 py-1 rounded bg-surface-container-lowest text-primary font-body-md text-body-sm font-semibold shadow-xs">
+<span class="material-symbols-outlined text-[16px]">view_list</span>
+            Table
+          </button>
+<button class="flex items-center gap-1.5 px-3 py-1 rounded text-outline hover:text-on-surface font-body-md text-body-sm font-medium transition-colors">
+<span class="material-symbols-outlined text-[16px]">view_kanban</span>
+            Board
+          </button>
+</div>
+<!-- Board Stage Strip Hint -->
+<div class="hidden xl:flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-low text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="text-outline">Stages:</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest text-on-secondary-fixed">New (18)</span>
+<span class="text-outline-variant">›</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface">Contacted (24)</span>
+<span class="text-outline-variant">›</span>
+<span class="px-1.5 py-0.5 rounded bg-secondary-fixed text-on-secondary-fixed">Qualified (19)</span>
+<span class="text-outline-variant">›</span>
+<span class="px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed">Appointment (11)</span>
+<span class="text-outline-variant">›</span>
+<span class="px-1.5 py-0.5 rounded bg-primary-fixed text-primary font-bold">Won (12)</span>
+</div>
+</div>
+</div>
+<!-- Main Title & Operational Actions Bar -->
+<div class="flex flex-wrap items-center justify-between gap-4">
+<div class="flex items-baseline gap-3">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Leads Desk</h1>
+<span class="font-label-numeric-md text-label-numeric-md text-outline">
+<strong class="text-on-surface font-bold">84</strong> active inquiries
+        </span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-label-numeric-sm font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+          4 pending first response (&gt;15m)
+        </span>
+</div>
+<!-- Controls & CTA cluster -->
+<div class="flex items-center gap-2">
+<!-- Saved Views Selector -->
+<div class="relative">
+<button class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-semibold transition-colors">
+<span class="material-symbols-outlined text-primary text-[18px]">bookmark</span>
+<span>View: <strong>My hot leads</strong></span>
+<span class="material-symbols-outlined text-[16px] text-outline">expand_more</span>
+</button>
+</div>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors" title="Save current filter set">
+<span class="material-symbols-outlined text-[16px] text-outline">save</span>
+          Save view
+        </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors" title="Configure visible table columns">
+<span class="material-symbols-outlined text-[16px] text-outline">view_column</span>
+          Columns
+        </button>
+<div class="h-6 w-[1px] bg-surface-container-high mx-1"></div>
+<button class="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-primary-container text-on-primary hover:bg-primary font-body-md text-body-sm font-semibold shadow-sm transition-colors">
+<span class="material-symbols-outlined text-[18px]">add_circle</span>
+          Record a Lead
+        </button>
+</div>
+</div>
+<!-- Omnibar Filters & Query Row -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+<div class="flex items-center gap-2 flex-1 max-w-2xl">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+<input class="w-full h-9 pl-9 pr-4 rounded-lg bg-surface-container-low text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary shadow-xs" placeholder="Filter by customer name, mobile +971, stock ID, or trim..." type="text" value=""/>
+</div>
+<!-- Filter Pills -->
+<button class="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium">
+<span class="text-outline">Source:</span>
+<span class="font-semibold text-primary">All (7 channels)</span>
+<span class="material-symbols-outlined text-[16px] text-outline">arrow_drop_down</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium">
+<span class="text-outline">Rep:</span>
+<span class="font-semibold text-on-surface">Floor Active</span>
+<span class="material-symbols-outlined text-[16px] text-outline">arrow_drop_down</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium">
+<span class="text-outline">Score Risk:</span>
+<span class="font-semibold text-error">High Intent Only</span>
+<span class="material-symbols-outlined text-[16px] text-outline">close</span>
+</button>
+</div>
+<!-- Quick Export / Sorter Stats -->
+<div class="flex items-center gap-3 font-label-numeric-sm text-label-numeric-sm text-outline">
+<span>Sort: <strong class="text-on-surface">Score Priority ▾</strong></span>
+<span>Showing 1-25 of 84</span>
+</div>
+</div>
+</div>
+<!-- Bulk Action Bar -->
+<div class="mx-6 mt-3 px-4 py-2.5 rounded-lg bg-secondary-fixed text-on-secondary-fixed flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-3">
+<div class="flex items-center justify-center w-5 h-5 rounded bg-primary text-on-primary text-[12px] font-bold">
+        ✓
+      </div>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-secondary-fixed">
+        7 leads selected
+      </span>
+<span class="text-body-sm text-on-secondary-fixed-variant">
+        Across Dubai Showroom, WhatsApp API, and Dubizzle portals
+      </span>
+</div>
+<div class="flex items-center gap-2">
+<!-- Bulk Assign Button with Highlight -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-primary font-body-md text-body-sm font-bold shadow-xs hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[17px]">person_add</span>
+        Assign owner
+      </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-on-surface font-body-md text-body-sm font-medium shadow-xs hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[17px] text-outline">label</span>
+        Apply tag
+      </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surface-container-lowest text-error font-body-md text-body-sm font-medium shadow-xs hover:bg-error-container transition-colors">
+<span class="material-symbols-outlined text-[17px]">archive</span>
+        Archive
+      </button>
+<button class="px-2 py-1 text-on-secondary-fixed-variant hover:text-on-secondary-fixed text-body-sm">
+        Clear selection
+      </button>
+</div>
+</div>
+<!-- Bulk Reassignment Action Preview Card (Docked / Popover Representation) -->
+<div class="mx-6 mt-2 p-4 rounded-xl bg-surface-container-lowest shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-start gap-3.5">
+<div class="p-2.5 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed shrink-0">
+<span class="material-symbols-outlined text-[24px]">published_with_changes</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h2 class="font-headline-md text-headline-md text-on-surface">Bulk Reassignment Preview</h2>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-label-numeric-sm font-label-numeric-sm font-bold bg-surface-container-highest text-primary">
+            ○ COMING SOON
+          </span>
+</div>
+<p class="font-body-md text-body-sm text-outline mt-0.5">
+          7 leads match preview criteria — <strong class="text-on-surface">7 owner fields</strong> to update, <strong class="text-on-surface">7 audit logs</strong> to append, <strong class="text-on-surface">0 customer notifications</strong> sent.
+        </p>
+</div>
+</div>
+<div class="flex items-center gap-3 w-full md:w-auto">
+<div class="relative min-w-[220px]">
+<select class="w-full h-9 pl-3 pr-8 rounded-lg bg-surface-container text-body-md text-body-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary">
+<option>Select target rep...</option>
+<option selected="">Rashid Al-Maktoum (Senior Desk)</option>
+<option>Karim Zidan (Supercar Specialist)</option>
+<option>Sara Mansoor (Corporate Fleet)</option>
+</select>
+</div>
+<button class="px-4 py-2 rounded-lg bg-surface-container-high text-outline font-body-md text-body-sm font-bold cursor-not-allowed" disabled="">
+        Confirm Assignment (Preview Only)
+      </button>
+<button class="px-3 py-2 rounded-lg text-outline hover:text-on-surface font-body-md text-body-sm">
+        Dismiss
+      </button>
+</div>
+</div>
+<!-- Operational Workspace: Main Data Table + Slide-over Drawer Layout -->
+<div class="px-6 py-4 flex gap-5 items-start">
+<!-- Data Table Container (Responsive flex-1) -->
+<div class="flex-1 bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden min-w-0">
+<!-- Table Header & Column Metas -->
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container-low h-9 text-outline">
+<th class="w-10 px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Lead ID</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Customer Name</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Vehicle Interest</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Source</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Status</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider">Assigned Owner</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider text-right">Intent / Score</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider text-right">Age</th>
+<th class="px-3 font-table-header text-table-header uppercase tracking-wider text-center">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container">
+<!-- ROW 1: Active Lead (#L-9941 Tareq Al-Hashimi) with Owner Inline Popover Active -->
+<tr class="bg-secondary-fixed/30 hover:bg-secondary-fixed/50 transition-colors relative">
+<td class="px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-3 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                #L-9941
+              </td>
+<td class="px-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-primary-container text-on-primary font-bold text-[11px] flex items-center justify-center">
+                    TA
+                  </div>
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface flex items-center gap-1.5">
+                      Tareq Al-Hashimi
+                      <span class="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-label-numeric-sm font-bold bg-surface-container-highest text-primary">VIP</span>
+</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 50 882 1902</div>
+</div>
+</div>
+</td>
+<td class="px-3">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">2024 Porsche 911 GT3 RS</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">STK-2024-GT3RS · Arctic Grey</div>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="w-2 h-2 rounded-full bg-[#25D366]"></span>
+                  WhatsApp Direct
+                </span>
+</td>
+<td class="px-3">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-fixed text-on-secondary-fixed font-label-numeric-sm text-label-numeric-sm font-bold hover:bg-secondary-fixed-dim transition-colors">
+<span>QUALIFIED</span>
+<span class="material-symbols-outlined text-[14px]">arrow_drop_down</span>
+</button>
+</td>
+<!-- OWNER CELL with LIVE OPEN INLINE POPOVER -->
+<td class="px-3 relative">
+<button class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-lowest text-on-surface font-body-md text-body-sm font-medium shadow-xs ring-2 ring-primary">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span>Karim Zidan</span>
+<span class="material-symbols-outlined text-[14px] text-primary">edit</span>
+</button>
+<!-- Floating Inline Edit Owner Popover Modal -->
+<div class="absolute left-0 top-12 z-50 w-72 p-3.5 bg-surface-container-lowest rounded-xl shadow-xl flex flex-col gap-3 text-left">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md text-on-surface text-[13px]">Change Assigned Owner</span>
+<span class="text-label-numeric-sm text-label-numeric-sm text-outline">Lead #L-9941</span>
+</div>
+<div class="flex flex-col gap-1">
+<label class="font-table-header text-table-header text-outline uppercase">Select Floor Rep</label>
+<select class="w-full h-8 px-2 rounded-md bg-surface-container text-body-md text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary">
+<option>Rashid Al-Maktoum (Principal)</option>
+<option selected="">Karim Zidan (Supercar Specialist)</option>
+<option>Sara Mansoor (Private Office)</option>
+<option>Unassigned (Pool Desk)</option>
+</select>
+</div>
+<div class="flex flex-col gap-1">
+<label class="font-table-header text-table-header text-outline uppercase">Reason for Transfer (Mandatory)</label>
+<input class="w-full h-8 px-2 rounded-md bg-surface-container text-body-md text-body-sm text-on-surface focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-outline" placeholder="e.g. Arabic speaker preferred, VIP relationship" type="text" value="Arabic speaker preferred; high allocation history"/>
+</div>
+<div class="flex items-center justify-end gap-2 pt-1">
+<button class="px-2.5 py-1 rounded text-outline hover:text-on-surface text-body-sm font-medium">Cancel</button>
+<button class="px-3 py-1 rounded bg-primary text-on-primary font-body-md text-body-sm font-semibold shadow-xs hover:bg-primary-container">Update Owner</button>
+</div>
+</div>
+</td>
+<td class="px-3 text-right">
+<div class="inline-flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm font-bold px-2 py-0.5 rounded bg-error-container text-on-error-container">
+<span class="material-symbols-outlined text-[13px]">local_fire_department</span>
+                  96 / HOT
+                </div>
+</td>
+<td class="px-3 text-right font-label-numeric-sm text-label-numeric-sm text-outline">
+                12m ago
+              </td>
+<td class="px-3 text-center">
+<button class="p-1.5 text-primary hover:bg-primary-fixed rounded-md transition-colors" title="Open Slide-Over Details">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</td>
+</tr>
+<!-- ROW 2: Dr. Mariam Al-Qasimi with Active Status Selector Popover -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-3 font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">
+                #L-9940
+              </td>
+<td class="px-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-secondary-container text-on-secondary-fixed font-bold text-[11px] flex items-center justify-center">
+                    MQ
+                  </div>
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Dr. Mariam Al-Qasimi</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 55 410 9922</div>
+</div>
+</div>
+</td>
+<td class="px-3">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">Range Rover Autobiography P530</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">STK-RR-8842 · Charente Grey</div>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+                  Website VIP Concierge
+                </span>
+</td>
+<!-- STATUS CELL with Active Status Dropdown Popover Representation -->
+<td class="px-3 relative">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-fixed text-on-secondary-fixed font-label-numeric-sm text-label-numeric-sm font-bold ring-2 ring-primary">
+<span>QUALIFIED</span>
+<span class="material-symbols-outlined text-[14px]">expand_less</span>
+</button>
+<!-- Floating Status Selector Popover -->
+<div class="absolute left-0 top-12 z-40 w-44 p-1.5 bg-surface-container-lowest rounded-lg shadow-xl flex flex-col gap-0.5 text-left">
+<button class="flex items-center justify-between px-2.5 py-1.5 rounded text-left font-label-numeric-sm text-label-numeric-sm hover:bg-surface-container-high text-on-surface">
+<span>NEW</span>
+<span class="text-outline text-[11px]">18</span>
+</button>
+<button class="flex items-center justify-between px-2.5 py-1.5 rounded text-left font-label-numeric-sm text-label-numeric-sm hover:bg-surface-container-high text-on-surface">
+<span>CONTACTED</span>
+<span class="text-outline text-[11px]">24</span>
+</button>
+<button class="flex items-center justify-between px-2.5 py-1.5 rounded text-left font-label-numeric-sm text-label-numeric-sm bg-secondary-fixed text-on-secondary-fixed font-bold">
+<span>QUALIFIED</span>
+<span class="material-symbols-outlined text-[14px]">check</span>
+</button>
+<button class="flex items-center justify-between px-2.5 py-1.5 rounded text-left font-label-numeric-sm text-label-numeric-sm hover:bg-surface-container-high text-on-surface">
+<span>APPOINTMENT</span>
+<span class="text-outline text-[11px]">11</span>
+</button>
+<button class="flex items-center justify-between px-2.5 py-1.5 rounded text-left font-label-numeric-sm text-label-numeric-sm hover:bg-surface-container-high text-on-surface">
+<span>WON</span>
+<span class="text-outline text-[11px]">12</span>
+</button>
+</div>
+</td>
+<td class="px-3">
+<span class="font-body-md text-body-sm text-on-surface font-medium">Sara Mansoor</span>
+</td>
+<td class="px-3 text-right">
+<div class="inline-flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm font-bold px-2 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed">
+                  88 / WARM
+                </div>
+</td>
+<td class="px-3 text-right font-label-numeric-sm text-label-numeric-sm text-outline">
+                44m ago
+              </td>
+<td class="px-3 text-center">
+<button class="p-1.5 text-outline hover:text-primary hover:bg-surface-container rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</td>
+</tr>
+<!-- ROW 3: Marcus Vance -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-3 font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">
+                #L-9939
+              </td>
+<td class="px-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-surface-container-highest text-on-surface font-bold text-[11px] flex items-center justify-center">
+                    MV
+                  </div>
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Marcus Vance</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 52 301 7741</div>
+</div>
+</div>
+</td>
+<td class="px-3">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">2023 Mercedes-AMG G63</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">STK-G63-5509 · Obsidian Black</div>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+                  Dubizzle VIP
+                </span>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  CONTACTED
+                </span>
+</td>
+<td class="px-3">
+<span class="font-body-md text-body-sm text-on-surface font-medium">Rashid Al-Maktoum</span>
+</td>
+<td class="px-3 text-right">
+<div class="inline-flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm font-bold px-2 py-0.5 rounded bg-surface-container text-on-surface">
+                  72 / COLD
+                </div>
+</td>
+<td class="px-3 text-right font-label-numeric-sm text-label-numeric-sm text-outline">
+                1h 10m
+              </td>
+<td class="px-3 text-center">
+<button class="p-1.5 text-outline hover:text-primary hover:bg-surface-container rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</td>
+</tr>
+<!-- ROW 4: Faisal Bin Sultan -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-3 font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">
+                #L-9938
+              </td>
+<td class="px-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-surface-container-highest text-on-surface font-bold text-[11px] flex items-center justify-center">
+                    FB
+                  </div>
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Faisal Bin Sultan</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 50 119 4430</div>
+</div>
+</div>
+</td>
+<td class="px-3">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">2024 Ferrari 296 GTB</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">STK-F-296-01 · Rosso Corsa</div>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+                  Floor Walk-in
+                </span>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-numeric-sm text-label-numeric-sm font-bold">
+                  APPOINTMENT
+                </span>
+</td>
+<td class="px-3">
+<span class="font-body-md text-body-sm text-on-surface font-medium">Karim Zidan</span>
+</td>
+<td class="px-3 text-right">
+<div class="inline-flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm font-bold px-2 py-0.5 rounded bg-error-container text-on-error-container">
+                  94 / HOT
+                </div>
+</td>
+<td class="px-3 text-right font-label-numeric-sm text-label-numeric-sm text-outline">
+                2h 05m
+              </td>
+<td class="px-3 text-center">
+<button class="p-1.5 text-outline hover:text-primary hover:bg-surface-container rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</td>
+</tr>
+<!-- ROW 5: Elena Rostova -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors">
+<td class="px-3 text-center">
+<input checked="" class="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer" type="checkbox"/>
+</td>
+<td class="px-3 font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">
+                #L-9937
+              </td>
+<td class="px-3">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-surface-container-highest text-on-surface font-bold text-[11px] flex items-center justify-center">
+                    ER
+                  </div>
+<div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">Elena Rostova</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 58 772 1083</div>
+</div>
+</div>
+</td>
+<td class="px-3">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">2024 Bentley Continental GT</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">STK-B-GT-401 · Dark Sapphire</div>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="w-2 h-2 rounded-full bg-[#25D366]"></span>
+                  WhatsApp Direct
+                </span>
+</td>
+<td class="px-3">
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  NEW
+                </span>
+</td>
+<td class="px-3">
+<span class="font-body-md text-body-sm text-on-surface font-medium">Sara Mansoor</span>
+</td>
+<td class="px-3 text-right">
+<div class="inline-flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm font-bold px-2 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed">
+                  82 / WARM
+                </div>
+</td>
+<td class="px-3 text-right font-label-numeric-sm text-label-numeric-sm text-outline">
+                2h 45m
+              </td>
+<td class="px-3 text-center">
+<button class="p-1.5 text-outline hover:text-primary hover:bg-surface-container rounded-md transition-colors">
+<span class="material-symbols-outlined text-[18px]">dock_to_right</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Pagination -->
+<div class="px-4 py-3 bg-surface-container-low flex items-center justify-between text-outline text-body-sm">
+<div class="flex items-center gap-2">
+<span>Displaying 5 of 84 inquiries</span>
+<span class="text-outline-variant">·</span>
+<span>Filtered by Hot Score intent</span>
+</div>
+<div class="flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm">
+<button class="px-2 py-1 rounded bg-surface-container text-outline-variant cursor-not-allowed" disabled="">Previous</button>
+<span class="px-2 py-1 rounded bg-primary text-on-primary font-bold">1</span>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-on-surface">2</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-on-surface">3</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-on-surface">Next</button>
+</div>
+</div>
+</div>
+<!-- Lead Slide-Over Inspector Drawer (Open State: ~450px width) -->
+<div class="w-[450px] shrink-0 bg-surface-container-lowest rounded-xl shadow-lg flex flex-col overflow-hidden">
+<!-- Drawer Header Bar -->
+<div class="p-4 bg-surface-container-low flex items-start justify-between">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-primary">#L-9941</span>
+<span class="font-headline-md text-headline-md text-on-surface">Tareq Al-Hashimi</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-label-numeric-sm font-label-numeric-sm font-bold bg-surface-container-highest text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+              UAE VIP BUYER
+            </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">+971 50 882 1902</span>
+</div>
+</div>
+<button class="p-1 rounded-md text-outline hover:text-on-surface hover:bg-surface-container transition-colors" title="Close Drawer">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Horizontal Customer Journey Stepper -->
+<div class="px-4 py-3 bg-surface-container-lowest">
+<div class="text-[10px] uppercase font-table-header text-outline tracking-wider mb-2">Stage Progression</div>
+<div class="flex items-center justify-between text-[11px] font-label-numeric-sm">
+<!-- Step 1: Received -->
+<div class="flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[10px] font-bold">✓</div>
+<span class="text-on-surface font-semibold text-[10px]">Received</span>
+</div>
+<div class="h-0.5 flex-1 bg-primary mx-1"></div>
+<!-- Step 2: Qualified -->
+<div class="flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[10px] font-bold">✓</div>
+<span class="text-on-surface font-semibold text-[10px]">Qualified</span>
+</div>
+<div class="h-0.5 flex-1 bg-primary mx-1"></div>
+<!-- Step 3: Priority set -->
+<div class="flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[10px] font-bold">✓</div>
+<span class="text-on-surface font-semibold text-[10px]">Priority Set</span>
+</div>
+<div class="h-0.5 flex-1 bg-primary mx-1"></div>
+<!-- Step 4: Owner Assigned (Active) -->
+<div class="flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-secondary-fixed text-primary font-bold flex items-center justify-center text-[10px] ring-2 ring-primary">4</div>
+<span class="text-primary font-bold text-[10px]">Assigned</span>
+</div>
+<div class="h-0.5 flex-1 bg-surface-container mx-1"></div>
+<!-- Step 5: Recommended Action (Pending) -->
+<div class="flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-surface-container text-outline flex items-center justify-center text-[10px]">○</div>
+<span class="text-outline text-[10px]">Action</span>
+</div>
+</div>
+</div>
+<!-- Drawer Functional Tabs Navigation -->
+<div class="flex items-center px-4 bg-surface-container-low text-body-sm font-semibold text-outline">
+<button class="px-2.5 py-2 hover:text-on-surface">Overview</button>
+<button class="px-2.5 py-2 hover:text-on-surface">Conversation</button>
+<button class="px-2.5 py-2 hover:text-on-surface">Matching stock</button>
+<button class="px-2.5 py-2 text-primary border-b-2 border-primary font-bold">Why this score</button>
+</div>
+<!-- Tab Content Area: 'Why this score' Active Mode -->
+<div class="p-4 flex flex-col gap-4 overflow-y-auto max-h-[460px]">
+<!-- Score Overview Callout -->
+<div class="p-3.5 rounded-xl bg-error-container text-on-error-container flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-lowest text-error flex items-center justify-center font-label-numeric-lg text-label-numeric-lg font-bold shadow-xs">
+              96
+            </div>
+<div>
+<div class="font-headline-md text-headline-md text-on-error-container leading-tight">Extreme Urgency &amp; Intent</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-on-error-container/80">Velocity Band: Tier 1 VIP Floor</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-error text-[24px]">verified</span>
+</div>
+<!-- Evidence List Section -->
+<div class="flex flex-col gap-2">
+<span class="font-table-header text-table-header uppercase text-outline tracking-wider">Algorithmic Evidence Signals</span>
+<!-- Evidence Item 1 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">account_balance_wallet</span>
+<div class="flex-1">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">High Liquidity / Budget Confirmed</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                Client referenced bank slip clearance via ENBD for AED 1,200,000 cash balance in WhatsApp audio snippet at 14:32.
+              </p>
+<div class="mt-1 font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">+35 pts intent score</div>
+</div>
+</div>
+<!-- Evidence Item 2 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">speed</span>
+<div class="flex-1">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">Ultra-Rapid Response Velocity</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                Under 12-minute turnaround from portal inbound to direct WhatsApp dialogue initiation.
+              </p>
+<div class="mt-1 font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">+25 pts velocity score</div>
+</div>
+</div>
+<!-- Evidence Item 3 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">visibility</span>
+<div class="flex-1">
+<div class="font-body-md text-body-sm font-semibold text-on-surface">Repeated Specific Vehicle Telemetry</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                6 spec visits on Dubizzle for VIN WP0AF2A97RS29011 within past 36 hours. Weissach package requirement verified.
+              </p>
+<div class="mt-1 font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">+22 pts vehicle match score</div>
+</div>
+</div>
+</div>
+<!-- Matching Stock Quick Pill -->
+<div class="p-3 rounded-lg bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-tertiary text-[20px]">directions_car</span>
+<div>
+<div class="font-body-md text-body-sm font-bold text-on-surface">STK-2024-GT3RS</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-outline">AED 1,180,000 · 98% Spec match</div>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-lowest text-primary font-label-numeric-sm text-label-numeric-sm font-bold shadow-xs">
+            IN SHOWROOM
+          </span>
+</div>
+<!-- WhatsApp Conversation Snippet Quick Reference -->
+<div class="p-3 rounded-lg bg-surface-container-lowest shadow-xs flex flex-col gap-1.5">
+<div class="flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-outline">
+<span class="flex items-center gap-1 text-[#25D366] font-semibold">
+<span class="material-symbols-outlined text-[14px]">chat</span>
+              WhatsApp Cloud Sync
+            </span>
+<span>14:38:12 GST</span>
+</div>
+<p class="font-body-md text-body-sm text-on-surface italic bg-surface-container-low p-2 rounded">
+            "Salam Karim, I can transfer deposit today if the Weissach carbon cage is original GCC specification. Let me know before 5 PM."
+          </p>
+</div>
+<!-- Collapsed Roadmap Accordion Rows (Coming Soon Modules) -->
+<div class="flex flex-col gap-2 pt-2">
+<!-- Accordion Row 1: Next Best Action -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-outline text-[18px]">bolt</span>
+<div>
+<span class="font-body-md text-body-sm font-semibold text-on-surface">Next best action</span>
+<span class="block text-[11px] text-outline">Needs Action Center sync</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-label-numeric-sm font-bold bg-surface-container text-outline">
+              ○ COMING SOON
+            </span>
+</div>
+<!-- Accordion Row 2: Deal & Finance Context -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-outline text-[18px]">payments</span>
+<div>
+<span class="font-body-md text-body-sm font-semibold text-on-surface">Deal &amp; finance context</span>
+<span class="block text-[11px] text-outline">Needs Deal Room activation</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-label-numeric-sm font-bold bg-surface-container text-outline">
+              ○ COMING SOON
+            </span>
+</div>
+</div>
+</div>
+<!-- Drawer Footer Execution CTA -->
+<div class="p-3 bg-surface-container-low flex items-center justify-between gap-3">
+<button class="flex-1 py-2 rounded-lg bg-primary text-on-primary font-body-md text-body-sm font-semibold hover:bg-primary-container shadow-xs transition-colors flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">call</span>
+          Initiate UAE Desk Call
+        </button>
+<button class="px-3 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-md text-body-sm font-medium transition-colors" title="Export lead PDF file">
+<span class="material-symbols-outlined text-[18px]">print</span>
+</button>
+</div>
+</div>
+</div>
+</div></main></div>
+</body></html>

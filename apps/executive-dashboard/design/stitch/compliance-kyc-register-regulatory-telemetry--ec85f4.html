@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-surface-variant": "#424753", "on-primary-container": "#dee6ff", "tertiary-container": "#007281", "surface-dim": "#d2d9f3", "surface-variant": "#dbe2fb", "surface-container-highest": "#dbe2fb", "error-container": "#ffdad6", "surface": "#faf8ff", "secondary-fixed-dim": "#b4c6f5", "on-secondary-fixed-variant": "#34466e", "inverse-surface": "#283043", "on-secondary": "#ffffff", "tertiary": "#005864", "secondary": "#4c5e87", "secondary-container": "#bccefe", "surface-bright": "#faf8ff", "on-error-container": "#93000a", "on-background": "#131b2d", "on-tertiary-fixed": "#001f25", "primary-fixed-dim": "#afc6ff", "inverse-on-surface": "#edf0ff", "tertiary-fixed": "#a0efff", "on-primary-fixed": "#001a43", "surface-container": "#e9edff", "tertiary-fixed-dim": "#44d8f0", "on-primary-fixed-variant": "#004398", "on-secondary-fixed": "#041a40", "secondary-fixed": "#d9e2ff", "on-tertiary-fixed-variant": "#004e59", "surface-tint": "#155ac0", "on-tertiary-container": "#b1f1ff", "on-surface": "#131b2d", "outline-variant": "#c2c6d5", "inverse-primary": "#afc6ff", "primary-fixed": "#d9e2ff", "on-primary": "#ffffff", "on-secondary-container": "#465780", "surface-container-low": "#f2f3ff", "background": "#faf8ff", "error": "#ba1a1a", "outline": "#737784", "surface-container-lowest": "#ffffff", "on-error": "#ffffff", "primary": "#004ba8", "surface-container-high": "#e1e8ff", "on-tertiary": "#ffffff", "primary-container": "#2563c9" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "margin": "1.5rem", "space-sm": "0.5rem", "space-md": "1rem", "space-xs": "0.25rem", "space-xl": "2rem", "space-lg": "1.5rem", "gutter": "1rem" }, "fontFamily": { "label-numeric-sm": [ "JetBrains Mono" ], "table-header": [ "Inter" ], "label-numeric-md": [ "JetBrains Mono" ], "body-lg": [ "Inter" ], "headline-lg": [ "Inter" ], "body-sm": [ "Inter" ], "headline-xl": [ "Inter" ], "headline-md": [ "Inter" ], "body-md": [ "Inter" ], "label-numeric-lg": [ "JetBrains Mono" ] }, "fontSize": { "label-numeric-sm": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "500" } ], "table-header": [ "0.6875rem", { "lineHeight": "0.875rem", "letterSpacing": "0.05em", "fontWeight": "600" } ], "label-numeric-md": [ "0.875rem", { "lineHeight": "1.25rem", "letterSpacing": "-0.01em", "fontWeight": "500" } ], "body-lg": [ "1rem", { "lineHeight": "1.5rem", "fontWeight": "400" } ], "headline-lg": [ "1.5rem", { "lineHeight": "2rem", "letterSpacing": "-0.015em", "fontWeight": "600" } ], "body-sm": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "400" } ], "headline-xl": [ "2rem", { "lineHeight": "2.5rem", "letterSpacing": "-0.02em", "fontWeight": "700" } ], "headline-md": [ "1.125rem", { "lineHeight": "1.5rem", "letterSpacing": "-0.01em", "fontWeight": "600" } ], "body-md": [ "0.875rem", { "lineHeight": "1.25rem", "fontWeight": "400" } ], "label-numeric-lg": [ "1.25rem", { "lineHeight": "1.5rem", "letterSpacing": "-0.02em", "fontWeight": "600" } ] } } } };</script></head><body class="bg-background font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-60 bg-[#16294F] z-50 flex flex-col justify-between border-r border-[#1E3566]"><div class="flex flex-col flex-1 min-h-0"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-tertiary-fixed-dim text-[20px]">directions_car</span><span class="font-headline-md text-headline-md tracking-wider text-white font-bold">NEXUS OS</span></div><div class="flex items-center gap-1.5"><span class="text-[10px] font-label-numeric-sm px-1.5 py-0.5 rounded bg-[#24428A] text-tertiary-fixed-dim font-bold">PRO</span><span class="text-[10px] font-label-numeric-sm text-[#8B9DC3]">v4.12.0</span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-4" data-active-classes="bg-[#24428A] text-white border-l-[3px] border-tertiary-fixed-dim font-medium"><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Work</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="todays-money-leaks" href="#"><span class="material-symbols-outlined text-[17px]">trending_down</span>Today's Money Leaks</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="overview" href="#"><span class="material-symbols-outlined text-[17px]">dashboard</span>Overview</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="leads" href="#"><span class="material-symbols-outlined text-[17px]">group</span>Leads</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[17px]">person_add</span>Record a Lead</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[17px]">hub</span>Lead Sources</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="channels" href="#"><span class="material-symbols-outlined text-[17px]">alt_route</span>Channels</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="integrations" href="#"><span class="material-symbols-outlined text-[17px]">sync_alt</span>Integrations</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="conversations" href="#"><span class="material-symbols-outlined text-[17px]">chat</span>Conversations</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="appointments" href="#"><span class="material-symbols-outlined text-[17px]">event</span>Appointments</a><a aria-current="page" class="flex items-center px-2.5 py-1.5 rounded transition-colors gap-2.5 bg-[#24428A] text-white border-l-[3px] border-tertiary-fixed-dim font-medium" data-path="compliance" href="#"><span class="material-symbols-outlined text-[17px]">verified_user</span>Compliance</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Revenue Recovery</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[17px]">currency_exchange</span>Revenue Recovery</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[17px]">person_search</span>Lead Recovery</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[17px]">health_and_safety</span>Deal Rescue</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="attribution" href="#"><span class="material-symbols-outlined text-[17px]">insights</span>Attribution</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="policy" href="#"><span class="material-symbols-outlined text-[17px]">gavel</span>Policy</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Assets</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="inventory" href="#"><span class="material-symbols-outlined text-[17px]">garage_home</span>Inventory</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="competitors" href="#"><span class="material-symbols-outlined text-[17px]">query_stats</span>Competitors</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Intelligence</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[17px]">psychology</span>Ask AI</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[17px]">account_balance</span>Finance Desk</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[17px]">contacts</span>Customer 360</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Operations</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="action-center" href="#"><span class="material-symbols-outlined text-[17px]">bolt</span>Action Center</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="campaigns" href="#"><span class="material-symbols-outlined text-[17px]">campaign</span>Campaigns</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="deals" href="#"><span class="material-symbols-outlined text-[17px]">handshake</span>Deals</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="automation" href="#"><span class="material-symbols-outlined text-[17px]">smart_toy</span>Automation</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="team" href="#"><span class="material-symbols-outlined text-[17px]">badge</span>Team</a></div></nav></div></div><div class="px-3 py-3 border-t border-[#1E3566] space-y-2 bg-[#122242] shrink-0"><div class="flex items-center justify-between px-1 text-[#8B9DC3]"><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="setup" href="#"><span class="material-symbols-outlined text-[15px]">tune</span>Setup</a><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="subscription" href="#"><span class="material-symbols-outlined text-[15px]">receipt_long</span>Plan</a><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[15px]">settings</span>Settings</a></div><div class="flex items-center justify-between p-1.5 rounded bg-[#16294F] border border-[#1E3566]"><div class="flex items-center gap-2 overflow-hidden"><div class="w-7 h-7 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-[11px] shrink-0">FM</div><div class="truncate"><p class="text-[11px] font-semibold text-white leading-tight truncate">Faris M.</p><p class="text-[9px] text-[#8B9DC3] truncate">GM / Sales Director</p></div></div><button class="text-[#8B9DC3] hover:text-white p-1 rounded transition-colors" title="Sign out" type="button"><span class="material-symbols-outlined text-[16px]">logout</span></button></div></div></aside><div class="pl-60"><header class="fixed top-0 left-60 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant z-40 flex items-center justify-between px-6"><div class="flex items-center gap-6"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-primary text-[20px]">storefront</span><div><h1 class="font-headline-md text-[13px] leading-tight font-bold text-on-surface">Demo Motors</h1><span class="font-body-sm text-[11px] text-on-surface-variant">Dubai Showroom</span></div></div><div class="h-5 w-px bg-outline-variant"></div><div class="relative"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span><input class="w-72 h-8 pl-8 pr-12 rounded border border-outline-variant bg-surface text-xs text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary" placeholder="Search VIN, lead, agreement..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm bg-surface-container rounded border border-outline-variant text-on-surface-variant">⌘K</kbd></div></div><div class="flex items-center gap-4"><div class="flex items-center gap-2 px-2.5 py-1 rounded bg-surface border border-outline-variant"><span class="text-[11px] font-label-numeric-sm text-on-surface font-semibold">AED</span><span class="text-[11px] font-label-numeric-sm text-on-surface-variant">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] border border-[#157A5B]/20"><span class="w-2 h-2 rounded-full bg-[#157A5B] animate-pulse"></span><span class="text-[10px] font-table-header uppercase tracking-wider">Live Sync</span></div><button class="relative p-1 text-on-surface-variant hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span></button><div class="flex items-center gap-2 pl-2 border-l border-outline-variant"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 w-full px-space-lg min-h-screen bg-background"><div class="flex flex-col w-full space-y-6 pb-12">
+<!-- Executive Context Header -->
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-2">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-high text-primary font-table-header uppercase text-[10px] tracking-wider">
+          Federal Compliance Desk
+        </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+          UAE Federal Decree-Law No. 45 • AML-CFT Circular 2024/09
+        </span>
+</div>
+<h2 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">
+        Compliance — UAE KYC &amp; Data Governance
+      </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-4xl mt-0.5">
+        RTA vehicle registration identity audits, AML screening, and TDRA WhatsApp consent telemetry compliant with UAE Federal Decree-Law No. 45.
+      </p>
+</div>
+<div class="flex items-center gap-2 self-start md:self-auto">
+<button class="inline-flex items-center gap-1.5 px-3 py-2 bg-surface-container-lowest hover:bg-surface-container rounded-lg text-on-surface text-body-sm font-table-header shadow-sm transition-colors" onclick="openAuditExport()" type="button">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">download_for_offline</span>
+        FIU Audit Export
+      </button>
+<button class="inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-body-sm font-semibold shadow-sm transition-colors" onclick="triggerBatchScreening()" type="button">
+<span class="material-symbols-outlined text-[16px]">verified</span>
+        Batch AML Sync
+      </button>
+</div>
+</div>
+<!-- Key Telemetry Metrics Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Metric 1: Verified KYC Files -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div>
+<span class="text-on-surface-variant font-table-header text-table-header uppercase">Verified KYC Files</span>
+<div class="flex items-baseline gap-2 mt-2">
+<span class="font-label-numeric-lg text-[2rem] leading-none text-on-surface font-bold">142</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">/ 146 total</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase">
+          97.3% Active
+        </span>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between text-on-surface-variant">
+<span class="text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-[#157A5B]">check_circle</span>
+          UAE PASS Verified
+        </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">138 automated</span>
+</div>
+</div>
+<!-- Metric 2: Missing ID / Action Needed -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div>
+<span class="text-on-surface-variant font-table-header text-table-header uppercase">Missing ID / Action Needed</span>
+<div class="flex items-baseline gap-2 mt-2">
+<span class="font-label-numeric-lg text-[2rem] leading-none text-[#C8321F] font-bold">4</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">critical blocks</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#FDECEA] text-[#C8321F] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase animate-pulse">
+          HOT ACTION
+        </span>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between text-on-surface-variant">
+<span class="text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-[#C8321F]">error</span>
+          RTA Gate Locked
+        </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#C8321F] font-bold">AED 2.45M Deals</span>
+</div>
+</div>
+<!-- Metric 3: Valid Opt-in Consent -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div>
+<span class="text-on-surface-variant font-table-header text-table-header uppercase">Valid Opt-in Consent</span>
+<div class="flex items-baseline gap-2 mt-2">
+<span class="font-label-numeric-lg text-[2rem] leading-none text-on-surface font-bold">1,840</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">recipients</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-surface-container-high text-primary font-label-numeric-sm text-label-numeric-sm font-semibold uppercase">
+          99.1% Opt-In
+        </span>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between text-on-surface-variant">
+<span class="text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">fingerprint</span>
+          TDRA Hash Logged
+        </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">SHA-256</span>
+</div>
+</div>
+<!-- Metric 4: Consent Revocations -->
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div>
+<span class="text-on-surface-variant font-table-header text-table-header uppercase">Consent Revocations</span>
+<div class="flex items-baseline gap-2 mt-2">
+<span class="font-label-numeric-lg text-[2rem] leading-none text-on-surface font-bold">3</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">MTD opt-outs</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase">
+          0 Fines
+        </span>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between text-on-surface-variant">
+<span class="text-body-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-[#157A5B]">shield_with_heart</span>
+          TDRA Infraction Rate
+        </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157A5B] font-bold">0.00%</span>
+</div>
+</div>
+</div>
+<!-- Main Multi-Column Split Area: Table and Detail Drawer -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+<!-- Left Area (8 Cols on XL): KYC Register & Voided Sections -->
+<div class="xl:col-span-8 space-y-6">
+<!-- Primary Section: Genuine KYC Submissions -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">badge</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface leading-snug">
+                KYC Register — Genuine Submissions
+              </h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Live regulatory repository for vehicle ownership transfers &amp; financing contracts.
+              </p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[14px] text-on-surface-variant">search</span>
+<input class="w-48 sm:w-56 h-8 pl-8 pr-3 text-body-sm bg-surface-container-low rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:bg-surface-container-lowest" placeholder="Filter Dossier #, Name, VIN..." type="text"/>
+</div>
+<button class="p-1.5 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface transition-colors" title="Filter columns" type="button">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+</div>
+<!-- Dense Tabular Surface -->
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-table-header text-table-header uppercase">
+<th class="py-2.5 px-4 font-semibold">File Ref</th>
+<th class="py-2.5 px-4 font-semibold">Customer Legal Name</th>
+<th class="py-2.5 px-4 font-semibold">Nationality / Document</th>
+<th class="py-2.5 px-4 font-semibold">Target Vehicle</th>
+<th class="py-2.5 px-4 font-semibold">Status</th>
+<th class="py-2.5 px-4 font-semibold">AML Screen</th>
+<th class="py-2.5 px-4 font-semibold text-right">Timestamp</th>
+<th class="py-2.5 px-4 font-semibold text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low font-body-sm text-body-sm text-on-surface">
+<!-- Active Highlighted Row: KYC-8832 (Linked to Drawer) -->
+<tr class="bg-surface-container/60 hover:bg-surface-container transition-colors cursor-pointer" onclick="selectKYCDossier('KYC-8832')">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                  #KYC-8832
+                </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface leading-snug">Youssef K. Al-Mansoor</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">UAE National</span>
+</td>
+<td class="py-3 px-4">
+<div class="text-on-surface font-medium">Emirates ID (EID)</div>
+<span class="text-[11px] text-[#C8321F] font-semibold">Reverse Chip Missing</span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface text-[11px]">#DXB-3304</span>
+<div class="text-[11px] text-on-surface-variant mt-0.5">Mercedes S500 Maybach</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#FDECEA] text-[#C8321F] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    MISSING EID COPY
+                  </span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-on-surface">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>
+                    CLEARED (UAE FIU)
+                  </span>
+</td>
+<td class="py-3 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+                  24 Oct, 10:48 GST
+                </td>
+<td class="py-3 px-4 text-right">
+<button class="px-2.5 py-1 rounded bg-primary text-on-primary font-medium text-[11px] hover:bg-primary-container transition-colors" type="button">
+                    Review
+                  </button>
+</td>
+</tr>
+<!-- Row 2: Sheikh Mansoor -->
+<tr class="hover:bg-surface-container-low/50 transition-colors cursor-pointer" onclick="selectKYCDossier('KYC-8819')">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+                  #KYC-8819
+                </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface leading-snug">Sheikh Mansoor Al-Nahyan</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">PEP Tier-1 Screened</span>
+</td>
+<td class="py-3 px-4">
+<div class="text-on-surface">Emirates ID (UAE PASS)</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">784-1981-*******-1</span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface text-[11px]">#DXB-7721</span>
+<div class="text-[11px] text-on-surface-variant mt-0.5">Porsche 911 GT3 RS</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    VERIFIED
+                  </span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#157A5B]">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+                    PASSED (UN &amp; UAE)
+                  </span>
+</td>
+<td class="py-3 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+                  24 Oct, 09:15 GST
+                </td>
+<td class="py-3 px-4 text-right">
+<button class="px-2.5 py-1 rounded bg-surface-container text-on-surface font-medium text-[11px] hover:bg-surface-container-high transition-colors" type="button">
+                    Dossier
+                  </button>
+</td>
+</tr>
+<!-- Row 3: Elena Rostova -->
+<tr class="hover:bg-surface-container-low/50 transition-colors cursor-pointer" onclick="selectKYCDossier('KYC-8804')">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+                  #KYC-8804
+                </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface leading-snug">Elena Rostova</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Golden Visa Holder</span>
+</td>
+<td class="py-3 px-4">
+<div class="text-on-surface">Passport + UAE Residence</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Exp: 14 Nov 2032</span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface text-[11px]">#DXB-9022</span>
+<div class="text-[11px] text-on-surface-variant mt-0.5">Range Rover SV Autobiography</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    VERIFIED
+                  </span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-[#157A5B]">
+<span class="material-symbols-outlined text-[13px]">verified</span>
+                    PASSED (UN &amp; UAE)
+                  </span>
+</td>
+<td class="py-3 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+                  23 Oct, 17:42 GST
+                </td>
+<td class="py-3 px-4 text-right">
+<button class="px-2.5 py-1 rounded bg-surface-container text-on-surface font-medium text-[11px] hover:bg-surface-container-high transition-colors" type="button">
+                    Dossier
+                  </button>
+</td>
+</tr>
+<!-- Row 4: Dr. Tariq Al-Nuaimi (Warning status) -->
+<tr class="hover:bg-surface-container-low/50 transition-colors cursor-pointer" onclick="selectKYCDossier('KYC-8798')">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+                  #KYC-8798
+                </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface leading-snug">Dr. Tariq Al-Nuaimi</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Corporate Medical Partner</span>
+</td>
+<td class="py-3 px-4">
+<div class="text-on-surface">Trade License + EID</div>
+<span class="text-[11px] text-[#96570A] font-semibold">Visa Renewal In Progress</span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface text-[11px]">#DXB-6110</span>
+<div class="text-[11px] text-on-surface-variant mt-0.5">BMW M8 Competition</div>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#FEF3E2] text-[#96570A] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    EXPIRED VISA
+                  </span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-[#96570A]">
+<span class="material-symbols-outlined text-[13px]">pending</span>
+                    MANUAL REVIEW
+                  </span>
+</td>
+<td class="py-3 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+                  23 Oct, 14:10 GST
+                </td>
+<td class="py-3 px-4 text-right">
+<button class="px-2.5 py-1 rounded bg-surface-container text-on-surface font-medium text-[11px] hover:bg-surface-container-high transition-colors" type="button">
+                    Re-upload
+                  </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-4 py-3 bg-surface-container-low/40 flex items-center justify-between text-on-surface-variant font-body-sm text-body-sm">
+<span>Showing 4 of 146 registered identity packages</span>
+<div class="flex items-center gap-1">
+<button class="px-2 py-1 rounded hover:bg-surface-container text-on-surface disabled:opacity-40" disabled="" type="button">Previous</button>
+<span class="font-label-numeric-sm px-2">Page 1 of 37</span>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-on-surface" type="button">Next</button>
+</div>
+</div>
+</div>
+<!-- Voided Disqualified KYC Submissions -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="p-4 flex items-center justify-between bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-[#93000a]/10 text-[#93000a] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface leading-snug">
+                Voided (Not KYC Submissions)
+              </h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Quarantined erroneous payloads, corrupted optical scans, and non-identifying documents scheduled for crypto-shredding.
+              </p>
+</div>
+</div>
+<span class="inline-flex items-center gap-1 text-[11px] font-label-numeric-sm text-on-surface-variant bg-surface-container px-2 py-1 rounded">
+<span class="material-symbols-outlined text-[13px] text-primary">lock_reset</span>
+            Auto-Purge Pipeline
+          </span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-table-header text-table-header uppercase">
+<th class="py-2 px-4 font-semibold">Incident Ref</th>
+<th class="py-2 px-4 font-semibold">Uploader / Session</th>
+<th class="py-2 px-4 font-semibold">Disqualification Reason</th>
+<th class="py-2 px-4 font-semibold">File Footprint</th>
+<th class="py-2 px-4 font-semibold text-right">Retention Enforcement</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low font-body-sm text-body-sm text-on-surface">
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-2.5 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                  #VOID-1049
+                </td>
+<td class="py-2.5 px-4">
+<div class="font-medium text-on-surface leading-snug">Kiosk Scanner #02 (Floor Desk)</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Sales Rep: Tariq M.</span>
+</td>
+<td class="py-2.5 px-4 text-[#C8321F] font-medium">
+                  Non-identifying document (Vehicle Spec Sheet uploaded as EID)
+                </td>
+<td class="py-2.5 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+                  PDF • 8.4 MB (Porsche_Brochure_2024.pdf)
+                </td>
+<td class="py-2.5 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface whitespace-nowrap">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#ffdad6] text-[#93000a] font-semibold">
+<span class="material-symbols-outlined text-[12px]">schedule</span>
+                    Crypto-shred in 18h
+                  </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-2.5 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                  #VOID-1048
+                </td>
+<td class="py-2.5 px-4">
+<div class="font-medium text-on-surface leading-snug">Public WhatsApp Bot (+971 50 119...)</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Inbound Web Portal #WP-901</span>
+</td>
+<td class="py-2.5 px-4 text-[#96570A] font-medium">
+                  Corrupted image payload (Zero-byte header / Broken Base64)
+                </td>
+<td class="py-2.5 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+                  JPG • 0 KB (IMG_38402.jpeg)
+                </td>
+<td class="py-2.5 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface whitespace-nowrap">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#ffdad6] text-[#93000a] font-semibold">
+<span class="material-symbols-outlined text-[12px]">schedule</span>
+                    Crypto-shred in 22h
+                  </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-2.5 px-4 font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                  #VOID-1047
+                </td>
+<td class="py-2.5 px-4">
+<div class="font-medium text-on-surface leading-snug">Finance Desk OCR Daemon</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Lead #LD-4412 Duplicate</span>
+</td>
+<td class="py-2.5 px-4 text-on-surface font-medium">
+                  Duplicate KYC request payload for existing verified #KYC-8810
+                </td>
+<td class="py-2.5 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+                  PNG • 2.1 MB (Passport_Scan.png)
+                </td>
+<td class="py-2.5 px-4 text-right font-label-numeric-sm text-[11px] text-on-surface whitespace-nowrap">
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-semibold">
+<span class="material-symbols-outlined text-[12px]">check</span>
+                    Shredded
+                  </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Right Area (4 Cols on XL): Interactive Document-Detail Drawer & Quick Action Desk -->
+<div class="xl:col-span-4 space-y-6">
+<!-- Document-Detail Inspector (Open for #KYC-8832) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-4 sticky top-16">
+<div class="flex items-center justify-between pb-3">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-[#C8321F] animate-ping"></span>
+<span class="font-table-header uppercase text-table-header text-on-surface font-semibold tracking-wider">
+              Document Detail Inspector
+            </span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-primary px-2 py-0.5 rounded bg-primary-fixed">
+            #KYC-8832
+          </span>
+</div>
+<!-- Document Preview Visual Component -->
+<div class="mt-2 rounded-lg bg-surface-container-low p-3">
+<div class="flex items-center justify-between mb-2">
+<span class="text-body-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">credit_card</span>
+              UAE Emirates ID Card (EID)
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-[#C8321F] font-semibold bg-[#FDECEA] px-1.5 py-0.5 rounded">
+              DEFECT DETECTED
+            </span>
+</div>
+<!-- Preview Frame with Photographic Placeholder -->
+<div class="relative w-full h-44 rounded-lg overflow-hidden bg-surface-container-high flex flex-col justify-between p-3 text-on-surface">
+<!-- Simulated ID Card Specimen Overlay -->
+<div class="absolute inset-0 bg-cover bg-center opacity-25 filter blur-[0.5px]" data-alt="A close-up shot of an official United Arab Emirates resident identity smartcard resting on a clean brushed metal desk under cool corporate LED office lighting, showing holographic security patterns and high-stakes financial documentation." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBjmA3dKYP3TWbOa9t3HhYNcjJU9zuySJn5-Zn41MPIQmzECKTaetGc_2uY13phr3fniqvD4UcpnY51GrZUG6hJsiQZVPC1S8Yywfk27Kd0a-IoIEtv-1Ykc_y-hSVBNE4moqy-0ihzSTwQASDplsVI036EZqcVZcRZsJfgpQRjvT7icphWzsW2OuoAuMW1DEtLPdO73NCW114ZVZxCs6I-2mm7kemi0Pdpn43RjQ')"></div>
+<div class="relative z-10 flex items-start justify-between">
+<div class="flex items-center gap-1.5">
+<span class="text-[10px] font-label-numeric-sm uppercase bg-surface-container-lowest/90 px-1.5 py-0.5 rounded text-on-surface font-bold">
+                  FRONT: VERIFIED (UAE PASS)
+                </span>
+</div>
+<span class="material-symbols-outlined text-[18px] text-[#157A5B]">verified_user</span>
+</div>
+<!-- Red Outlined Defect Box -->
+<div class="relative z-10 bg-error-container/85 rounded p-2 text-on-error-container backdrop-blur-sm">
+<div class="flex items-center gap-1 font-semibold text-[11px]">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                Back Side Optical Scan Missing
+              </div>
+<p class="text-[10px] font-body-sm leading-tight mt-0.5 text-on-error-container">
+                Smart chip serial and expiry watermark could not be validated by automated OCR. RTA transfer locked.
+              </p>
+</div>
+</div>
+</div>
+<!-- Deal & Customer Metadata Box -->
+<div class="mt-4 space-y-2.5 font-body-sm text-body-sm">
+<div class="flex justify-between items-center py-1">
+<span class="text-on-surface-variant">Customer Entity</span>
+<span class="font-medium text-on-surface">Youssef K. Al-Mansoor</span>
+</div>
+<div class="flex justify-between items-center py-1">
+<span class="text-on-surface-variant">Pending Sales Agreement</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-primary">#D-3304 (AED 1,180,000)</span>
+</div>
+<div class="flex justify-between items-center py-1">
+<span class="text-on-surface-variant">Vehicle Assignment</span>
+<span class="font-medium text-on-surface">Mercedes S500 Maybach</span>
+</div>
+<div class="flex justify-between items-center py-1">
+<span class="text-on-surface-variant">Assigned F&amp;I Specialist</span>
+<span class="font-medium text-on-surface">Zayd Qasim</span>
+</div>
+</div>
+<!-- Immediate Floor Action Desk -->
+<div class="mt-5 space-y-2">
+<button class="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-primary hover:bg-primary-container text-on-primary rounded-lg text-body-sm font-semibold shadow-sm transition-colors" onclick="dispatchUaePassRequest()" type="button">
+<span class="material-symbols-outlined text-[18px]">cell_tower</span>
+            Dispatch UAE PASS Instant Request
+          </button>
+<button class="w-full flex items-center justify-center gap-2 py-2 px-3 bg-surface-container-low hover:bg-surface-container text-on-surface rounded-lg text-body-sm font-medium transition-colors" onclick="sendWhatsappManualLink()" type="button">
+<span class="material-symbols-outlined text-[18px] text-[#157A5B]">sms</span>
+            Send WhatsApp Secure Re-upload Link
+          </button>
+<div class="text-center pt-1">
+<span class="text-[11px] font-label-numeric-sm text-on-surface-variant">
+              SMS + In-App Push will expire in 120 minutes
+            </span>
+</div>
+</div>
+<!-- Security & Legal Notice -->
+<div class="mt-4 p-2.5 rounded bg-surface-container text-on-surface-variant text-[11px] leading-relaxed">
+<div class="flex items-center gap-1 font-semibold text-on-surface mb-0.5">
+<span class="material-symbols-outlined text-[13px] text-primary">shield</span>
+            UAE AML/CFT Directives Compliant
+          </div>
+          Automated identity verification logs are digitally timestamped and signed by the Demo Motors HSM Root Authority.
+        </div>
+</div>
+</div>
+</div>
+<!-- Split Panels Row: Retention Breakdown (Left) & Real-Time Audit Activity Stream (Right) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Panel (5 Cols): Retention breakdown -->
+<div class="lg:col-span-5 bg-surface-container-lowest rounded-xl shadow-sm p-4 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">database</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Retention Breakdown</h3>
+</div>
+<span class="font-label-numeric-sm text-[11px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface font-semibold">
+            UAE Data Sovereign
+          </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+          Statutory storage life-cycle governed by UAE Financial Intelligence Unit (FIU) 5-year retention mandate.
+        </p>
+<!-- Visual Segmented Progress Bar -->
+<div class="space-y-3">
+<div class="w-full h-3 rounded-full bg-surface-container-low overflow-hidden flex">
+<div class="bg-primary" style="width: 62%" title="Active Deal KYC (62%)"></div>
+<div class="bg-[#007281]" style="width: 35%" title="Completed Archives (35%)"></div>
+<div class="bg-[#ba1a1a]" style="width: 3%" title="Voided / Expired (3%)"></div>
+</div>
+<!-- Retention Bars Detail List -->
+<div class="space-y-2.5 pt-1">
+<div class="p-2.5 rounded-lg bg-surface-container-low/50 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="w-3 h-3 rounded-sm bg-primary shrink-0"></span>
+<div>
+<div class="font-medium text-body-sm text-on-surface">Active Deal KYC</div>
+<span class="text-[11px] text-on-surface-variant">Retained 5 yrs per AML/CFT</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">89 Files</span>
+<div class="text-[11px] font-label-numeric-sm text-on-surface-variant">62.0%</div>
+</div>
+</div>
+<div class="p-2.5 rounded-lg bg-surface-container-low/50 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="w-3 h-3 rounded-sm bg-[#007281] shrink-0"></span>
+<div>
+<div class="font-medium text-body-sm text-on-surface">Completed Deal Archives</div>
+<span class="text-[11px] text-on-surface-variant">Cold compressed tier</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">53 Files</span>
+<div class="text-[11px] font-label-numeric-sm text-on-surface-variant">38.0%</div>
+</div>
+</div>
+<div class="p-2.5 rounded-lg bg-surface-container-low/50 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="w-3 h-3 rounded-sm bg-[#ba1a1a] shrink-0"></span>
+<div>
+<div class="font-medium text-body-sm text-on-surface">Voided / Expired Staging</div>
+<span class="text-[11px] text-on-surface-variant">Auto-purge pipeline active</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-[#ba1a1a]">4 Files</span>
+<div class="text-[11px] font-label-numeric-sm text-[#ba1a1a]">Purge in 7d</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Infrastructure Security Callout -->
+<div class="mt-4 pt-3 flex items-center gap-3 bg-surface-container rounded-lg p-2.5">
+<span class="material-symbols-outlined text-[20px] text-primary">security</span>
+<div class="text-[11px] text-on-surface-variant leading-tight">
+<span class="font-semibold text-on-surface">Encryption Standard:</span> AES-256 HSM storage with Dubai local data residency (TDRA Cloud Tier-IV).
+        </div>
+</div>
+</div>
+<!-- Right Panel (7 Cols): KYC Activity Audit Stream -->
+<div class="lg:col-span-7 bg-surface-container-lowest rounded-xl shadow-sm p-4 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">history_edu</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">KYC Activity — Live Audit Stream</h3>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157A5B] animate-pulse"></span>
+<span class="font-label-numeric-sm text-[10px] font-semibold uppercase">Real-Time Sync</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+          Immutable chronologic ledger of UAE PASS callbacks, OCR classifications, and AML screenings.
+        </p>
+<!-- Chronological Ledger List -->
+<div class="space-y-3">
+<!-- Item 1 -->
+<div class="flex items-start gap-3 p-2.5 rounded-lg bg-surface-container-low/40">
+<span class="font-label-numeric-sm text-[11px] font-semibold text-on-surface-variant bg-surface-container-lowest px-2 py-1 rounded whitespace-nowrap shadow-xs">
+              11:15:02 GST
+            </span>
+<div class="flex-1 min-w-0">
+<div class="text-body-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#157A5B]"></span>
+                Biometric Identity Confirmed • UAE PASS API
+              </div>
+<p class="text-[12px] text-on-surface-variant mt-0.5">
+                Emirates ID facial verification matched with 99.8% confidence for <span class="font-semibold text-on-surface">Sheikh Mansoor Al-Nahyan</span> (#KYC-8819).
+              </p>
+</div>
+<span class="material-symbols-outlined text-[16px] text-[#157A5B]">done_all</span>
+</div>
+<!-- Item 2 -->
+<div class="flex items-start gap-3 p-2.5 rounded-lg bg-surface-container-low/40">
+<span class="font-label-numeric-sm text-[11px] font-semibold text-on-surface-variant bg-surface-container-lowest px-2 py-1 rounded whitespace-nowrap shadow-xs">
+              10:48:19 GST
+            </span>
+<div class="flex-1 min-w-0">
+<div class="text-body-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#C8321F]"></span>
+                Optical Defect Flagged • OCR Engine v4
+              </div>
+<p class="text-[12px] text-on-surface-variant mt-0.5">
+                File <span class="font-label-numeric-sm font-semibold text-primary">#KYC-8832</span> flagged: EID reverse side missing during Mercedes S500 contracting. Auto notification dispatched.
+              </p>
+</div>
+<span class="material-symbols-outlined text-[16px] text-[#C8321F]">flag</span>
+</div>
+<!-- Item 3 -->
+<div class="flex items-start gap-3 p-2.5 rounded-lg bg-surface-container-low/40">
+<span class="font-label-numeric-sm text-[11px] font-semibold text-on-surface-variant bg-surface-container-lowest px-2 py-1 rounded whitespace-nowrap shadow-xs">
+              09:22:11 GST
+            </span>
+<div class="flex-1 min-w-0">
+<div class="text-body-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-on-surface-variant"></span>
+                Cryptographic Shredding Executed
+              </div>
+<p class="text-[12px] text-on-surface-variant mt-0.5">
+                Document shredding executed for voided batch <span class="font-label-numeric-sm font-semibold text-on-surface">#VOID-091</span>. SHA-256 deletion receipt committed to audit log.
+              </p>
+</div>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">delete_forever</span>
+</div>
+<!-- Item 4 -->
+<div class="flex items-start gap-3 p-2.5 rounded-lg bg-surface-container-low/40">
+<span class="font-label-numeric-sm text-[11px] font-semibold text-on-surface-variant bg-surface-container-lowest px-2 py-1 rounded whitespace-nowrap shadow-xs">
+              08:30:45 GST
+            </span>
+<div class="flex-1 min-w-0">
+<div class="text-body-sm font-medium text-on-surface flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#157A5B]"></span>
+                UN &amp; UAE Consolidated Sanctions List Checked
+              </div>
+<p class="text-[12px] text-on-surface-variant mt-0.5">
+                Zero hits returned across 142 active dealer accounts in scheduled dawn screening run.
+              </p>
+</div>
+<span class="material-symbols-outlined text-[16px] text-[#157A5B]">policy</span>
+</div>
+</div>
+</div>
+<div class="mt-4 pt-3 flex items-center justify-between text-body-sm text-on-surface-variant">
+<span>Log persistence: 180 days active • CloudWatch stream</span>
+<button class="font-label-numeric-sm text-[11px] text-primary hover:underline font-semibold" type="button">
+          Export Raw Syslog (.ndjson)
+        </button>
+</div>
+</div>
+</div>
+<!-- WhatsApp Consent: Current Position and History Table -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-surface-container-lowest">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-[#157A5B]/10 text-[#157A5B] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">chat</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface leading-snug">
+            WhatsApp Consent: Current Position &amp; History
+          </h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            TDRA electronic communications compliance register for Dubai showroom client outreach and delivery alerts.
+          </p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[11px] font-semibold">
+<span class="w-2 h-2 rounded-full bg-[#157A5B]"></span>
+          Zero TDRA Infraction Notices
+        </span>
+</div>
+</div>
+<!-- Table: Consent Telemetry -->
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-table-header text-table-header uppercase">
+<th class="py-2.5 px-4 font-semibold">Customer Phone</th>
+<th class="py-2.5 px-4 font-semibold">Opt-in Source</th>
+<th class="py-2.5 px-4 font-semibold">Consent Status</th>
+<th class="py-2.5 px-4 font-semibold">Recorded Timestamp</th>
+<th class="py-2.5 px-4 font-semibold">TDRA Audit Trail Hash</th>
+<th class="py-2.5 px-4 font-semibold text-right">Channel Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low font-body-sm text-body-sm text-on-surface">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+              +971 50 882 1920
+            </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">Showroom Reception Form Paperless</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">iPad Desk #03 • Stylus Signed</span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                ACTIVE OPT-IN
+              </span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+              24 Oct 2024, 09:12 GST
+            </td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-mono">0x8f2a...c89e</span>
+</td>
+<td class="py-3 px-4 text-right">
+<button class="text-body-sm text-primary hover:underline font-semibold" onclick="viewAuditTrail('0x8f2a')" type="button">
+                Verify Proof
+              </button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+              +971 52 419 7701
+            </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">Inbound WhatsApp Handshake</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Trigger: "START" via Meta Cloud API</span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                ACTIVE OPT-IN
+              </span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+              23 Oct 2024, 16:30 GST
+            </td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-mono">0x4b11...90da</span>
+</td>
+<td class="py-3 px-4 text-right">
+<button class="text-body-sm text-primary hover:underline font-semibold" onclick="viewAuditTrail('0x4b11')" type="button">
+                Verify Proof
+              </button>
+</td>
+</tr>
+<!-- Row 3: Revocation / Opt-out -->
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+              +971 55 904 3328
+            </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">Outbound Marketing Prompt</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Trigger: "STOP" text received</span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E4E6EC] text-[#3F4757] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                STOP — OPTED OUT
+              </span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+              22 Oct 2024, 11:05 GST
+            </td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-mono">0xe190...f31a</span>
+</td>
+<td class="py-3 px-4 text-right">
+<span class="text-[11px] text-[#3F4757] font-semibold px-2 py-1 bg-surface-container rounded">
+                Blacklisted
+              </span>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low/40">
+<td class="py-3 px-4 font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">
+              +971 50 671 0092
+            </td>
+<td class="py-3 px-4">
+<div class="font-medium text-on-surface">Website Lead Form Checkbox</div>
+<span class="text-[11px] text-on-surface-variant font-label-numeric-sm">Porsche 911 Configurator • IP 94.200.x.x</span>
+</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                ACTIVE OPT-IN
+              </span>
+</td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant whitespace-nowrap">
+              21 Oct 2024, 19:40 GST
+            </td>
+<td class="py-3 px-4 font-label-numeric-sm text-[11px] text-on-surface-variant">
+<span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-mono">0x7c99...aa02</span>
+</td>
+<td class="py-3 px-4 text-right">
+<button class="text-body-sm text-primary hover:underline font-semibold" onclick="viewAuditTrail('0x7c99')" type="button">
+                Verify Proof
+              </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Telemetry metadata -->
+<div class="px-4 py-3 bg-surface-container-low/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-on-surface-variant font-body-sm text-body-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary">verified</span>
+<span>Meta Cloud Webhook Synchronized • Real-time webhook latency: 142ms</span>
+</div>
+<div class="font-label-numeric-sm text-[11px] text-on-surface">
+        Showing 4 of 1,840 Consent Ledger Entries
+      </div>
+</div>
+</div>
+<!-- Operational Bottom Toast Notification Container (Hidden by default, triggered via JS) -->
+<div class="fixed bottom-6 right-6 z-50 bg-[#16294F] text-white px-4 py-3 rounded-xl shadow-lg border border-[#1E3566] hidden items-center gap-3" id="complianceNotification">
+<span class="material-symbols-outlined text-tertiary-fixed-dim text-[20px]">check_circle</span>
+<div>
+<p class="text-[13px] font-semibold leading-tight text-white" id="complianceToastText">Action Executed</p>
+<p class="text-[11px] text-[#8B9DC3] font-label-numeric-sm">Audit trail hash appended to TDRA chain</p>
+</div>
+</div>
+</div>
+<script>
+  function showNotification(msg) {
+    const el = document.getElementById('complianceNotification');
+    const txt = document.getElementById('complianceToastText');
+    if (el && txt) {
+      txt.innerText = msg;
+      el.classList.remove('hidden');
+      el.classList.add('flex');
+      setTimeout(() => {
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+      }, 4000);
+    }
+  }
+
+  function selectKYCDossier(refId) {
+    showNotification('Opened identity dossier ' + refId + ' in live regulatory inspection view.');
+  }
+
+  function dispatchUaePassRequest() {
+    showNotification('Dispatched instant UAE PASS biometric authentication request to Youssef K. (+971 50 882 1920).');
+  }
+
+  function sendWhatsappManualLink() {
+    showNotification('WhatsApp re-upload token generated. Direct upload link delivered via TDRA-registered bot.');
+  }
+
+  function triggerBatchScreening() {
+    showNotification('Batch AML & Sanctions screening executed against UN & UAE local watchlists.');
+  }
+
+  function openAuditExport() {
+    showNotification('Compiling UAE FIU statutory XML audit package (AES-256 encrypted)...');
+  }
+
+  function viewAuditTrail(hash) {
+    showNotification('Cryptographic verification successful: Proof ' + hash + ' verified against TDRA ledger.');
+  }
+</script></main></div></body></html>

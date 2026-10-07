@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"inverse-primary":"#afc6ff","surface-variant":"#dbe2fb","on-primary":"#ffffff","surface-container-highest":"#dbe2fb","outline":"#737784","on-secondary-fixed":"#041a40","error-container":"#ffdad6","on-primary-container":"#dee6ff","outline-variant":"#c2c6d5","surface":"#faf8ff","on-secondary":"#ffffff","surface-tint":"#155ac0","surface-container-high":"#e1e8ff","secondary-fixed":"#d9e2ff","on-tertiary-fixed":"#001f25","surface-container-low":"#f2f3ff","surface-bright":"#faf8ff","on-surface":"#131b2d","surface-container-lowest":"#ffffff","on-tertiary-container":"#b1f1ff","on-error":"#ffffff","inverse-on-surface":"#edf0ff","background":"#faf8ff","error":"#ba1a1a","primary-fixed":"#d9e2ff","tertiary-fixed":"#a0efff","on-background":"#131b2d","on-tertiary-fixed-variant":"#004e59","surface-dim":"#d2d9f3","on-primary-fixed-variant":"#004398","on-surface-variant":"#424753","secondary-fixed-dim":"#b4c6f5","on-error-container":"#93000a","secondary":"#4c5e87","on-secondary-fixed-variant":"#34466e","primary":"#004ba8","primary-container":"#2563c9","on-secondary-container":"#465780","on-tertiary":"#ffffff","secondary-container":"#bccefe","tertiary":"#005864","surface-container":"#e9edff","tertiary-container":"#007281","inverse-surface":"#283043","primary-fixed-dim":"#afc6ff","tertiary-fixed-dim":"#44d8f0","on-primary-fixed":"#001a43"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"gutter":"1rem","space-xl":"2rem","margin":"1.5rem","space-md":"1rem","space-lg":"1.5rem","space-xs":"0.25rem","space-sm":"0.5rem"},"fontFamily":{"body-sm":["Inter"],"headline-xl":["Inter"],"body-lg":["Inter"],"body-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"table-header":["Inter"],"headline-lg":["Inter"],"headline-md":["Inter"],"label-numeric-md":["JetBrains Mono"],"label-numeric-sm":["JetBrains Mono"]},"fontSize":{"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}]}}}};</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col h-full overflow-hidden"><div class="h-16 px-space-lg flex items-center justify-between bg-surface-container-lowest"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary font-headline-md text-headline-md font-bold">N</div><div class="flex flex-col"><span class="font-headline-md text-headline-md tracking-tight font-bold text-on-surface leading-none">NEXUS OS</span><span class="font-table-header text-table-header text-outline uppercase tracking-wider mt-0.5">Dealership OS</span></div></div><span class="font-label-numeric-sm text-label-numeric-sm px-space-xs py-0.5 rounded bg-surface-container text-secondary font-semibold">v4.2</span></div><div class="flex-1 overflow-y-auto px-space-sm py-space-sm"><nav class="space-y-space-md" data-active-classes="bg-primary-container text-on-primary font-semibold rounded"><div class="space-y-1"><span class="px-space-sm font-table-header text-table-header text-outline uppercase tracking-wider block mb-1">PRIMARY NAVIGATION</span><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="executive-daily-briefing" href="#"><span class="material-symbols-outlined text-[18px]">space_dashboard</span>Executive Daily Briefing</a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="todays-money-leaks" href="#"><span class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[18px]">warning</span>Today's Money Leaks</span><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-semibold">7 CRIT</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="overview" href="#"><span class="material-symbols-outlined text-[18px]">analytics</span>Overview</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="leads-pipeline" href="#"><span class="material-symbols-outlined text-[18px]">filter_alt</span>Leads Pipeline</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[18px]">person_add</span>Record a Lead</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="deals-and-closing-desk" href="#"><span class="material-symbols-outlined text-[18px]">handshake</span>Deals & Closing Desk</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="my-queue" href="#"><span class="material-symbols-outlined text-[18px]">inbox</span>My Queue</a></div><div class="space-y-1"><span class="px-space-sm font-table-header text-table-header text-outline uppercase tracking-wider block mb-1">WORK & REVENUE</span><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="action-center" href="#"><span class="material-symbols-outlined text-[18px]">bolt</span>Action Center</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="revenue-recovery-desk" href="#"><span class="material-symbols-outlined text-[18px]">currency_exchange</span>Revenue Recovery Desk</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="lead-recovery-desk" href="#"><span class="material-symbols-outlined text-[18px]">history_toggle_off</span>Lead Recovery Desk</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="deal-rescue-desk" href="#"><span class="material-symbols-outlined text-[18px]">crisis_alert</span>Deal Rescue Desk</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="exceptions" href="#"><span class="material-symbols-outlined text-[18px]">rule</span>Exceptions</a></div><div class="space-y-1"><span class="px-space-sm font-table-header text-table-header text-outline uppercase tracking-wider block mb-1">INTELLIGENCE & ASSETS</span><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="inventory-and-profit-sentinel" href="#"><span class="material-symbols-outlined text-[18px]">directions_car</span>Inventory & Profit Sentinel</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="reconditioning-tracker" href="#"><span class="material-symbols-outlined text-[18px]">build</span>Reconditioning Tracker</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[18px]">contact_page</span>Customer 360</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[18px]">account_balance</span>Finance Desk</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="ask-ai-intelligence" href="#"><span class="material-symbols-outlined text-[18px]">smart_toy</span>Ask AI Intelligence</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="competitor-matrix" href="#"><span class="material-symbols-outlined text-[18px]">monitoring</span>Competitor Matrix</a></div><div class="space-y-1"><span class="px-space-sm font-table-header text-table-header text-outline uppercase tracking-wider block mb-1">INFRASTRUCTURE & COMPLIANCE</span><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="channels-and-telephony" href="#"><span class="material-symbols-outlined text-[18px]">call</span>Channels & Telephony</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[18px]">hub</span>Lead Sources</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="integrations-and-webhooks" href="#"><span class="material-symbols-outlined text-[18px]">integration_instructions</span>Integrations & Webhooks</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="rta-and-uae-compliance" href="#"><span class="material-symbols-outlined text-[18px]">verified_user</span>RTA & UAE Compliance</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="automation-triggers" href="#"><span class="material-symbols-outlined text-[18px]">precision_manufacturing</span>Automation Triggers</a></div><div class="space-y-1"><span class="px-space-sm font-table-header text-table-header text-outline uppercase tracking-wider block mb-1">SETTINGS</span><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="workspace-and-system-configuration" href="#"><span class="material-symbols-outlined text-[18px]">tune</span>Workspace & System Configuration</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="team-and-showroom-roster" href="#"><span class="material-symbols-outlined text-[18px]">badge</span>Team & Showroom Roster</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="group-and-branches" href="#"><span class="material-symbols-outlined text-[18px]">apartment</span>Group & Branches</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="markets-and-localization" href="#"><span class="material-symbols-outlined text-[18px]">public</span>Markets & Localization</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="subscription-and-tier" href="#"><span class="material-symbols-outlined text-[18px]">credit_card</span>Subscription & Tier</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="whats-coming" href="#"><span class="material-symbols-outlined text-[18px]">upcoming</span>What's Coming</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="setup-and-verification" href="#"><span class="material-symbols-outlined text-[18px]">check_circle</span>Setup & Verification</a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-md text-body-md" data-path="founder-console" href="#"><span class="material-symbols-outlined text-[18px]">terminal</span>Founder Console</a></div></nav></div><div class="p-space-sm bg-surface-container-lowest"><div class="flex items-center justify-between p-space-sm rounded bg-surface-container-low"><div class="flex items-center gap-space-sm min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="flex flex-col min-w-0"><span class="font-body-md text-body-md font-semibold text-on-surface truncate">Rashid Al-Maktoum</span><span class="font-body-sm text-body-sm text-outline truncate">Dealer Principal</span></div></div><a class="p-1 text-on-surface-variant hover:text-error hover:bg-surface rounded transition-colors shrink-0" data-path="login" href="#" title="Sign out"><span class="material-symbols-outlined text-[20px]">logout</span></a></div></div></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-16 bg-surface/90 backdrop-blur-xl z-40 flex items-center justify-between px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm py-1 px-space-sm rounded bg-surface-container-low"><span class="w-2 h-2 rounded-full bg-[#157a5b]"></span><span class="font-body-md text-body-md font-semibold text-on-surface">Demo Motors</span><span class="text-outline font-body-sm text-body-sm">|</span><span class="font-body-sm text-body-sm text-on-surface-variant">Dubai, UAE</span><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">PRODUCTION</span></div><div class="hidden xl:flex items-center gap-1.5 px-space-sm py-1 rounded bg-surface-container-low font-label-numeric-md text-label-numeric-md text-on-surface"><span class="material-symbols-outlined text-[16px] text-outline">schedule</span><span>14:42:09</span><span class="text-outline text-label-numeric-sm font-label-numeric-sm">GST</span></div></div><div class="flex items-center gap-space-md"><div class="relative w-80"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span><input class="w-full pl-9 pr-8 py-1.5 bg-surface-container-lowest text-on-surface rounded text-body-md font-body-md placeholder-outline focus:outline-none focus:ring-1 focus:ring-primary shadow-[0_1px_4px_rgba(0,0,0,0.02)]" placeholder="Omnibar: Search VIN, Deal #, Client, UAE Mobile..." type="text"/><span class="absolute right-2.5 top-1/2 -translate-y-1/2 font-label-numeric-sm text-label-numeric-sm px-1 rounded bg-surface-container text-outline">⌘K</span></div><div class="flex items-center bg-surface-container-low p-0.5 rounded"><button class="px-2 py-1 rounded bg-surface-container-lowest text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.05)]" type="button">AED</button><button class="px-2 py-1 rounded text-outline hover:text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold" type="button">USD</button></div><button class="relative p-2 rounded text-on-surface-variant hover:bg-surface-container-low transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span></button><div class="flex items-center gap-space-sm pl-space-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="hidden 2xl:flex flex-col text-left"><span class="font-body-md text-body-md font-semibold text-on-surface leading-tight">Rashid Al-Maktoum</span><span class="font-body-sm text-body-sm text-outline leading-tight">Dealer Principal</span></div></div></div></header><main class="w-full pt-16 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<div class="px-space-lg py-space-md space-y-space-lg">
+<!-- Top System Breadcrumb & Page Actions -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-md">
+<div>
+<div class="flex items-center gap-space-sm font-table-header text-table-header text-outline uppercase tracking-wider mb-1">
+<span>System Administration</span>
+<span>•</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold">Tenant ID: DXB-DM-0841</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl font-bold text-on-surface tracking-tight">Subscription & Billing</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">
+          Plan tier, platform capability entitlement, payment methods, and tax invoice history for Demo Motors (Dubai).
+        </p>
+</div>
+<div class="flex items-center gap-space-sm shrink-0">
+<button class="flex items-center gap-space-xs px-3 py-1.5 rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container font-body-md text-body-md font-medium shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">receipt_long</span>
+<span>Download Tax Summary</span>
+</button>
+<button class="flex items-center gap-space-xs px-3.5 py-1.5 rounded bg-primary-container text-on-primary hover:bg-primary font-body-md text-body-md font-semibold shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">credit_card</span>
+<span>Update Payment Method</span>
+</button>
+</div>
+</div>
+<!-- Active Commercial Banner -->
+<div class="relative overflow-hidden rounded-xl bg-surface-container-low p-space-md shadow-sm">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-[#157a5b]"></div>
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-space-sm pl-2">
+<div class="flex items-start md:items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-[#e6f4ef] text-[#157a5b] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+</div>
+<div>
+<div class="flex items-center flex-wrap gap-x-space-sm gap-y-0.5">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Annual Master Contract Active</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-semibold tracking-wide">REF #AE-9482-YR2</span>
+<span class="font-body-sm text-body-sm px-2 py-0.5 rounded-full bg-[#e6f4ef] text-[#157a5b] font-medium">Floor-Locked Margin Guarantee</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+              Direct B2B Commercial Agreement with Nexus Automotive Technologies FZ-LLC. Active cycle: 01 Nov 2023 – 01 Nov 2024.
+            </p>
+</div>
+</div>
+<div class="flex items-center gap-space-sm shrink-0 pl-10 xl:pl-0">
+<div class="flex items-center gap-1.5 px-3 py-1 rounded bg-surface-container-lowest font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">
+<span class="material-symbols-outlined text-[16px] text-error">hourglass_bottom</span>
+<span>18 Days Remaining</span>
+</div>
+<button class="px-3 py-1 rounded bg-surface-container-highest text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container transition-colors" type="button">
+            Contract Terms
+          </button>
+</div>
+</div>
+</div>
+<!-- Dual Column Executive Billing Cockpit -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+<!-- Left Column: Current Tier & Utilization -->
+<div class="lg:col-span-7 flex flex-col justify-between rounded-xl bg-surface-container-lowest p-space-lg shadow-sm">
+<div>
+<!-- Plan Header -->
+<div class="flex items-start justify-between gap-space-md pb-space-md">
+<div>
+<div class="flex items-center gap-space-xs mb-1">
+<span class="font-table-header text-table-header uppercase tracking-wider text-outline">Current Operational Tier</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.2 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">ACTIVE • PRODUCTION</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg font-bold text-on-surface">NEXUS Pro Dealership Tier</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Full multi-floor execution suite tailored for premier UAE automotive groups.</p>
+</div>
+<div class="text-right shrink-0">
+<span class="font-table-header text-table-header uppercase text-outline block">Billed Monthly</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold">
+                AED 4,800 <span class="font-body-sm text-body-sm text-outline font-normal">/ mo</span>
+</div>
+<span class="font-body-sm text-body-sm text-outline block">incl. 5% UAE VAT</span>
+</div>
+</div>
+<!-- Usage Metrics Bento Cards -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-space-sm my-space-md">
+<div class="rounded-lg bg-surface-container-low p-space-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-table-header text-table-header uppercase">Dealership Units</span>
+<span class="material-symbols-outlined text-[18px]">apartment</span>
+</div>
+<div>
+<div class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">3 Branches</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Dubai, SZR, Al Quoz</span>
+</div>
+</div>
+<div class="rounded-lg bg-surface-container-low p-space-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-table-header text-table-header uppercase">Floor Capacity</span>
+<span class="material-symbols-outlined text-[18px]">badge</span>
+</div>
+<div>
+<div class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">21 / 25 Seats</div>
+<div class="flex items-center gap-1.5 mt-0.5">
+<div class="w-12 h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 84%;"></div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold">84% Floor</span>
+</div>
+</div>
+</div>
+<div class="rounded-lg bg-surface-container-low p-space-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="font-table-header text-table-header uppercase">WhatsApp Dispatches</span>
+<span class="material-symbols-outlined text-[18px] text-[#157a5b]">forum</span>
+</div>
+<div>
+<div class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">Unlimited</div>
+<span class="font-body-sm text-body-sm text-[#157a5b] font-medium">Meta Cloud API High-Cap</span>
+</div>
+</div>
+</div>
+<!-- Cycle Progress Bar -->
+<div class="rounded-lg bg-surface-container-low p-space-sm space-y-1.5">
+<div class="flex items-center justify-between font-body-sm text-body-sm">
+<span class="font-medium text-on-surface">Current Term Cycle</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Renewal: 01 Nov 2024 (in 18 days)</span>
+</div>
+<div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 95%;"></div>
+</div>
+<div class="flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-outline">
+<span>95% of 365-day cycle elapsed</span>
+<span>Next Invoice: AED 4,800.00</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs mt-space-sm text-on-surface-variant font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px] text-[#157a5b]">check_circle</span>
+<span>Automatic charge authorized to primary Visa ending in <strong>4092</strong> for AED 4,800.00 incl. VAT.</span>
+</div>
+</div>
+<!-- Tier Actions -->
+<div class="flex flex-wrap items-center justify-between gap-space-sm pt-space-md mt-space-md border-t border-surface-container-low">
+<div class="flex items-center gap-space-sm">
+<button class="px-3 py-1.5 rounded bg-primary-container text-on-primary hover:bg-primary font-body-md text-body-md font-semibold transition-colors" type="button">
+              Change Plan Tier
+            </button>
+<button class="px-3 py-1.5 rounded bg-surface-container-low text-on-surface hover:bg-surface-container font-body-md text-body-md font-medium transition-colors" type="button">
+              Update Billing Contacts
+            </button>
+</div>
+<button class="font-body-sm text-body-sm text-outline hover:text-error transition-colors underline decoration-outline-variant" type="button">
+            Cancel Subscription
+          </button>
+</div>
+</div>
+<!-- Right Column: Card, Entity, Tax & Fast Renewal -->
+<div class="lg:col-span-5 flex flex-col justify-between rounded-xl bg-surface-container-lowest p-space-lg shadow-sm">
+<div>
+<div class="flex items-center justify-between pb-space-sm">
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">Payment & UAE Tax Desk</h3>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-secondary font-semibold">FTA COMPLIANT</span>
+</div>
+<!-- Credit Card Component -->
+<div class="p-space-md rounded-xl bg-gradient-to-br from-surface-container-low via-surface-container to-surface-container-high relative overflow-hidden mb-space-md">
+<div class="flex items-start justify-between mb-space-md">
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-primary tracking-wider uppercase">Nexus Fleet Pay</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-lowest text-primary text-[10px] font-bold">B2B</span>
+</div>
+<span class="font-label-numeric-md text-label-numeric-md font-bold tracking-widest text-on-surface">VISA</span>
+</div>
+<div class="font-label-numeric-md text-label-numeric-md tracking-wider text-on-surface font-semibold mb-3">
+              ••••  ••••  ••••  4092
+            </div>
+<div class="flex items-end justify-between font-body-sm text-body-sm">
+<div>
+<span class="text-[10px] uppercase text-outline tracking-wider block">Card Holder</span>
+<span class="font-semibold text-on-surface uppercase">Tariq Al-Mansoor</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] uppercase text-outline tracking-wider block">Expires</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">08 / 2027</span>
+</div>
+</div>
+</div>
+<!-- Entity & Tax Details List -->
+<div class="space-y-space-xs font-body-sm text-body-sm">
+<div class="flex items-center justify-between py-1 px-2 rounded bg-surface-container-low">
+<span class="text-on-surface-variant">Registered Legal Entity</span>
+<span class="font-semibold text-on-surface">Demo Motors LLC</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2 rounded bg-surface-container-low">
+<span class="text-on-surface-variant">Tax Registration (UAE TRN)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">TRN 100384920100003</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2 rounded bg-surface-container-low">
+<span class="text-on-surface-variant">Physical Showroom Floor</span>
+<span class="font-medium text-on-surface text-right">Sheikh Zayed Rd, Al Quoz 1, Dubai</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2 rounded bg-surface-container-low">
+<span class="text-on-surface-variant">Standard VAT Rate Applied</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-[#157a5b]">5.0% FTA Standard</span>
+</div>
+</div>
+</div>
+<!-- Action CTAs -->
+<div class="space-y-2 pt-space-md mt-space-sm border-t border-surface-container-low">
+<button class="w-full flex items-center justify-center gap-space-xs py-2 rounded bg-primary-container text-on-primary hover:bg-primary font-body-md text-body-md font-semibold shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">bolt</span>
+<span>Pay Now / Force Advance Renewal</span>
+</button>
+<button class="w-full flex items-center justify-center gap-space-xs py-1.5 rounded bg-surface-container-low text-on-surface hover:bg-surface-container font-body-md text-body-md font-medium transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">account_balance</span>
+<span>Add UAE Central Bank IBAN (Direct Debit)</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Capabilities & Modules Matrix Section -->
+<div class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm space-y-space-md">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+<div>
+<div class="flex items-center gap-space-xs">
+<h2 class="font-headline-lg text-headline-lg font-bold text-on-surface">What Your Plan Includes</h2>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-secondary font-semibold">15 MODULE GATES</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">
+            Platform capability entitlement and real-time execution gates for Demo Motors showroom floors.
+          </p>
+</div>
+<!-- Module Status Legend -->
+<div class="flex items-center flex-wrap gap-2 text-[11px] font-label-numeric-sm">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-[#157a5b]"></span>
+<span class="text-on-surface-variant">LIVE (8)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-[#96570a]"></span>
+<span class="text-on-surface-variant">PARTIAL (1)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-[#5b2e8c]"></span>
+<span class="text-on-surface-variant">COMING SOON (2)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+<span class="text-on-surface-variant">PLANNED (2)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span class="text-on-surface-variant">NOT ENABLED (2)</span>
+</div>
+</div>
+</div>
+<!-- Rich Bento Capability Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md pt-space-xs">
+<!-- 1. Lead Recovery Engine -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Lead Recovery Engine</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Re-engages stalled inquiries within 9 minutes via automated multi-sequence WhatsApp triggers and SLA alerts.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">bolt</span>
+<span>9-minute floor SLA operational</span>
+</div>
+</div>
+<!-- 2. Deal Rescue Desk -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Deal Rescue Desk</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Real-time intervention alerts for stalled showroom negotiations with automated price floor protection.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">shield</span>
+<span>Margin safeguard active</span>
+</div>
+</div>
+<!-- 3. Omnichannel WhatsApp Cloud -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Omnichannel WhatsApp Cloud</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Official Meta Cloud API inbox with 1-tap test drive confirmations and deposit link generation.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">cloud_done</span>
+<span>Meta API Tier-3 Verified</span>
+</div>
+</div>
+<!-- 4. Action Center & Next-Best Actions -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Action Center & Next-Best Actions</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Algorithmic micro-nudges to sales representatives when leads show reactivation signs across UAE portals.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-primary font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">notifications_active</span>
+<span>Real-time floor dispatches</span>
+</div>
+</div>
+<!-- 5. Profit Sentinel & Inventory Valuation -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Profit Sentinel & Valuation</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Dynamic trade-in valuation desk tied to UAE auction index and showroom age metrics.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+<span>UAE wholesale indexing synced</span>
+</div>
+</div>
+<!-- 6. Competitor Scraping Sentinel -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Competitor Scraping Sentinel</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Daily crawl of Dubizzle, YallaMotor & Cars24 pricing for identical specs and trims in Dubai.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-primary font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">travel_explore</span>
+<span>Syncing every 24h</span>
+</div>
+</div>
+<!-- 7. Finance Desk & EMI Gate -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Finance Desk & EMI Gate</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Centralized bank pre-approvals, salary verification checklists, and profit margin locking before delivery.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">account_balance</span>
+<span>Emirates NBD & FAB integrated</span>
+</div>
+</div>
+<!-- 8. Customer 360 Dossier -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Customer 360 Dossier</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#fef3e2] text-[#96570a] font-bold">◐ PARTIAL</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Unified timeline linking CRM and WhatsApp; customer service history remains disconnected until DMS bridge.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#96570a] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">sync_problem</span>
+<span>Pending CDK / Autoline DMS connector</span>
+</div>
+</div>
+<!-- 9. Revenue Recovery & Money Leaks Engine -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Revenue Recovery & Leaks</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">LIVE</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Continuous algorithmic auditing of missed calls, unlogged floor walk-ins, and dormant valuations.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#157a5b] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">monetization_on</span>
+<span>Active margin detection running</span>
+</div>
+</div>
+<!-- 10. Reconditioning Tracker -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Reconditioning Tracker</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e4e6ec] text-[#3f4757] font-bold">◇ PLANNED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Workshop stage tracking and parts cost ledger awaiting workshop management system integration.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-outline font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">construction</span>
+<span>Targeting deployment Q1</span>
+</div>
+</div>
+<!-- 11. Group & Multi-Branch Management -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between opacity-80 hover:opacity-100 transition-opacity">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Group & Multi-Branch</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-error-container text-on-error-container font-bold">NOT ENABLED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Enterprise tier entitlement required for cross-branch vehicle transfers and multi-entity group ledgers.
+            </p>
+</div>
+<div class="flex items-center justify-between pt-space-sm mt-space-xs">
+<span class="text-[11px] font-body-sm text-outline">Requires Enterprise upgrade</span>
+<button class="text-[11px] font-label-numeric-sm text-primary font-semibold hover:underline" type="button">Upgrade Plan</button>
+</div>
+</div>
+<!-- 12. Fine-Tuned AI Dealership Model -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between opacity-80 hover:opacity-100 transition-opacity">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Fine-Tuned AI Dealership Model</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-error-container text-on-error-container font-bold">NOT ENABLED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Dedicated private LLM instance trained on historical showroom objection handling; available on Enterprise Custom tier.
+            </p>
+</div>
+<div class="flex items-center justify-between pt-space-sm mt-space-xs">
+<span class="text-[11px] font-body-sm text-outline">Private VPC allocation needed</span>
+<button class="text-[11px] font-label-numeric-sm text-primary font-semibold hover:underline" type="button">Request Pilot</button>
+</div>
+</div>
+<!-- 13. Dealer Benchmarking & Peer Telemetry -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Dealer Benchmarking & Telemetry</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#f1eafa] text-[#5b2e8c] font-bold">○ COMING SOON</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Anonymous regional GCC conversion rate and gross margin index benchmarking against peer dealerships.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#5b2e8c] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">query_stats</span>
+<span>GCC Dealership Index aggregation</span>
+</div>
+</div>
+<!-- 14. Customer Portal & Digital Vault -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Customer Portal & Vault</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#f1eafa] text-[#5b2e8c] font-bold">○ COMING SOON</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Buyer-facing self-service progress tracker, document upload vault, and digital delivery checklist.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-[#5b2e8c] font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">folder_shared</span>
+<span>Client mobile view in staging</span>
+</div>
+</div>
+<!-- 15. Markets & Localization Packs -->
+<div class="rounded-xl bg-surface-container-low p-space-md flex flex-col justify-between hover:bg-surface-container transition-colors">
+<div class="space-y-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Markets & Localization Packs</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e4e6ec] text-[#3f4757] font-bold">◇ PLANNED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Multi-country regional compliance packs for Saudi Arabia (ZATCA), Qatar, and Oman cross-border sales.
+            </p>
+</div>
+<div class="flex items-center gap-1 text-[11px] font-body-sm text-outline font-medium pt-space-sm mt-space-xs">
+<span class="material-symbols-outlined text-[14px]">public</span>
+<span>KSA phase release planned</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Official UAE Tax Invoices Table -->
+<div class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm space-y-space-md">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-lg text-headline-lg font-bold text-on-surface">Payment History & Official Tax Invoices</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Electronic VAT Invoices meeting UAE Federal Tax Authority (FTA) audit specifications.
+          </p>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2.5 py-1 rounded bg-surface-container text-on-surface font-semibold">ALL 4 INVOICES PAID</span>
+</div>
+</div>
+<!-- Invoice Table Overflow Container -->
+<div class="overflow-x-auto rounded-lg">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low font-table-header text-table-header text-outline uppercase tracking-wider">
+<th class="py-2.5 px-space-md">Invoice Reference</th>
+<th class="py-2.5 px-space-md">Issued Date</th>
+<th class="py-2.5 px-space-md">Billing Period</th>
+<th class="py-2.5 px-space-md text-right">Taxable Breakdown (AED)</th>
+<th class="py-2.5 px-space-md text-right">Total Charged</th>
+<th class="py-2.5 px-space-md">Status</th>
+<th class="py-2.5 px-space-md">Payment Instrument</th>
+<th class="py-2.5 px-space-md text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low font-body-sm text-body-sm">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3 px-space-md">
+<div class="flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+<span class="material-symbols-outlined text-[16px]">receipt</span>
+<span>INV-DXB-2024-009</span>
+</div>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface">01 Oct 2024</td>
+<td class="py-3 px-space-md text-on-surface-variant">01 Oct 2024 – 31 Oct 2024</td>
+<td class="py-3 px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                4,571.43 + 228.57 (VAT)
+              </td>
+<td class="py-3 px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                AED 4,800.00
+              </td>
+<td class="py-3 px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">PAID</span>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                Visa •••• 4092
+              </td>
+<td class="py-3 px-space-md text-right">
+<div class="flex items-center justify-end gap-1 font-label-numeric-sm text-label-numeric-sm font-semibold">
+<button class="px-2 py-1 rounded hover:bg-surface-container text-primary transition-colors" type="button">View</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-secondary transition-colors" type="button">Download</button>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3 px-space-md">
+<div class="flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+<span class="material-symbols-outlined text-[16px]">receipt</span>
+<span>INV-DXB-2024-008</span>
+</div>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface">01 Sep 2024</td>
+<td class="py-3 px-space-md text-on-surface-variant">01 Sep 2024 – 30 Sep 2024</td>
+<td class="py-3 px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                4,571.43 + 228.57 (VAT)
+              </td>
+<td class="py-3 px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                AED 4,800.00
+              </td>
+<td class="py-3 px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">PAID</span>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                Visa •••• 4092
+              </td>
+<td class="py-3 px-space-md text-right">
+<div class="flex items-center justify-end gap-1 font-label-numeric-sm text-label-numeric-sm font-semibold">
+<button class="px-2 py-1 rounded hover:bg-surface-container text-primary transition-colors" type="button">View</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-secondary transition-colors" type="button">Download</button>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3 px-space-md">
+<div class="flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+<span class="material-symbols-outlined text-[16px]">receipt</span>
+<span>INV-DXB-2024-007</span>
+</div>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface">01 Aug 2024</td>
+<td class="py-3 px-space-md text-on-surface-variant">01 Aug 2024 – 31 Aug 2024</td>
+<td class="py-3 px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                4,571.43 + 228.57 (VAT)
+              </td>
+<td class="py-3 px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                AED 4,800.00
+              </td>
+<td class="py-3 px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">PAID</span>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                Visa •••• 4092
+              </td>
+<td class="py-3 px-space-md text-right">
+<div class="flex items-center justify-end gap-1 font-label-numeric-sm text-label-numeric-sm font-semibold">
+<button class="px-2 py-1 rounded hover:bg-surface-container text-primary transition-colors" type="button">View</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-secondary transition-colors" type="button">Download</button>
+</div>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3 px-space-md">
+<div class="flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+<span class="material-symbols-outlined text-[16px]">receipt</span>
+<span>INV-DXB-2024-006</span>
+</div>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface">01 Jul 2024</td>
+<td class="py-3 px-space-md text-on-surface-variant">01 Jul 2024 – 31 Jul 2024</td>
+<td class="py-3 px-space-md text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                4,571.43 + 228.57 (VAT)
+              </td>
+<td class="py-3 px-space-md text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                AED 4,800.00
+              </td>
+<td class="py-3 px-space-md">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] font-bold">PAID</span>
+</td>
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+                Visa •••• 4092
+              </td>
+<td class="py-3 px-space-md text-right">
+<div class="flex items-center justify-end gap-1 font-label-numeric-sm text-label-numeric-sm font-semibold">
+<button class="px-2 py-1 rounded hover:bg-surface-container text-primary transition-colors" type="button">View</button>
+<button class="px-2 py-1 rounded hover:bg-surface-container text-secondary transition-colors" type="button">Download</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Regulatory & Data Compliance Footer -->
+<div class="flex flex-col md:flex-row items-center justify-between gap-space-sm pt-space-sm text-outline font-body-sm text-body-sm">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+<span>Invoices formatted in accordance with UAE Federal Decree-Law No. (8) of 2017 on Value Added Tax.</span>
+</div>
+<div class="flex items-center gap-space-xs font-label-numeric-sm text-label-numeric-sm">
+<span class="w-2 h-2 rounded-full bg-[#157a5b]"></span>
+<span>Data Sovereign: Azure UAE North (Dubai) Data Center</span>
+</div>
+</div>
+</div>
+</div>
+</div></main></div></body></html>

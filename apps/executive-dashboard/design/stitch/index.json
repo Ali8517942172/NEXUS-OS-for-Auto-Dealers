@@ -1,0 +1,650 @@
+[
+ {
+  "file": "today-s-money-leaks-landing-command-center--012119.html",
+  "id": "012119634d81416e8dfb5ee56c1f2f26",
+  "title": "Today's Money Leaks \u2014 Landing Command Center",
+  "w": "2560",
+  "h": "3634",
+  "prompt": "Generate the core landing screen 'Today's Money Leaks' for NEXUS OS with the updated persistent navigation shell. 'Today's Money Leaks' is active in the WORK group.\n\nStructure and Content strictly ordered as specified:\n1. Setup-progress banner at top:\n   - Alert/progress banner: \"Setup Progress: 4 of 6 core telemetry sources connected (DMS & Meta Ads pending). Automated margin scanning active acro"
+ },
+ {
+  "file": "app-shell-system-health-popover-active--cb7e59.html",
+  "id": "cb7e59c7fda049938522d21e011a96af",
+  "title": "App Shell \u2014 System Health Popover Active",
+  "w": "2560",
+  "h": "2048",
+  "prompt": "Screen 3: App Shell with System-Health Popover Open.\n\nPERSISTENT SHELL LAYOUT:\n- Navy #16294F sidebar with cyan #38D0E8 active indicator, WORK (Overview active, Today's Money Leaks, My Queue \u25d0 PARTIAL, Owner Brief \ud83d\udd12 RESTRICTED, etc.), OPERATIONS (with Exceptions \u25d0 PARTIAL), BOTTOM BLOCK (What's coming \u25cb COMING SOON), and footer legend 'What the marks mean'.\n- Topbar with Breadcrumbs, Search [Ctrl "
+ },
+ {
+  "file": "marketplace-performance-portal-roi-ingestion--27d9b0.html",
+  "id": "27d9b00b92934a2ea9f395e76edd3406",
+  "title": "Marketplace Performance \u2014 Portal ROI & Ingestion",
+  "w": "2560",
+  "h": "3370",
+  "prompt": "Screen Title: Marketplace Performance\nCategory: ASSETS\nPill Badge next to Title: \"PLANNED\" (with subtle purple/indigo outline pill styling, e.g. \"ASSETS \u2022 \u25f7 PLANNED\")\nOne honest sentence under title: \"Evaluates listing velocity, cost per lead, and portal ROI across UAE automotive marketplaces from exported seller reports.\"\nPrerequisite line: \"Prerequisite: Reads your exported Dubizzle / YallaMotor"
+ },
+ {
+  "file": "customer-portal-buyer-facing-deal-tracker-vault--242e13.html",
+  "id": "242e136ace7f4b45a23e397076e89934",
+  "title": "Customer Portal \u2014 Buyer-Facing Deal Tracker & Vault",
+  "w": "2560",
+  "h": "3676",
+  "prompt": "Generate the 'Customer Portal' roadmap screen under navigation group OPERATIONS (or OPERATIONS & INFRASTRUCTURE).\nFollow strict roadmap rules:\n1. Header:\n   - Breadcrumb: OPERATIONS / CUSTOMER PORTAL\n   - Title: \"Customer Portal\" with pill badge right next to it: \"PLANNED\" (neutral badge)\n   - One honest sentence under the title: \"The dealership's buyer-facing mobile web experience allowing custom"
+ },
+ {
+  "file": "policy-revenue-governance-rule-engine--dc78bf.html",
+  "id": "dc78bf4a895c4b45823594e02815525e",
+  "title": "Policy \u2014 Revenue Governance & Rule Engine",
+  "w": "2560",
+  "h": "5372",
+  "prompt": "Generate the Policy screen for NEXUS OS. Navigation: Policy active in sidebar under REVENUE RECOVERY.\n\nTop Section:\n1. Header: 'Policy \u2014 Revenue Governance & Rule Engine'. Subtitle: 'Deterministic boundaries, UAE regulatory foundations, and Dealership house rules controlling automated recovery interventions.'\n2. Section 'What this product is standing on':\nFour foundational pillars in an enterprise"
+ },
+ {
+  "file": "market-sentinel-competitor-demand-telemetry--c8b236.html",
+  "id": "c8b236af156d44439c01dde1b7129ffe",
+  "title": "Market Sentinel \u2014 Competitor & Demand Telemetry",
+  "w": "2682",
+  "h": "3432",
+  "prompt": "Screen: Market Sentinel (INTELLIGENCE, PLANNED)\n\nHeader & Title area:\n- Breadcrumb: INTELLIGENCE / MARKET INTELLIGENCE\n- Title: \"Market Sentinel\" with pill badge next to title: `\u25cb PLANNED` (subtle border/neutral styling).\n- One honest sentence under the title: \"Tracks regional marketplace competitor price drops, shifts in consumer model demand, and unmet buyer inventory requests across the UAE.\"\n-"
+ },
+ {
+  "file": "integrations-connected-ecosystem-api-keys--b610ac.html",
+  "id": "b610ace4f9ff4a0d9b18a7753525ae8f",
+  "title": "Integrations \u2014 Connected Ecosystem & API Keys",
+  "w": "2560",
+  "h": "4262",
+  "prompt": "Screen title: Integrations \u2014 Ecosystem Connectivity & API Gateway\nNavigation: Integrations active under WORK group.\nTop dealership identifier: 'Demo Motors'.\n\nContent and Layout:\n1. Hero Header section:\n- Prominent header: 'Keep your existing software. NEXUS connects to it.'\n- Subtitle: 'Bi-directional CRM telemetry, DMS synchronization, telephony call logs, and secure webhook event routing for Du"
+ },
+ {
+  "file": "lead-recovery-stalled-inquiries-engine--be9936.html",
+  "id": "be9936ef9a274785b8f319dfaa2d2e1d",
+  "title": "Lead Recovery \u2014 Stalled Inquiries Engine",
+  "w": "2560",
+  "h": "5534",
+  "prompt": "Screen title: \"Lead Recovery \u2014 Stalled Inquiries & Re-engagement Engine\"\nScreen ID: \"lead-recovery\"\nShell ID: {{DATA:SHELL:SHELL_119}}\nStatus badge: \u25d0 ACTIVE SENTINEL ENGINE\nTop breadcrumbs: REVENUE RECOVERY / LEAD RECOVERY DESK\nSubtitle: \"Deterministic leakage interception, conversation telemetry, and automated floor intervention desk.\"\n\nTop Diagnostic Alert Banner:\n- \"CRITICAL: 19 leads currentl"
+ },
+ {
+  "file": "app-shell-notifications-drawer-active--ef7a40.html",
+  "id": "ef7a409da00a4858aca9dc31e04c92f4",
+  "title": "App Shell \u2014 Notifications Drawer Active",
+  "w": "2560",
+  "h": "2048",
+  "prompt": "Screen 4: App Shell with Notifications Slide-Over Panel Open.\n\nPERSISTENT SHELL LAYOUT:\n- Navy #16294F sidebar with cyan #38D0E8 active indicator, WORK (Overview active, Today's Money Leaks, My Queue \u25d0 PARTIAL, Owner Brief \ud83d\udd12 RESTRICTED), OPERATIONS (Exceptions \u25d0 PARTIAL), BOTTOM BLOCK (What's coming \u25cb COMING SOON), and footer legend 'What the marks mean'.\n- Topbar with Breadcrumbs, Search [Ctrl K]"
+ },
+ {
+  "file": "my-queue-role-worklists-priority-triage--a1901e.html",
+  "id": "a1901e7d2578435d8aea660259354994",
+  "title": "My Queue \u2014 Role Worklists & Priority Triage",
+  "w": "2560",
+  "h": "2518",
+  "prompt": "Screen title: \"My Queue \u2014 Role Worklists & Priority Triage\"\nScreen ID: \"my-queue\"\nShell ID: {{DATA:SHELL:SHELL_119}}\nStatus badge: \u25d0 PARTIAL (amber badge next to title)\nTop breadcrumbs: WORK / MY QUEUE\nSubtitle: \"Operational dispatch queue prioritizing high-intent customer touchpoints, SLA breaches, and revenue milestones.\"\n\nRole tabs bar:\n- \"Sales Manager (Active)\" [Badge: 14]\n- \"BDC / Inbound\" ["
+ },
+ {
+  "file": "automation-action-engine--4539d7.html",
+  "id": "4539d7888d4948948907731eabbdf18e",
+  "title": "Automation \u2014 Action Engine",
+  "w": "2560",
+  "h": "3460",
+  "prompt": "Enterprise desktop screen for NEXUS OS: Automation (Action Engine).\nTopbar dealership: 'Demo Motors'.\nActive sidebar item: Automation (under Engines).\nRequirements:\n1. Header: 'Automation \u2014 Action Engine' with subtitle 'Dealership operational automations, trigger cadences, and execution audit log'. Top action: button 'Audit Runs' and 'Settings'.\n2. 'Scheduled jobs' section: Each against its own ca"
+ },
+ {
+  "file": "dealership-event-graph-unified-customer-journey-node-telemetry--a1a5b9.html",
+  "id": "a1a5b96df8714f5398a0196bad85315c",
+  "title": "Dealership Event Graph \u2014 Unified Customer Journey & Node Telemetry",
+  "w": "2560",
+  "h": "2880",
+  "prompt": "Generate the 'Dealership Event Graph' roadmap screen under navigation group INTELLIGENCE.\nFollow strict roadmap rules:\n1. Header:\n   - Breadcrumb: INTELLIGENCE / DEALERSHIP EVENT GRAPH\n   - Title: \"Dealership Event Graph\" with pill badge right next to it: \"PLANNED\" (neutral slate/indigo outline badge)\n   - One honest sentence under the title: \"Maps every touchpoint across the complete buyer lifecy"
+ },
+ {
+  "file": "attribution-multi-channel-revenue-engine--803cc4.html",
+  "id": "803cc47d9b6649909b15674b0bb938d2",
+  "title": "Attribution \u2014 Multi-Channel Revenue Engine",
+  "w": "2560",
+  "h": "9344",
+  "prompt": "Generate the brand-new 'Attribution' screen for NEXUS OS with sidebar item 'Attribution' active under REVENUE RECOVERY. Dealership topbar is 'Demo Motors' (Dubai Showroom).\n\nRequired sections and precise content:\n1. Top Chain Header Banner:\n   - Prominent breadcrumb-style funnel visualization:\n     \"Campaign > Lead > Conversation > Vehicle > Deal > Sale\"\n   - Underneath: Subtitle explaining multi-"
+ },
+ {
+  "file": "what-s-coming-where-nexus-is-going--b970d9.html",
+  "id": "b970d9bdbe454dc983ff203c4253cb28",
+  "title": "What's Coming \u2014 Where NEXUS is going",
+  "w": "2560",
+  "h": "5214",
+  "prompt": "Screen: What's Coming (Bottom nav above Setup: Where NEXUS is going)\nTopbar: 'Demo Motors | Dubai, UAE', Live Dealership, Rashid Al-Maktoum (Dealer Principal).\nSidebar active item: 'What's Coming' (located immediately above Setup & Verification).\n\nScreen Content:\nHeader:\nBadge: ROADMAP & CAPABILITIES\nTitle: Where NEXUS is going\nSubtitle: Honest visibility into scheduled engineering milestones, pla"
+ },
+ {
+  "file": "owner-brief-executive-daily-briefing--6eaf47.html",
+  "id": "6eaf478ba81b46d1834385dcdcae8691",
+  "title": "Owner Brief \u2014 Executive Daily Briefing",
+  "w": "2560",
+  "h": "3640",
+  "prompt": "Generate the brand new 'Owner Brief' screen for NEXUS OS.\n\nStrict adherence to user specifications:\n1. Header:\n   - Screen Title: \"Owner Brief\"\n   - Section category: \"WORK\"\n   - Prominent header badge: \"\u25d0 PARTIAL\" (indicating partial workflow / early daily release)\n   - Dealership: \"Demo Motors \u2014 Executive Daily Briefing\"\n   - Freshness line prominently displayed beneath header:\n     \"Last compil"
+ },
+ {
+  "file": "action-center-next-best-actions-queue--be8f47.html",
+  "id": "be8f473ca1b5466b83ebc353808edda7",
+  "title": "Action Center \u2014 Next-Best Actions Queue",
+  "w": "2560",
+  "h": "4344",
+  "prompt": "Generate the 'Action Center \u2014 Next-Best Actions Queue & Outcome Resolution' screen for NEXUS OS.\nActive Sidebar Item: 'Action Center' under WORK.\n\nPage Header:\n- Breadcrumb: WORK / ACTION CENTER \u2022 DECISION DESK & RECOVERY EXECUTION\n- Title: \"Action Center \u2014 Next-Best Actions & Outcome Resolution\"\n- Subtitle: \"Supervised human-in-the-loop queue for engine-proposed interventions, attribution linkage"
+ },
+ {
+  "file": "states-components-design-system-specification--1efa65.html",
+  "id": "1efa655f35d241f7b69adbe4ef81746c",
+  "title": "States & Components \u2014 Design System Specification",
+  "w": "2560",
+  "h": "6496",
+  "prompt": "Design Screen 2: NEW States & Components Board for NEXUS OS.\nTitle: \"Design System Specification \u2014 Status Chips, Tokens & UI Anatomy\".\nSubtitle: \"Production guidelines, component states, and governance tokens for NEXUS Dealership Operating System\".\n\nSections:\n1. Status Chips Matrix (Icon + Label):\nFull collection displayed in neat pill matrix with exact visual styles:\n- Live (emerald dot, green bg"
+ },
+ {
+  "file": "deal-room-transaction-delivery-desk--504ea2.html",
+  "id": "504ea2159ddc4dfd949627a8c4c554e4",
+  "title": "Deal Room \u2014 Transaction & Delivery Desk",
+  "w": "2682",
+  "h": "3434",
+  "prompt": "Screen: Deal Room (REVENUE RECOVERY, COMING SOON)\n\nHeader & Title area:\n- Breadcrumb: REVENUE RECOVERY / DEAL EXECUTION\n- Title: \"Deal Room\" with pill badge next to title: `\u25cb COMING SOON`\n- One honest sentence under the title: \"Centralizes high-value transaction stages from initial commitment through finance pre-approval, insurance, and showroom delivery handover.\"\n- Prerequisite line with icon / "
+ },
+ {
+  "file": "leads-saved-views-board-inspector-drawer--088011.html",
+  "id": "0880116d51164f5692a876a7e0c24c3a",
+  "title": "Leads \u2014 Saved Views, Board & Inspector Drawer",
+  "w": "2560",
+  "h": "2456",
+  "prompt": "Design the updated NEXUS OS Leads screen for Demo Motors UAE.\nKey requirements:\n1. Header & Controls Bar:\n   - Breadcrumb: WORK / LEADS & INTAKE\n   - Title: 'Leads' with total count '84 active inquiries' and '4 pending first response'.\n   - Top action row:\n     - 'Saved views \u25be' dropdown selector showing active: 'My hot leads' (options: 'My hot leads', 'Unanswered over 4h', 'Walk-ins this week', '"
+ },
+ {
+  "file": "app-shell-scope-menu-active-latency-warning--068c5d.html",
+  "id": "068c5d3c649e4bd1bedd598f18cc8076",
+  "title": "App Shell \u2014 Scope Menu Active & Latency Warning",
+  "w": "2560",
+  "h": "2048",
+  "prompt": "Screen 2: App Shell with Scope Menu Open & Amber Freshness Variant.\n\nPERSISTENT SHELL LAYOUT:\n- Identical persistent Navy #16294F sidebar with cyan #38D0E8 active rule, full navigation taxonomy including My Queue (\u25d0 PARTIAL), Owner Brief (\ud83d\udd12 RESTRICTED), Exceptions under Operations, What's Coming (\u25cb COMING SOON), and the 'What the marks mean' legend at the foot.\n- Overview content running in the ba"
+ },
+ {
+  "file": "lead-recovery-stalled-inquiries-engine--c6f82d.html",
+  "id": "c6f82d40b5c5471db15a3074d1425e6f",
+  "title": "Lead Recovery \u2014 Stalled Inquiries Engine",
+  "w": "2560",
+  "h": "4228",
+  "prompt": "Generate the 'Lead Recovery' screen for NEXUS OS (sidebar route Lead Recovery active).\nDesign strictly following NEXUS OS system:\n- Background #F7F8FA, 8pt spacing grid, cards white with 1px border #E8EAEF, radius 10px, zero resting shadows. Text #0F1729, muted #68718A, Primary blue #2563C9 (hover #1D4FA8). Status colors: HOT #C8321F on #FDECEA, WARM #96570A on #FEF3E2, COLD #2563A8 on #E8F1FB. Je"
+ },
+ {
+  "file": "settings-workspace-system-configuration--137c0f.html",
+  "id": "137c0f3ca2244784b63e154a6ec013b3",
+  "title": "Settings \u2014 Workspace & System Configuration",
+  "w": "3584",
+  "h": "4772",
+  "prompt": "NEXUS OS \u2014 Settings screen for dealership 'Demo Motors'.\nTopbar shows 'Demo Motors'. Sidebar has 'Settings' item active/selected.\nContent sections:\n1. Header: Page title \"Settings & System Configuration\", subtitle \"Manage workspace environment, data privacy, connectivity probes, and operational credentials for Demo Motors (Dubai, UAE)\". Last sync timestamp in GST.\n2. System Health strip: 4 KPI ind"
+ },
+ {
+  "file": "deals-pipeline-deal-intake--fd31c9.html",
+  "id": "fd31c9e64d0b423f8634b8fdf11b9d43",
+  "title": "Deals \u2014 Pipeline & Deal Intake",
+  "w": "2560",
+  "h": "2624",
+  "prompt": "Generate the 'Deals' screen for NEXUS OS (sidebar route Deals active).\nDesign strictly following NEXUS OS system:\n- Background #F7F8FA, 8pt spacing grid, cards white with 1px border #E8EAEF, radius 10px, zero resting shadows. Text #0F1729, muted #68718A, Primary blue #2563C9 (hover #1D4FA8).\n- Status tags strictly using token specs:\n  OPEN (#5B2E8C on #F1EAFA),\n  WON (#157A5B on #E6F4EF),\n  LOST ("
+ },
+ {
+  "file": "leads-pipeline-inspector--930cc7.html",
+  "id": "930cc7c0160546b7859a901757c8511b",
+  "title": "Leads Pipeline & Inspector",
+  "w": "2560",
+  "h": "3010",
+  "prompt": "Create the Leads pipeline screen for NEXUS OS (Demo Motors). Sidebar item 'Leads' active.\nHeader:\n- Title: 'Leads Pipeline'\n- Subtitle: 'Real-time floor, digital and social vehicle inquiries with algorithmic recovery tracking'\n- Top right button: '+ Add a lead' (Primary Blue, high emphasis).\n\nToolbar:\n- Search bar: 'Search by lead name, phone number, vehicle model...' (with \u2318K shortcut)\n- Source F"
+ },
+ {
+  "file": "compliance-kyc-register-regulatory-telemetry--ec85f4.html",
+  "id": "ec85f4a0b24f4da98bed61d87be05200",
+  "title": "Compliance \u2014 KYC Register & Regulatory Telemetry",
+  "w": "2560",
+  "h": "5296",
+  "prompt": "Screen title: Compliance \u2014 KYC Register & Regulatory Telemetry\nNavigation: Compliance active under WORK group.\nTopbar: 'Demo Motors' Dubai Showroom.\n\nLayout & Core Requirements:\n1. Executive Header & Top Metrics:\n- Page Title: 'Compliance \u2014 UAE KYC & Data Governance'\n- Subtitle: 'RTA vehicle registration identity audits, AML screening, and TDRA WhatsApp consent telemetry compliant with UAE Federal"
+ },
+ {
+  "file": "vehicle-360-dossier-asset-telemetry--b25c7a.html",
+  "id": "b25c7abd2a0c41109f91573d921c79e0",
+  "title": "Vehicle 360 \u2014 Dossier & Asset Telemetry",
+  "w": "2560",
+  "h": "3024",
+  "prompt": "Generate the brand-new, comprehensive Vehicle 360 screen for NEXUS OS (UAE Automotive Dealership OS).\nContext & Navigation:\n- Active sidebar item: Vehicle 360 (under INTELLIGENCE & ASSETS).\n- Topbar: Demo Motors | Dubai, UAE [PRODUCTION] [UAE GST 14:45:00] [AED / USD switcher] [Search Omnibar] [Rashid Al-Maktoum, Dealer Principal].\n\nScreen Content & Requirements:\n1. Header & Dossier Hero:\n   - Bre"
+ },
+ {
+  "file": "inventory-assets-profit-sentinel--3fd9e5.html",
+  "id": "3fd9e5a36c9b4205b07b354d29faaf88",
+  "title": "Inventory \u2014 Assets & Profit Sentinel",
+  "w": "2560",
+  "h": "3922",
+  "prompt": "Generate the comprehensive Inventory screen for NEXUS OS (UAE Automotive Dealership OS).\nContext & Navigation:\n- Active sidebar item: Inventory (under INTELLIGENCE & ASSETS).\n- Topbar: Demo Motors | Dubai, UAE [PRODUCTION] [UAE GST 14:45:00] [AED / USD switcher] [Search Omnibar] [Rashid Al-Maktoum, Dealer Principal].\n\nScreen Content & Requirements:\n1. Header & Controls:\n   - Page Title: 'Inventory"
+ },
+ {
+  "file": "action-center-next-best-actions-queue--31efb6.html",
+  "id": "31efb647832e44c9a0b00a8251d30b78",
+  "title": "Action Center \u2014 Next-Best Actions Queue",
+  "w": "2560",
+  "h": "4180",
+  "prompt": "Screen title: \"Action Center \u2014 Next-Best Actions Queue\"\nScreen ID: \"action-center\"\nShell ID: {{DATA:SHELL:SHELL_122}}\nStatus badge: LIVE RECOVERY\nTop breadcrumbs: WORK / ACTION CENTER / DECISION DESK & RECOVERY EXECUTION\nSubtitle: \"Supervised human-in-the-loop queue for engine-proposed interventions, attribution linkage, and unassisted signal triage across UAE showroom desks.\"\n\nTop Header Bar:\n- T"
+ },
+ {
+  "file": "setup-dealership-configuration-verification--382282.html",
+  "id": "3822825c6fb5497d8c29432f9cccece1",
+  "title": "Setup \u2014 Dealership Configuration & Verification",
+  "w": "2560",
+  "h": "3832",
+  "prompt": "Enterprise desktop screen for NEXUS OS: Setup.\nTopbar dealership: 'Demo Motors'.\nActive sidebar item: Setup (under System).\nRequirements:\n1. Header: 'Dealership Setup & Onboarding' with subtitle 'System configuration, data pipeline verification, and credential installation status'.\n2. 'Where setup stands' status cards / progress summary:\n   - Setup complete: 4 of 6 steps verified\n   - Confirmed do"
+ },
+ {
+  "file": "campaigns-7-day-drip-outbound-telemetry--947632.html",
+  "id": "9476328eb0f04b1d91ffcae0c0cb0f3b",
+  "title": "Campaigns \u2014 7-Day Drip & Outbound Telemetry",
+  "w": "2560",
+  "h": "4292",
+  "prompt": "Generate the 'Campaigns \u2014 7-Day Lead Drip & Outbound Governance' screen for NEXUS OS.\nActive Sidebar Item: 'Campaigns' under WORK.\n\nPage Header:\n- Breadcrumb: WORK / CAMPAIGNS \u2022 7-DAY NURTURE & OUTBOUND DISPATCH\n- Title: \"Campaigns & Automated Drips\"\n- Subtitle: \"Controlled 7-day multi-channel nurture sequences, outbound compliance telemetry, and automated silence detection.\"\n- Top action buttons:"
+ },
+ {
+  "file": "app-shell-master-specification-navigation-hierarchy--2b6343.html",
+  "id": "2b63432ac2f04925bd84f1ef293f5a7b",
+  "title": "App Shell \u2014 Master Specification & Navigation Hierarchy",
+  "w": "2560",
+  "h": "3200",
+  "prompt": "Screen 1: Definitive App Shell Reference Specification (with Overview Content).\n\nTOPBAR SPECIFICATION:\n- Left: Breadcrumbs 'Demo Motors' > 'Dubai SZR' > 'Revenue Command Center (Overview)'\n- Centre: Omnibar search box with placeholder 'Search or ask NEXUS' and right-aligned hotkey badge '[Ctrl K]'\n- Right Cluster:\n  * Scope chip: 'Demo Motors \u00b7 Main showroom \u25be' (subtle border, bg-white/slate-50, r"
+ },
+ {
+  "file": "customer-360-3-panel-unified-dossier--31a9aa.html",
+  "id": "31a9aade09ae46cf8f8a2685fa170559",
+  "title": "Customer 360 \u2014 3-Panel Unified Dossier",
+  "w": "2560",
+  "h": "2820",
+  "prompt": "Design the updated NEXUS OS Customer 360 screen for Demo Motors UAE.\nKey layout requirement: Modern 3-Column Architecture:\n1. Left Panel (Customer Snapshot ~300px width):\n   - Customer profile: 'Sultan Mohammed Al-Nuaimi' (VIP Tier 1, High Net Worth Individual).\n   - Score chip: 'Propensity Score: 94/100 \u00b7 High Intent'.\n   - Contact info: Phone '+971 50 849 2201' (verified UAE), Email 'sultan.alnu"
+ },
+ {
+  "file": "appointments-test-drives-visits-calendar--a539b3.html",
+  "id": "a539b3c5088548068dd202a384cb9154",
+  "title": "Appointments \u2014 Test Drives & Visits Calendar",
+  "w": "2560",
+  "h": "3264",
+  "prompt": "Generate the 'Appointments' screen for NEXUS OS (sidebar route Appointments active).\nDesign strictly following NEXUS OS system:\n- Background #F7F8FA, 8pt spacing grid, cards white with 1px border #E8EAEF, radius 10px, zero resting shadows. Text #0F1729, muted #68718A, Primary blue #2563C9 (hover #1D4FA8). JetBrains Mono font for times (e.g. '10:30 GST'), lead IDs, stock numbers, phone numbers.\n- P"
+ },
+ {
+  "file": "founder-console-nexus-platform-administration--d6c87c.html",
+  "id": "d6c87c9f96014c1da3b304803c9310cd",
+  "title": "Founder Console \u2014 NEXUS Platform Administration",
+  "w": "2560",
+  "h": "4420",
+  "prompt": "NEXUS OS \u2014 Founder Console (Platform Owner Super-Admin).\nPlatform Owner Only screen. This is a master platform management interface for the NEXUS OS founders/operators.\nNavigation context: Uses specialized narrow platform sidebar with items:\n- Platform Overview (Active)\n- Dealership Tenants\n- Subscriptions & Billing\n- Provisioning Engine\n- System Infrastructure\n- Audit Stream\n(NO dealership data l"
+ },
+ {
+  "file": "lead-sources-ingestion-readiness-desk--c3ca1e.html",
+  "id": "c3ca1e46afec4323b259e50408dbbbcb",
+  "title": "Lead Sources \u2014 Ingestion & Readiness Desk",
+  "w": "2560",
+  "h": "3426",
+  "prompt": "Design the Lead Sources screen for NEXUS OS (OPERATIONS & INFRASTRUCTURE > Lead Sources).\nTopbar: 'Demo Motors | Dubai, UAE' with PRODUCTION badge.\nShell: Lead Sources is the active sidebar navigation item.\n\nKEY REQUIREMENTS:\n1. Header:\n   - Breadcrumbs: OPERATIONS / LEAD SOURCES\n   - Title: \"Lead Sources \u2014 Ingestion Telemetry & Connectivity\"\n   - Subtitle: \"External portals, paid campaigns, physi"
+ },
+ {
+  "file": "overview-revenue-command-center--99a45c.html",
+  "id": "99a45c1438624412a2b59adc9ab503c4",
+  "title": "Overview \u2014 Revenue Command Center",
+  "w": "2560",
+  "h": "2852",
+  "prompt": "Screen: Overview (Revenue Command Center). Active sidebar: Overview under WORK. Brand: Demo Motors, AED currency, calm, dense, professional command center, 8pt spacing, Inter font with JetBrains Mono for numbers, IDs, and timestamps.\nContent requirements:\n1. Header: 'Good morning \u2014 here is where money is leaking today' with current date (Thursday, 24 October 2024 \u2022 Dubai HQ Showroom \u2022 Real-time Sy"
+ },
+ {
+  "file": "founder-console-nexus-platform-administration--a38ee6.html",
+  "id": "a38ee632fd9f46d99032dd8ee04f1597",
+  "title": "Founder Console \u2014 NEXUS Platform Administration",
+  "w": "2560",
+  "h": "6264",
+  "prompt": "Screen: Founder Console \u2014 NEXUS Platform Administration\nTopbar / Shell: Founder Console platform chrome (ROOT_SUPERADMIN view, platform sidebar, no dealership specific tenant data in shell navigation).\nTitle: Founder Operations Console\nBadge: ROOT_SUPERADMIN | CLUSTER: ME-CENTRAL-1 (UAE)\nPlatform Pulse: 100% Up | Edge Latency: 29ms DXB-01\n\nTop Metric Cards:\n- Downloads & Installs: 4,820 (+18.4%)\n-"
+ },
+ {
+  "file": "competitors-market-intelligence-scraping-sentinel--55f203.html",
+  "id": "55f2033183134cdf9c70059afdf05b07",
+  "title": "Competitors \u2014 Market Intelligence & Scraping Sentinel",
+  "w": "2560",
+  "h": "4018",
+  "prompt": "Generate the Competitors (Market Intelligence) screen for NEXUS OS. Navigation: Competitors active in sidebar under ASSETS.\n\nTop Section:\n1. Header: 'Competitors \u2014 Market Intelligence & Scraping Sentinel'. Subtitle: 'Automated pricing radar across Dubai classifieds (Dubizzle, YallaMotor, Sayarty, Cars24) and Ras Al Khor luxury showrooms.'\n2. Header Action & Telemetry Bar:\n- 'Re-run Scrape' primary"
+ },
+ {
+  "file": "automation-action-engine-pipeline-drawer--9c8237.html",
+  "id": "9c823767d06d4378baa2e06c0b4b8fa4",
+  "title": "Automation \u2014 Action Engine & Pipeline Drawer",
+  "w": "2560",
+  "h": "2264",
+  "prompt": "Design the Automation (Action Engine) screen for NEXUS OS (SETTINGS > Automation).\nTopbar: 'Demo Motors | Dubai, UAE' with PRODUCTION badge.\nShell: Automation is the active sidebar navigation item.\n\nKEY REQUIREMENTS:\n1. Header & Controls:\n   - Breadcrumbs: SETTINGS / AUTOMATION\n   - Title: \"Automation \u2014 Action Engine\"\n   - Subtitle: \"Deterministic rule execution, SLA escalations, and automated dea"
+ },
+ {
+  "file": "exceptions-operational-errors-system-health--a98152.html",
+  "id": "a981528aa05049dda9edec4e688996b0",
+  "title": "Exceptions \u2014 Operational Errors & System Health",
+  "w": "2560",
+  "h": "5638",
+  "prompt": "Screen title: \"Exceptions \u2014 Operational Errors & System Health\"\nScreen ID: \"exceptions\"\nShell ID: {{DATA:SHELL:SHELL_127}}\nStatus badge: \u25d0 PARTIAL (amber badge next to title)\nTop breadcrumbs: OPERATIONS / EXCEPTIONS\nSubtitle: \"Automated root-cause detection of showroom communication drops, orphaned customer records, and broken workflow triggers.\"\n\nHeader Metric Counts (Severity Pills):\n- Critical "
+ },
+ {
+  "file": "lead-recovery-stalled-inquiries-engine--b14f62.html",
+  "id": "b14f6282ec054218bfc9db82c0f3822b",
+  "title": "Lead Recovery \u2014 Stalled Inquiries Engine",
+  "w": "2560",
+  "h": "5744",
+  "prompt": "Generate the updated 'Lead Recovery' screen for NEXUS OS with sidebar item 'Lead Recovery' active under REVENUE RECOVERY. Dealership topbar is 'Demo Motors' (Dubai Showroom).\n\nRequired sections and precise content:\n1. Header & Title: \"Lead Recovery \u2014 Stalled Inquiries & Re-engagement Engine\" with status chip 'Active Sentinel Engine' and topbar 'Demo Motors'.\n2. Section 'Is this dealership leaking "
+ },
+ {
+  "file": "record-a-lead-form--78385b.html",
+  "id": "78385befd1d44014a4d28321b0bdccbf",
+  "title": "Record a Lead Form",
+  "w": "2560",
+  "h": "2472",
+  "prompt": "Create the Record a Lead screen for NEXUS OS (Demo Motors). Sidebar item 'Record a Lead' active.\nHeader:\n- Title: 'Record a Lead'\n- Subtitle: 'Rapid-entry intake for showroom walk-ins and phone calls. Optimized for under 30-second completion.'\n- Fast-action hint banner at top: '\u26a1 Fast Track Active: Phone number is the only strictly required contact field. System auto-enriches vehicle match and fin"
+ },
+ {
+  "file": "deals-pipeline-closed-won-desk--5c884c.html",
+  "id": "5c884c2b18014178917d6d8fab997505",
+  "title": "Deals \u2014 Pipeline & Closed-Won Desk",
+  "w": "2560",
+  "h": "4570",
+  "prompt": "Generate the 'Deals \u2014 Closed-Won Pipeline & Revenue Desk' screen for NEXUS OS.\nActive Sidebar Item: 'Deals' (under WORK, or matching shell navigation).\n\nPage Header:\n- Breadcrumb: WORK / DEALS \u2022 CLOSED-WON LEDGER & DEAL INTAKE\n- Title: \"Deals \u2014 Pipeline, Closed-Won & Revenue Desk\"\n- Subtitle: \"Dealership transactional velocity, margin audit, returning customer recognition, and closed-won registrat"
+ },
+ {
+  "file": "sign-in-nexus-os-dealership-authentication--60425b.html",
+  "id": "60425bd0cbad4c039f2ba26a00d69b3a",
+  "title": "Sign In \u2014 NEXUS OS Dealership Authentication",
+  "w": "2560",
+  "h": "2562",
+  "prompt": "NEXUS OS \u2014 Sign In (Standalone Full Page Authentication).\nNO SIDEBAR, NO TOPBAR (uses blank shell {{DATA:SHELL:SHELL_58}}). Clean, modern, high-converting split-screen desktop layout (1440px wide).\nLayout architecture:\n- Left Column (45% width): Deep navy background (#16294F) with subtle geometric tech grid lines and glowing deep blue accents.\n  * Prominent NEXUS OS wordmark logo at top with blue "
+ },
+ {
+  "file": "mobile-tablet-responsive-viewports-showcase--585450.html",
+  "id": "585450b702844714a833fc08fb5d9ae3",
+  "title": "Mobile & Tablet \u2014 Responsive Viewports Showcase",
+  "w": "2560",
+  "h": "4108",
+  "prompt": "Design Screen 3: NEW Mobile & Tablet Showcase \u2014 NEXUS OS Responsive Viewports.\nLayout: An expansive multi-viewport showroom canvas displaying real, high-fidelity responsive device frames side-by-side with device mockups, shadows, and status bars.\n\nViewports shown on screen:\n\n1. Phone Frame 1 (iPhone 15 Pro mockup, ~390px wide): \"My Queue \u2014 Mobile Sales Manager View\"\n- iOS status bar (9:41, 5G, Bat"
+ },
+ {
+  "file": "leads-pipeline-audit-drawer--0e162f.html",
+  "id": "0e162fbc3dbd4a5d9db36da80a53f4e4",
+  "title": "Leads \u2014 Pipeline & Audit Drawer",
+  "w": "2560",
+  "h": "2316",
+  "prompt": "Generate the updated 'Leads' screen for NEXUS OS using the updated persistent navigation shell. 'Leads' is active in the WORK group.\n\nScreen requirements:\n1. 'Needs attention' top strip:\n   - 3 distinct urgent counter cards with direct filter links:\n     - Card 1 (HOT): \"HOT Leads with no rep\" \u2014 Count: 4 leads (Unassigned in floor queue > 15m). Alert pill #C8321F on #FDECEA.\n     - Card 2 (HOT): \""
+ },
+ {
+  "file": "markets-localization-regional-country-packs--1ab4b6.html",
+  "id": "1ab4b67db3c64876a8d49d4aa9751c4f",
+  "title": "Markets & Localization \u2014 Regional Country Packs",
+  "w": "2560",
+  "h": "3374",
+  "prompt": "Generate the roadmap screen for \"Markets & Localization\" under SETTINGS.\nFollow all roadmap screen rules strictly:\n- Pill badge next to the title: [PLANNED].\n- Category: SETTINGS & LOCALIZATION.\n- Title: Markets & Localization\n- One honest single sentence under the title: \"Manage regional country packs, multi-currency display standards, bilingual English/Arabic interfaces, and localized commercial"
+ },
+ {
+  "file": "overview-revenue-command-center--74e5c2.html",
+  "id": "74e5c28c7ab7446e948a47ecdadc2929",
+  "title": "Overview \u2014 Revenue Command Center",
+  "w": "2560",
+  "h": "3702",
+  "prompt": "Screen: Overview (Revenue Command Center).\nTarget device: Desktop 1440px.\n\nDesign Aesthetics & Color Rules:\n- Canvas background: #F7F8FA\n- Card containers: white background #FFFFFF, border: 1px solid #E8EAEF, border-radius: 10px, box-shadow: none (no shadows at rest).\n- Typography: Inter font for standard text, headings, and labels. JetBrains Mono ('font-mono') font for all monetary values, IDs, V"
+ },
+ {
+  "file": "appointments-showroom-visits-test-drives--43862a.html",
+  "id": "43862adf61ac4ab7aacf33f26f02f05e",
+  "title": "Appointments \u2014 Showroom Visits & Test Drives",
+  "w": "2560",
+  "h": "4338",
+  "prompt": "Screen title: Appointments \u2014 Showroom Test Drives & Handover Visits\nNavigation: Appointments active under WORK group.\nTopbar: 'Demo Motors' Dubai Showroom.\n\nLayout & Core Requirements:\n1. Executive Top Tiles:\n- Header: 'Every showroom visit, counted by the word it is actually in'\n- 4 Stat Tiles:\n  - 'CONFIRMED': 8 Visits ('Floor bays staged, luxury consultant assigned')\n  - 'PENDING CONFIRMATION':"
+ },
+ {
+  "file": "ask-ai-grounded-knowledge-base--bb752c.html",
+  "id": "bb752cd86522475b997b3d78fb7db2b4",
+  "title": "Ask AI \u2014 Grounded Knowledge Base",
+  "w": "2560",
+  "h": "5194",
+  "prompt": "Screen Title: Ask AI \u2014 Grounded Dealership Knowledge Base.\nSidebar navigation: Under INTELLIGENCE group, 'Ask AI' is ACTIVE (highlighted background #24428A with cyan #38D0E8 active rule). Topbar displays 'Demo Motors' Dubai Showroom, live sync pill, search omnibar, AED rate, GM profile Faris M.\n\nContent structure:\n1. Header & Telemetry Subtitle: 'Ask AI \u2014 Grounded Operational Intelligence', 'Query"
+ },
+ {
+  "file": "inventory-assets-profit-sentinel--a81092.html",
+  "id": "a81092c71de740c88e4e55907884c5a4",
+  "title": "Inventory \u2014 Assets & Profit Sentinel",
+  "w": "2560",
+  "h": "2800",
+  "prompt": "Generate the Inventory (Profit Sentinel) screen for NEXUS OS. Navigation: Inventory active in sidebar under ASSETS.\n\nTop Section:\n1. Header: 'Inventory \u2014 Assets & Profit Sentinel'. Subtitle: 'Real-time vehicle stock aging, capital velocity, margin exposure monitoring, and algorithmic holding risk analysis for Dubai showroom.'\n2. Primary Action Bar:\n- Search by VIN, Stock #, Make, Model\n- Filter by"
+ },
+ {
+  "file": "ownership-360-vehicle-lifecycle-relationship-dossier--069a9f.html",
+  "id": "069a9f384f5d4475b501773a3b12bd3f",
+  "title": "Ownership 360 \u2014 Vehicle Lifecycle & Relationship Dossier",
+  "w": "2560",
+  "h": "3506",
+  "prompt": "Screen Title: Ownership 360\nCategory: INTELLIGENCE\nPill Badge next to Title: \"PLANNED\" (e.g., \"INTELLIGENCE \u2022 \u25f7 PLANNED\")\nOne honest sentence under title: \"Unifies customer vehicle lifecycles, service habits, finance maturity, and predictive trade-in windows into a single relationship record.\"\nPrerequisite line: \"Prerequisite: Needs your DMS connected (CDK, AutoMaster, or DealerSocket) with custom"
+ },
+ {
+  "file": "appointments-showroom-visits-contextual-drawer--5a2c6d.html",
+  "id": "5a2c6dda88d247fca3fd73125bd0185e",
+  "title": "Appointments \u2014 Showroom Visits & Contextual Drawer",
+  "w": "2560",
+  "h": "3090",
+  "prompt": "Design the updated NEXUS OS Appointments screen for Demo Motors UAE.\nKey requirements:\n1. Header & Controls:\n   - Breadcrumb: WORK / CALENDAR & VISITS\n   - Title: 'Appointments' with subtext 'Showroom visits, VIP test drives, and vehicle deliveries scheduled across Dubai SZR showroom.'\n   - Controls: Date selector (Today: 14:45 GST), View mode (List view active, Calendar view toggle), Showroom fil"
+ },
+ {
+  "file": "deal-rescue-at-risk-deals-desk--c58152.html",
+  "id": "c58152ebb985471a85e963045a2b54ca",
+  "title": "Deal Rescue \u2014 At-Risk Deals Desk",
+  "w": "2560",
+  "h": "3922",
+  "prompt": "Generate the 'Deal Rescue' screen for NEXUS OS (sidebar route Deal Rescue active).\nDesign strictly following NEXUS OS system:\n- Background #F7F8FA, 8pt spacing grid, cards white with 1px border #E8EAEF, radius 10px, zero resting shadows. Text #0F1729, muted #68718A, Primary blue #2563C9 (hover #1D4FA8). JetBrains Mono font for Deal IDs, Stock numbers, AED amounts, days stuck, and timestamps.\n- Top"
+ },
+ {
+  "file": "channels-readiness-status-engine--54b35c.html",
+  "id": "54b35ced8008468c8bba81161c5659f1",
+  "title": "Channels \u2014 Readiness & Status Engine",
+  "w": "2560",
+  "h": "2660",
+  "prompt": "Design the Channels command center screen for NEXUS OS (OPERATIONS & INFRASTRUCTURE > Channels).\nTopbar: 'Demo Motors | Dubai, UAE' with PRODUCTION badge.\nShell: Channels is the active sidebar navigation item.\n\nKEY REQUIREMENTS:\n1. Header:\n   - Breadcrumbs: OPERATIONS / CHANNELS\n   - Title: \"Channels \u2014 Omnichannel & Customer Touchpoints\"\n   - Subtitle: \"Live communication gateways connecting Whats"
+ },
+ {
+  "file": "channels-omnichannel-whatsapp-cloud--dec649.html",
+  "id": "dec649462b2945758c8a60e91062fa7f",
+  "title": "Channels \u2014 Omnichannel & WhatsApp Cloud",
+  "w": "2560",
+  "h": "4406",
+  "prompt": "Screen: Channels. Active sidebar: Channels under WORK. Brand: Demo Motors, AED currency, calm dense command center, Inter font, JetBrains Mono for numbers.\nContent requirements:\n1. Header: 'Communication Channels & WhatsApp Business Cloud'. Subtitle: 'Unified omnichannel infrastructure, carrier delivery SLAs, and verified template governance for Dubai sales operations.'\n2. Stat tiles: 'Every chann"
+ },
+ {
+  "file": "today-s-money-leaks-landing-command-center--30144a.html",
+  "id": "30144a53ca6a470f9f7f4f6823d5f9fa",
+  "title": "Today's Money Leaks \u2014 Landing Command Center",
+  "w": "2560",
+  "h": "4658",
+  "prompt": "Generate the updated Today's Money Leaks screen for NEXUS OS with standardized Revenue Leak cards.\n\nStrict adherence to user specifications:\n1. Header & Controls:\n   - Title: \"Today's Money Leaks\"\n   - Subtitle: \"Live detection engine identifying stalled revenue, broken follow-ups, and unrecovered dealership inquiries\"\n   - Filter chips: All Leaks (8), Critical (3), High (3), Medium (2), Resolved "
+ },
+ {
+  "file": "customer-360-unified-intelligence--dc1622.html",
+  "id": "dc1622b91b3b4d43852eec228be29afd",
+  "title": "Customer 360 \u2014 Unified Intelligence",
+  "w": "2560",
+  "h": "5412",
+  "prompt": "Screen Title: Customer 360 \u2014 Unified Dealership Intelligence.\nSidebar navigation: Under INTELLIGENCE group, 'Customer 360' is ACTIVE (highlighted background #24428A with cyan #38D0E8 active rule). Topbar displays 'Demo Motors' Dubai Showroom, live sync, search omnibar, AED rate, GM profile Faris M.\n\nContent structure:\n1. Header & Subtitle: 'Customer 360 \u2014 Unified VIP Profile & Omnichannel History'"
+ },
+ {
+  "file": "calls-voice-telephony-voice-ai--161aef.html",
+  "id": "161aef288b7e4ac79ab7f066258f413b",
+  "title": "Calls & Voice \u2014 Telephony & Voice AI",
+  "w": "2682",
+  "h": "3284",
+  "prompt": "Screen: Calls & Voice (WORK, PLANNED)\n\nHeader & Title area:\n- Breadcrumb: WORK / TELEPHONY & CONVERSATIONS\n- Title: \"Calls & Voice\" with pill badge next to title: `\u25cb PLANNED`\n- One honest sentence under the title: \"Captures inbound showroom calls, routes unreturned inquiries, and syncs voice transcripts with AI deal notes.\"\n- Prerequisite line with icon / banner: \"Prerequisite: Needs your phone sy"
+ },
+ {
+  "file": "group-branches-multi-entity-management--ed025f.html",
+  "id": "ed025ffef4ec432299d15adec717cccf",
+  "title": "Group & Branches \u2014 Multi-Entity Management",
+  "w": "2560",
+  "h": "2492",
+  "prompt": "Generate the roadmap screen for \"Group & Branches\" under SETTINGS.\nFollow all roadmap screen rules strictly:\n- Pill badge next to the title: [PLANNED] (styled clean, indigo/neutral border or subtle tone).\n- Category: SETTINGS & GOVERNANCE.\n- Title: Group & Branches\n- One honest single sentence under the title: \"Consolidate telemetry, cross-border inventory transfers, and comparative margin benchma"
+ },
+ {
+  "file": "lead-sources-ingestion-connectivity--1ce809.html",
+  "id": "1ce8096f3e764baaa36cfe46d2111b19",
+  "title": "Lead Sources \u2014 Ingestion & Connectivity",
+  "w": "2560",
+  "h": "4404",
+  "prompt": "Screen: Lead Sources. Active sidebar: Lead Sources under WORK. Brand: Demo Motors, AED currency, Inter font, JetBrains Mono for metrics/IDs.\nContent requirements:\n1. Header: 'Lead Sources \u2014 Ingestion & Channel Health' with description: 'Audit inbound traffic origin, API webhook integrity, and floor intake telemetry across Dubai showroom operations.'\n2. 'Connect your lead sources' cards grid:\n   Ea"
+ },
+ {
+  "file": "trade-in-desk-appraisal-valuation-engine--5dd9a2.html",
+  "id": "5dd9a2b554d34b0aa50a6057637a698b",
+  "title": "Trade-In Desk \u2014 Appraisal & Valuation Engine",
+  "w": "2560",
+  "h": "3780",
+  "prompt": "Generate the inner screen content for Trade-In Desk roadmap screen.\nSTRICT USER RULES:\n- Navigation group: ASSETS (INTELLIGENCE & ASSETS), marked active.\n- Title: Trade-In Desk\n- Pill badge next to the title: '\u25cb PLANNED'\n- Prerequisite line: 'Prerequisite: Needs market comparables connection' (or 'Prerequisite: Needs market comparables live feed and RTA vehicle registry bridge')\n- One honest sente"
+ },
+ {
+  "file": "deal-rescue-at-risk-deals-desk--497bb5.html",
+  "id": "497bb5397b4c41239a60f55866232c22",
+  "title": "Deal Rescue \u2014 At-Risk Deals Desk",
+  "w": "2560",
+  "h": "6018",
+  "prompt": "Generate the updated 'Deal Rescue' screen for NEXUS OS with sidebar item 'Deal Rescue' active under REVENUE RECOVERY. Dealership topbar is 'Demo Motors' (Dubai Showroom).\n\nRequired sections and precise content:\n1. Header & Title: \"Deal Rescue \u2014 Slippage Prevention & At-Risk Deals Desk\" with topbar 'Demo Motors' (Dubai Showroom) and live sync pill.\n2. Section 'Deals in flight':\n   - Pipeline overvi"
+ },
+ {
+  "file": "acquisition-advisor-inventory-procurement-intelligence--022747.html",
+  "id": "022747774dff474faf0b23617265a49b",
+  "title": "Acquisition Advisor \u2014 Inventory Procurement Intelligence",
+  "w": "2560",
+  "h": "3436",
+  "prompt": "Generate the inner screen content for Acquisition Advisor roadmap screen.\nSTRICT USER RULES:\n- Navigation group: ASSETS (INTELLIGENCE & ASSETS), marked active.\n- Title: Acquisition Advisor\n- Pill badge next to the title: '\u25cb PLANNED'\n- One honest sentence under the title saying what it will do: e.g., 'Evaluates prospective inventory acquisitions against current dealership showroom demand signals, h"
+ },
+ {
+  "file": "deals-pipeline-deal-360-desk--80d495.html",
+  "id": "80d4956932204ac4822b422f461a41c1",
+  "title": "Deals \u2014 Pipeline & Deal 360 Desk",
+  "w": "2560",
+  "h": "4198",
+  "prompt": "Generate the updated Deals screen for NEXUS OS (UAE Automotive Dealership OS).\nContext & Navigation:\n- Active sidebar item: Deals (under PRIMARY NAVIGATION).\n- Topbar: Demo Motors | Dubai, UAE [PRODUCTION] [UAE GST 14:45:00] [AED / USD switcher] [Search Omnibar] [Rashid Al-Maktoum, Dealer Principal].\n\nScreen Content & Requirements:\n1. Header & Top Controls:\n   - Title: 'Deals \u2014 Pipeline & Deal Exe"
+ },
+ {
+  "file": "finance-desk-underwriting-quotations--331d24.html",
+  "id": "331d240a4b7d4f58a41c4db5c6bd495c",
+  "title": "Finance Desk \u2014 Underwriting & Quotations",
+  "w": "2560",
+  "h": "4812",
+  "prompt": "Screen Title: Finance Desk \u2014 Dealership F&I & Evidence-Gated Quotations.\nSidebar navigation: Under INTELLIGENCE group, 'Finance Desk' is ACTIVE (highlighted background #24428A with cyan #38D0E8 active rule). Topbar displays 'Demo Motors' Dubai Showroom, live sync, search omnibar, AED rate, GM profile Faris M.\n\nContent structure:\n1. Header & Subtitle: 'Finance Desk \u2014 Underwriting & Evidence-Gated Q"
+ },
+ {
+  "file": "subscription-plan-capabilities-billing--1818da.html",
+  "id": "1818da6b2f984597a37e104b159ac11e",
+  "title": "Subscription \u2014 Plan, Capabilities & Billing",
+  "w": "2560",
+  "h": "4882",
+  "prompt": "Screen: Subscription \u2014 Plan, Capabilities & Billing\nTopbar: 'Demo Motors | Dubai, UAE', Live Dealership, Rashid Al-Maktoum (Dealer Principal).\nSidebar active item: 'Subscription & Tier'.\n\nHeader:\nBreadcrumbs: SYSTEM ADMINISTRATION \u2022 TENANT ID: DXB-DM-0841\nTitle: Subscription & Billing\nSubtitle: Plan tier, platform capability entitlement, payment methods, and invoice history for Demo Motors (Dubai)"
+ },
+ {
+  "file": "dealer-benchmarking-anonymous-regional-peer-telemetry--39d2e5.html",
+  "id": "39d2e56e5d4d40a1b1e39a59528b424a",
+  "title": "Dealer Benchmarking \u2014 Anonymous Regional Peer Telemetry",
+  "w": "2560",
+  "h": "3424",
+  "prompt": "Generate the 'Dealer Benchmarking' roadmap screen under navigation group INTELLIGENCE.\nFollow strict roadmap rules:\n1. Header:\n   - Breadcrumb: INTELLIGENCE / DEALER BENCHMARKING\n   - Title: \"Dealer Benchmarking\" with pill badge right next to it: \"PLANNED\" (neutral badge)\n   - One honest sentence under the title: \"Compares your showroom speed, conversion, aging, and gross against anonymous regiona"
+ },
+ {
+  "file": "command-palette-shortcuts-global-quick-actions--2e7ab4.html",
+  "id": "2e7ab4e53c1a487796b47716118395af",
+  "title": "Command Palette & Shortcuts \u2014 Global Quick Actions",
+  "w": "2560",
+  "h": "2048",
+  "prompt": "Design Screen 1: Command Palette (Ctrl K) overlay over dimmed Leads screen.\nBackground: The underlying Leads table view (columns Lead, Contact, Vehicle of interest, Status, Owner, Created, SLA) is visible but blurred/dimmed with backdrop-blur-sm and bg-slate-900/40.\nCenter Modal: Floating Command Palette (width ~740px, elevated shadow-2xl, rounded-2xl, border border-slate-200 bg-white overflow-hid"
+ },
+ {
+  "file": "action-center-next-best-actions-queue--b76b17.html",
+  "id": "b76b17b5c11e4532ac1e94c919829b9c",
+  "title": "Action Center \u2014 Next-Best Actions Queue",
+  "w": "2560",
+  "h": "2292",
+  "prompt": "Create the Action Center screen for NEXUS OS (Demo Motors). Sidebar item 'Action Center' active.\nHeader: Title 'Action Center \u2014 Next-Best Actions Queue' with subtitle 'Algorithmic prioritization of revenue-critical dealership interventions needing sign-off'. Action summary badges: '18 Actions Pending', 'AED 2,840,000 Total Value at Risk', 'Avg Resolution SLA: 18m'.\n\nLayout: Two-column split with t"
+ },
+ {
+  "file": "reconditioning-tracker-workshop-frontline-speed--256de8.html",
+  "id": "256de864507a4afa87ad5f27b520e1df",
+  "title": "Reconditioning Tracker \u2014 Workshop & Frontline Speed",
+  "w": "2560",
+  "h": "4214",
+  "prompt": "Generate the roadmap screen for \"Reconditioning Tracker\" under ASSETS / INTELLIGENCE & ASSETS.\nFollow all roadmap screen rules strictly:\n- Pill badge next to the title: [PLANNED].\n- Category: ASSETS & RECONDITIONING.\n- Title: Reconditioning Tracker\n- One honest single sentence under the title: \"Track mechanical, cosmetic, and detailing recon stages per inventory unit to control reconditioning budg"
+ },
+ {
+  "file": "settings-workspace-governance-preferences--7e840f.html",
+  "id": "7e840f95cd6f44babf085728e0c5f35b",
+  "title": "Settings \u2014 Workspace Governance & Preferences",
+  "w": "2560",
+  "h": "4076",
+  "prompt": "Design the updated Settings (Workspace & System Configuration) screen for NEXUS OS (SETTINGS > Workspace & System Configuration).\nTopbar: 'Demo Motors | Dubai, UAE' with PRODUCTION badge.\nShell: Workspace & System Configuration (Settings) is the active sidebar navigation item.\n\nKEY REQUIREMENTS:\n1. Header:\n   - Breadcrumbs: SETTINGS / SYSTEM CONFIGURATION\n   - Title: \"Settings \u2014 Workspace & System"
+ },
+ {
+  "file": "record-a-lead-manual-floor-intake-history--e75a21.html",
+  "id": "e75a21bfdce847fa80c24e4b96ff5ca7",
+  "title": "Record a Lead \u2014 Manual Floor Intake & History",
+  "w": "2560",
+  "h": "4206",
+  "prompt": "Generate the updated 'Record a Lead' screen for NEXUS OS using the updated persistent navigation shell. 'Record a Lead' is active in the WORK group.\n\nScreen requirements:\n1. Header & Intake Action Bar:\n   - Page title: \"Record a Lead\" with subtitle \"Manual intake for floor walk-ins, private showroom visits, and inbound phone inquiries.\"\n   - Prominent primary CTA button at top: \"Record a walk-in o"
+ },
+ {
+  "file": "overview-revenue-command-center--af6246.html",
+  "id": "af6246e8f97d4f09bd93fe08462cef41",
+  "title": "Overview \u2014 Revenue Command Center",
+  "w": "2560",
+  "h": "4436",
+  "prompt": "Generate the updated Overview (Revenue Command Center) screen for NEXUS OS.\n\nStrict adherence to user specifications:\n1. Top attention headline banner:\n   - Amber/red highlighted card: \"7 things need your attention today\"\n   - Subtitle: \"4 leads breaching WhatsApp 15m SLA, 2 at-risk trade appraisals, 1 unverified inventory margin dip.\"\n   - Action link: \"Review all in Action Center \u2192\" (prominent i"
+ },
+ {
+  "file": "revenue-recovery-money-leaks-engine--a2b2bd.html",
+  "id": "a2b2bde3094a4c3289b87f872d0e6bba",
+  "title": "Revenue Recovery \u2014 Money Leaks Engine",
+  "w": "2560",
+  "h": "3102",
+  "prompt": "Create the Revenue Recovery screen for NEXUS OS (Demo Motors). Sidebar item 'Revenue Recovery' active.\nHeader:\n- Title: 'Revenue Recovery'\n- Subtitle: 'Real-time detection and automated recovery pipelines for high-value dealership margin leaks'\n- Top action bar: 'Export Leak Dossier (PDF/CSV)', 'Simulate AI Interventions', 'Auto-Recover All Verified (3)' (primary blue button).\n- Top Metric Summary"
+ },
+ {
+  "file": "conversations-omnichannel-dealership-inbox--f2b061.html",
+  "id": "f2b061210b5b4f8fb2cc57d929aba551",
+  "title": "Conversations \u2014 Omnichannel Dealership Inbox",
+  "w": "2560",
+  "h": "2192",
+  "prompt": "Screen title: Conversations \u2014 Omnichannel Dealership Inbox\nNavigation: Conversations active under WORK group.\nTopbar: 'Demo Motors' Dubai Showroom.\n\nLayout & Core Features:\n1. Executive Top Stat Tiles:\n- 'Conversations': 48 Active Today (Mono '48' with '+12 vs yesterday')\n- 'Reply due': 6 Overdue (HOT alert chip '#C8321F' on '#FDECEA', 'Breaching 15m SLA')\n- 'Repliable from here': 38 Threads ('Dir"
+ },
+ {
+  "file": "revenue-recovery-money-leaks-engine--467051.html",
+  "id": "4670513958c74d90af0d30d11ee5931e",
+  "title": "Revenue Recovery \u2014 Money Leaks Engine",
+  "w": "2560",
+  "h": "5880",
+  "prompt": "Generate the updated 'Revenue Recovery' screen for NEXUS OS with sidebar item 'Revenue Recovery' active under REVENUE RECOVERY. Dealership topbar is 'Demo Motors' (Dubai Showroom).\n\nRequired sections and precise content:\n1. Header & Page Title: \"Revenue Recovery \u2014 Where the Money Is & Telemetry Proof\" with audit export actions and live sync chip.\n2. Section 'Where the money is, and what NEXUS can "
+ },
+ {
+  "file": "service-revenue-recovery-aftersales-workshop-leak-desk--cf4df8.html",
+  "id": "cf4df82b8fba4a53a33bd5e36862d8b1",
+  "title": "Service Revenue Recovery \u2014 Aftersales & Workshop Leak Desk",
+  "w": "2560",
+  "h": "3418",
+  "prompt": "Screen Title: Service Revenue Recovery\nCategory: REVENUE RECOVERY\nPill Badge next to Title: \"PLANNED\" (e.g., \"REVENUE RECOVERY \u2022 \u25f7 PLANNED\")\nOne honest sentence under title: \"Detects deferred workshop jobs, upcoming maintenance milestones, and expiring vehicle warranties to recapture aftersales revenue.\"\nPrerequisite line: \"Prerequisite: Needs your DMS / workshop system connected (AutoMaster, CDK "
+ },
+ {
+  "file": "subscription-plan-capabilities-billing--aa3177.html",
+  "id": "aa317765a6eb44ecbb518863dabffcc0",
+  "title": "Subscription \u2014 Plan, Capabilities & Billing",
+  "w": "2560",
+  "h": "4562",
+  "prompt": "Enterprise desktop screen for NEXUS OS: Subscription.\nTopbar dealership: 'Demo Motors'.\nActive sidebar item: Subscription (under System).\nRequirements:\n1. Header: 'Subscription & Billing' with subtitle 'Plan tier, platform capability entitlement, payment methods, and invoice history'.\n2. 'Your subscription' primary status card:\n   - Plan: 'NEXUS Pro Dealership Tier' (with active green badge 'ACTIV"
+ },
+ {
+  "file": "team-showroom-roster-access--bcd2c2.html",
+  "id": "bcd2c2ac7edb474cb49a3b1d58d9218f",
+  "title": "Team \u2014 Showroom Roster & Access",
+  "w": "2560",
+  "h": "2850",
+  "prompt": "Enterprise desktop screen for NEXUS OS: Team.\nTopbar dealership: 'Demo Motors'.\nActive sidebar item: Team (under System).\nRequirements:\n1. Header: 'Team & Showroom Roster' with subtitle 'Sales floor assignments, response SLA accountability, and role permissions'. Actions: '+ Invite team member', 'Export roster'.\n2. 'Needs attention' alert strip:\n   - '2 sales reps with breached SLA in the last 2 h"
+ },
+ {
+  "file": "stock-to-lead-matching-stalled-inventory-matcher--f0cc94.html",
+  "id": "f0cc9490e6814ad98ddf19b9129725e5",
+  "title": "Stock-to-Lead Matching \u2014 Stalled Inventory Matcher",
+  "w": "2560",
+  "h": "3338",
+  "prompt": "Generate the inner screen content for Stock-to-Lead Matching roadmap screen.\nSTRICT USER RULES:\n- Navigation group: REVENUE RECOVERY, marked active.\n- Title: Stock-to-Lead Matching\n- Pill badge next to the title: '\u25cb COMING SOON'\n- One honest sentence under the title saying what it will do: e.g., 'Automatically pairs aging showroom stock with stalled or active CRM leads based on vector similarity, "
+ }
+]

@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "on-primary-container": "#dee6ff",
+          "secondary-fixed": "#d9e2ff",
+          "outline": "#737784",
+          "tertiary-fixed": "#a0efff",
+          "primary-fixed": "#d9e2ff",
+          "secondary": "#4c5e87",
+          "on-tertiary-fixed": "#001f25",
+          "secondary-container": "#bccefe",
+          "inverse-primary": "#afc6ff",
+          "tertiary": "#005864",
+          "surface": "#faf8ff",
+          "surface-container-high": "#e1e8ff",
+          "on-secondary-fixed": "#041a40",
+          "inverse-surface": "#283043",
+          "on-secondary-fixed-variant": "#34466e",
+          "outline-variant": "#c2c6d5",
+          "secondary-fixed-dim": "#b4c6f5",
+          "on-secondary": "#ffffff",
+          "on-primary-fixed-variant": "#004398",
+          "surface-dim": "#d2d9f3",
+          "primary": "#004ba8",
+          "on-surface-variant": "#424753",
+          "on-error": "#ffffff",
+          "surface-bright": "#faf8ff",
+          "surface-container-low": "#f2f3ff",
+          "on-tertiary": "#ffffff",
+          "surface-container-lowest": "#ffffff",
+          "surface-container-highest": "#dbe2fb",
+          "on-tertiary-container": "#b1f1ff",
+          "background": "#faf8ff",
+          "tertiary-fixed-dim": "#44d8f0",
+          "on-primary": "#ffffff",
+          "surface-variant": "#dbe2fb",
+          "error": "#ba1a1a",
+          "surface-tint": "#155ac0",
+          "on-primary-fixed": "#001a43",
+          "surface-container": "#e9edff",
+          "primary-container": "#2563c9",
+          "tertiary-container": "#007281",
+          "inverse-on-surface": "#edf0ff",
+          "on-error-container": "#93000a",
+          "on-tertiary-fixed-variant": "#004e59",
+          "primary-fixed-dim": "#afc6ff",
+          "on-secondary-container": "#465780",
+          "on-background": "#131b2d",
+          "on-surface": "#131b2d",
+          "error-container": "#ffdad6"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "space-lg": "1.5rem",
+          "space-xl": "2rem",
+          "space-sm": "0.5rem",
+          "gutter": "1rem",
+          "margin": "1.5rem",
+          "space-xs": "0.25rem",
+          "space-md": "1rem"
+        },
+        "fontFamily": {
+          "headline-xl": [
+            "Inter"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "body-sm": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "table-header": [
+            "Inter"
+          ],
+          "label-numeric-md": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "label-numeric-lg": [
+            "JetBrains Mono"
+          ],
+          "label-numeric-sm": [
+            "JetBrains Mono"
+          ],
+          "headline-md": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "headline-xl": [
+            "2rem",
+            {
+              "lineHeight": "2.5rem",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "body-lg": [
+            "1rem",
+            {
+              "lineHeight": "1.5rem",
+              "fontWeight": "400"
+            }
+          ],
+          "body-sm": [
+            "0.75rem",
+            {
+              "lineHeight": "1rem",
+              "fontWeight": "400"
+            }
+          ],
+          "body-md": [
+            "0.875rem",
+            {
+              "lineHeight": "1.25rem",
+              "fontWeight": "400"
+            }
+          ],
+          "table-header": [
+            "0.6875rem",
+            {
+              "lineHeight": "0.875rem",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600"
+            }
+          ],
+          "label-numeric-md": [
+            "0.875rem",
+            {
+              "lineHeight": "1.25rem",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-lg": [
+            "1.5rem",
+            {
+              "lineHeight": "2rem",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "600"
+            }
+          ],
+          "label-numeric-lg": [
+            "1.25rem",
+            {
+              "lineHeight": "1.5rem",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "600"
+            }
+          ],
+          "label-numeric-sm": [
+            "0.75rem",
+            {
+              "lineHeight": "1rem",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-md": [
+            "1.125rem",
+            {
+              "lineHeight": "1.5rem",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ]
+        }
+      }
+    }
+  }</script></head><body class="bg-background font-body-md text-body-md text-on-surface"><aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-lowest border-r border-outline-variant z-50 flex flex-col justify-between overflow-y-auto"><div class="flex flex-col"><div class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between bg-surface-container-lowest"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-primary text-xl">shield_with_house</span><span class="font-headline-md text-headline-md text-on-surface tracking-tight">NEXUS <span class="text-primary font-bold">OS</span></span></div><span class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm text-label-numeric-sm bg-surface-container-high text-primary font-semibold border border-outline-variant">v2.4 Live</span></div><nav class="p-space-sm space-y-4" data-active-classes="bg-primary text-on-primary font-semibold"><div class="space-y-0.5"><div class="px-2 py-1 font-table-header text-table-header text-outline uppercase tracking-wider">Primary Navigation</div><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="overview" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">dashboard</span><span>Overview</span></div><span class="font-label-numeric-sm text-[10px] text-outline">RCC</span></a><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="owner-brief" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">assignment</span><span>Owner Brief</span></div><span class="px-1.5 py-0.5 rounded text-[9px] font-label-numeric-sm bg-surface-container-high text-secondary font-bold flex items-center gap-0.5"><span>◐</span> PARTIAL</span></a><a aria-current="page" class="flex items-center justify-between px-2.5 py-1.5 rounded-lg transition-colors bg-primary text-on-primary font-semibold" data-path="todays-money-leaks" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg text-error">crisis_alert</span><span>Today's Money Leaks</span></div><span class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm bg-error-container text-on-error-container font-semibold">14 AED</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="leads" href="#"><span class="material-symbols-outlined text-lg">filter_alt</span><span>Leads</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-lg">add_circle</span><span>Record a Lead</span></a><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="action-center" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">bolt</span><span>Action Center</span></div><span class="px-1.5 py-0.5 rounded-full text-[10px] font-label-numeric-sm bg-primary-container text-on-primary-container font-bold">8</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="deals" href="#"><span class="material-symbols-outlined text-lg">handshake</span><span>Deals</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="appointments" href="#"><span class="material-symbols-outlined text-lg">calendar_month</span><span>Appointments</span></a><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="conversations" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">chat</span><span>Conversations</span></div><span class="material-symbols-outlined text-xs text-outline">mark_chat_unread</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="campaigns" href="#"><span class="material-symbols-outlined text-lg">campaign</span><span>Campaigns</span></a></div><div class="space-y-0.5"><div class="px-2 py-1 font-table-header text-table-header text-outline uppercase tracking-wider">Intelligence &amp; Assets</div><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="inventory" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">directions_car</span><span>Inventory</span></div><span class="font-label-numeric-sm text-[10px] text-outline">Sentinel</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="competitors" href="#"><span class="material-symbols-outlined text-lg">radar</span><span>Competitors</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-lg">request_quote</span><span>Finance Desk</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="customer-360" href="#"><span class="material-symbols-outlined text-lg">person_search</span><span>Customer 360</span></a><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="ask-ai" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg text-tertiary">smart_toy</span><span>Ask AI</span></div><span class="px-1.5 py-0.5 rounded text-[9px] font-label-numeric-sm bg-tertiary-fixed text-on-tertiary-fixed font-semibold">AGENT</span></a></div><div class="space-y-0.5"><div class="px-2 py-1 font-table-header text-table-header text-outline uppercase tracking-wider">Infrastructure &amp; Compliance</div><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-lg">input</span><span>Lead Sources</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="channels" href="#"><span class="material-symbols-outlined text-lg">hub</span><span>Channels</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="integrations" href="#"><span class="material-symbols-outlined text-lg">integration_instructions</span><span>Integrations</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="policy-house-rules" href="#"><span class="material-symbols-outlined text-lg">gavel</span><span>Policy &amp; House Rules</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="compliance-kyc" href="#"><span class="material-symbols-outlined text-lg">verified_user</span><span>Compliance &amp; KYC</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="automation" href="#"><span class="material-symbols-outlined text-lg">auto_mode</span><span>Automation</span></a><a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="team-roles" href="#"><span class="material-symbols-outlined text-lg">group</span><span>Team &amp; Roles</span></a><a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="settings-system-health" href="#"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-lg">tune</span><span>Settings</span></div><div class="w-2 h-2 rounded-full bg-tertiary"></div></a></div></nav></div><div class="p-space-sm border-t border-outline-variant bg-surface-container-low"><div class="p-2.5 rounded-lg bg-surface-container-lowest border border-outline-variant flex items-center justify-between"><div class="flex flex-col"><span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">Recovery Run</span><span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">14:32:09 GST</span></div><div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span><span class="font-label-numeric-sm text-[10px] text-primary font-bold">ACTIVE</span></div></div></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant z-40 flex items-center justify-between px-space-md"><div class="flex items-center gap-space-md"><div class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant"><span class="material-symbols-outlined text-secondary text-base">storefront</span><span class="font-body-sm text-body-sm font-semibold text-on-surface">Demo Motors</span><span class="text-outline text-xs">|</span><span class="font-body-sm text-[11px] text-on-surface-variant">Dubai, UAE</span><span class="material-symbols-outlined text-outline text-sm">unfold_more</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-surface-container-high text-primary border border-outline-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span>PRODUCTION</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm text-on-surface-variant border-r border-outline-variant pr-space-md"><span class="material-symbols-outlined text-base text-outline">schedule</span><span id="live-clock-uae">12:48:32 GST</span></div><div class="relative flex items-center justify-center p-1.5 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"><span class="material-symbols-outlined text-xl">notifications</span><span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-error ring-2 ring-surface-container-lowest"></span></div><div class="flex items-center gap-space-sm pl-space-sm border-l border-outline-variant"><div class="flex flex-col text-right"><span class="font-body-sm text-body-sm font-semibold text-on-surface leading-tight">Rashid Al-Maktoum</span><span class="font-body-sm text-[11px] text-outline leading-tight">Dealer Principal</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-background min-h-screen w-full px-space-md py-space-md"><div class="flex flex-col w-full">
+<!-- Command Header & Scan Status Bar -->
+<div class="flex flex-col gap-space-md mb-space-lg">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+<div class="flex flex-col space-y-1">
+<div class="flex items-center gap-space-sm flex-wrap">
+<h1 class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">Today's Money Leaks</h1>
+<span class="px-2.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-error-container text-on-error-container uppercase tracking-wider flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
+            8 Active Pipeline Slippages
+          </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+          Live detection engine identifying stalled revenue, broken follow-ups, and unrecovered dealership inquiries
+        </p>
+</div>
+<!-- Detection Status Banner -->
+<div class="flex items-center gap-space-sm bg-surface-container-low px-space-md py-2.5 rounded-lg border-0 self-start md:self-auto">
+<span class="material-symbols-outlined text-primary text-xl">stream</span>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">Engine Active</span>
+<span class="text-outline text-xs">•</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Scanned 2 minutes ago</span>
+</div>
+<span class="font-label-numeric-sm text-[11px] text-outline">Next algorithmic cycle in <span class="font-semibold text-primary">02:45</span></span>
+</div>
+</div>
+</div>
+<!-- Filter Bar & Metrics Tabs -->
+<div class="flex items-center justify-between flex-wrap gap-space-sm">
+<div class="flex items-center gap-2 overflow-x-auto pb-1" id="filter-pills">
+<button class="px-3 py-1.5 rounded-lg bg-primary text-on-primary font-body-sm text-body-sm font-semibold shadow-sm transition-all flex items-center gap-1.5">
+<span>All Leaks</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-lowest text-primary text-[11px] font-label-numeric-sm">8</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+<span>Critical</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface text-[11px] font-label-numeric-sm">3</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span>High</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface text-[11px] font-label-numeric-sm">3</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span>Medium</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface text-[11px] font-label-numeric-sm">2</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm text-primary">check_circle</span>
+<span>Resolved Today</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface text-[11px] font-label-numeric-sm">4</span>
+</button>
+</div>
+<div class="flex items-center gap-space-sm ml-auto text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span>ESTIMATED EXPOSURE:</span>
+<span class="font-bold text-headline-md text-error">AED 165,000</span>
+</div>
+</div>
+</div>
+<!-- STANDARDIZED REVENUE LEAK CARDS CONTAINER -->
+<div class="flex flex-col gap-space-lg mb-space-xl">
+<!-- CARD 1: CRITICAL SLA BREACH -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md transition-all">
+<!-- Card Head: Severity & Core Identifiers -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm pb-space-sm bg-surface-container-low p-space-md rounded-lg">
+<div class="flex items-center gap-space-sm flex-wrap">
+<span class="px-2.5 py-1 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-error-container text-on-error-container flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">emergency_home</span>
+            CRITICAL SLA
+          </span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Omar Al-Zaabi</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface-variant">+971 50 812 4490</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-container-high text-secondary font-medium">Pre-qualified cash buyer</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-1 rounded text-xs font-medium bg-surface-container-highest text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-secondary">hub</span>
+            Dubizzle Webhook
+          </span>
+<span class="font-label-numeric-sm text-[11px] text-outline">Lead Age: 48m</span>
+</div>
+</div>
+<!-- Main Specifications & Financial Valuation Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md bg-surface-container p-space-md rounded-lg">
+<!-- Vehicle Profile -->
+<div class="flex flex-col space-y-1">
+<span class="font-table-header text-table-header uppercase text-outline">Target Inventory Unit</span>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">2024 Toyota Land Cruiser VXR</span>
+</div>
+<div class="flex items-center gap-space-sm font-label-numeric-sm text-label-numeric-sm">
+<span class="bg-surface-container-lowest px-1.5 py-0.5 rounded text-on-surface font-semibold">STK-2024-981</span>
+<span class="text-outline">List:</span>
+<span class="font-bold text-on-surface">AED 390,000</span>
+</div>
+</div>
+<!-- Financial Impact Box with Popover -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high relative">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Capital Exposure</span>
+<!-- Interactive Tooltip Trigger -->
+<button class="font-body-sm text-[11px] text-primary hover:text-on-primary-fixed-variant font-medium flex items-center gap-0.5 underline" onclick="toggleTooltip('tooltip-c1')">
+              How is this computed?
+              <span class="material-symbols-outlined text-xs">help</span>
+</button>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-error">AED 42,000</span>
+<span class="font-label-numeric-sm text-xs font-semibold text-error uppercase">ESTIMATED</span>
+</div>
+<span class="font-body-sm text-xs text-on-surface-variant">Carrying costs compound at AED 240/day</span>
+<!-- Tooltip Popover -->
+<div class="hidden absolute top-10 right-0 z-30 w-80 p-space-md bg-surface-container-lowest rounded-xl shadow-xl text-on-surface space-y-2" id="tooltip-c1">
+<div class="flex items-center justify-between pb-1">
+<span class="font-headline-md text-xs font-bold text-on-surface">Algorithmic Valuation Model</span>
+<button class="text-outline hover:text-on-surface" onclick="toggleTooltip('tooltip-c1')"><span class="material-symbols-outlined text-sm">close</span></button>
+</div>
+<p class="font-body-sm text-xs text-on-surface-variant leading-relaxed">
+              Computed from vehicle expected gross margin (11.2% of AED 340,000) minus floor-plan carrying cost for 45 days. Confidence: 89% based on historical close rate of similar lead profiles.
+            </p>
+<div class="pt-1.5 flex justify-between font-label-numeric-sm text-[10px] text-outline bg-surface-container-low px-2 py-1 rounded">
+<span>Model ID: ML-MARG-REV3</span>
+<span>Updated: 14:30 GST</span>
+</div>
+</div>
+</div>
+<!-- Assigned Floor Agent & SLA Breach Metric -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high">
+<span class="font-table-header text-table-header uppercase text-outline">Floor Assignment</span>
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs">KB</span>
+<span class="font-body-md text-body-md font-semibold text-on-surface">Kareem B. (Sales Rep)</span>
+</div>
+<div class="flex items-center gap-1.5 text-error font-label-numeric-sm text-xs font-medium">
+<span class="material-symbols-outlined text-xs">timer_off</span>
+<span>Unacknowledged for 48m (SLA threshold 15m)</span>
+</div>
+</div>
+</div>
+<!-- Why Checklist Diagnostic -->
+<div class="flex flex-col gap-2 bg-surface-container-low p-space-md rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline font-semibold">Diagnostic Proof &amp; Condition Verification</span>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-x-space-md gap-y-1.5 font-body-sm text-body-sm">
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>Incoming inquiry verified from verified UAE phone (+971 50 812 4490)</span>
+</div>
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>Customer requested test drive slot for Saturday 11:00 AM</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>Assigned sales rep (Kareem B.) has not acknowledged message in 48 minutes</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>SLA threshold (15m) breached by 33m without manager notification</span>
+</div>
+</div>
+</div>
+<!-- Evidence Line (Timeline Audit Trail) -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-1">
+<div class="flex items-center gap-2 flex-wrap font-label-numeric-sm text-label-numeric-sm text-outline">
+<span class="text-on-surface font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">history_toggle_off</span>
+            3 source events (Click to view timeline audit):
+          </span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            14:12:04 Ingestion
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            14:12:05 Rep Assigned
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-error-container text-on-error-container font-semibold hover:opacity-80 transition-opacity">
+            14:27:00 SLA Warning
+          </button>
+</div>
+<span class="font-label-numeric-sm text-xs text-outline">Session Hash: #DXB-981-01</span>
+</div>
+<!-- Recommended Action Callout -->
+<div class="p-space-md rounded-lg bg-surface-container-high flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-primary text-xl mt-0.5">crisis_alert</span>
+<div class="flex flex-col space-y-0.5">
+<span class="font-body-md text-body-md font-bold text-on-surface">Recommended action:</span>
+<p class="font-body-md text-body-md text-on-surface-variant">
+            Reassign lead to Duty Manager or send 1-tap automated WhatsApp apology with booking confirmation.
+          </p>
+</div>
+</div>
+<!-- Action Buttons Row & Workflow State Selector -->
+<div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md pt-space-xs">
+<!-- Execution Action Buttons -->
+<div class="flex items-center gap-2 flex-wrap">
+<button class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-2 shadow-sm transition-all">
+<span class="material-symbols-outlined text-base">chat</span>
+<span>WhatsApp</span>
+</button>
+<button class="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold flex items-center gap-2 transition-all">
+<span class="material-symbols-outlined text-base">call</span>
+<span>Call</span>
+</button>
+<button class="px-3 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary font-body-sm text-body-sm font-semibold flex items-center gap-1.5 transition-all">
+<span class="material-symbols-outlined text-base">open_in_new</span>
+<span>Open Inspector</span>
+</button>
+</div>
+<!-- Outcome Segmented Selector -->
+<div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline px-2">Status:</span>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-primary font-body-sm text-xs font-semibold shadow-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Pending Review
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Recovered
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Lost with Reason
+          </button>
+</div>
+</div>
+</div>
+<!-- CARD 2: HIGH MARGIN TRADE-IN LEAK -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md transition-all">
+<!-- Card Head: Severity & Core Identifiers -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm pb-space-sm bg-surface-container-low p-space-md rounded-lg">
+<div class="flex items-center gap-space-sm flex-wrap">
+<span class="px-2.5 py-1 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-secondary-container text-on-secondary-container flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">swap_driving_apps</span>
+            HIGH MARGIN RISK
+          </span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Farhan Siddiqui</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface-variant">+971 52 940 3311</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-container-high text-secondary font-medium">VIP Repeat Client (Trade-In)</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-1 rounded text-xs font-medium bg-surface-container-highest text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-tertiary">chat</span>
+            WhatsApp Direct API
+          </span>
+<span class="font-label-numeric-sm text-[11px] text-outline">Lead Age: 3h 12m</span>
+</div>
+</div>
+<!-- Main Specifications & Financial Valuation Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md bg-surface-container p-space-md rounded-lg">
+<!-- Vehicle Profile -->
+<div class="flex flex-col space-y-1">
+<span class="font-table-header text-table-header uppercase text-outline">Target Inventory Unit</span>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">2023 Mercedes-AMG G63</span>
+</div>
+<div class="flex items-center gap-space-sm font-label-numeric-sm text-label-numeric-sm">
+<span class="bg-surface-container-lowest px-1.5 py-0.5 rounded text-on-surface font-semibold">STK-2023-G14</span>
+<span class="text-outline">List:</span>
+<span class="font-bold text-on-surface">AED 720,000</span>
+</div>
+</div>
+<!-- Financial Impact Box with Popover -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high relative">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Capital Exposure</span>
+<button class="font-body-sm text-[11px] text-primary hover:text-on-primary-fixed-variant font-medium flex items-center gap-0.5 underline" onclick="toggleTooltip('tooltip-c2')">
+              How is this computed?
+              <span class="material-symbols-outlined text-xs">help</span>
+</button>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-error">AED 85,000</span>
+<span class="font-label-numeric-sm text-xs font-semibold text-error uppercase">ESTIMATED</span>
+</div>
+<span class="font-body-sm text-xs text-on-surface-variant">Includes trade-in acquisition arbitrage gap</span>
+<!-- Tooltip Popover -->
+<div class="hidden absolute top-10 right-0 z-30 w-80 p-space-md bg-surface-container-lowest rounded-xl shadow-xl text-on-surface space-y-2" id="tooltip-c2">
+<div class="flex items-center justify-between pb-1">
+<span class="font-headline-md text-xs font-bold text-on-surface">Valuation Composition Breakdown</span>
+<button class="text-outline hover:text-on-surface" onclick="toggleTooltip('tooltip-c2')"><span class="material-symbols-outlined text-sm">close</span></button>
+</div>
+<p class="font-body-sm text-xs text-on-surface-variant leading-relaxed">
+              Derived from G63 front-end margin target (AED 48,000) coupled with conservative wholesale liquidation margin on 2021 Range Rover trade-in (AED 37,000). Total gross risk: AED 85,000.
+            </p>
+<div class="pt-1.5 flex justify-between font-label-numeric-sm text-[10px] text-outline bg-surface-container-low px-2 py-1 rounded">
+<span>Model ID: ML-TRAD-ARB2</span>
+<span>Updated: 11:45 GST</span>
+</div>
+</div>
+</div>
+<!-- Floor Officer & Allocation Details -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high">
+<span class="font-table-header text-table-header uppercase text-outline">Desk Representative</span>
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs">TR</span>
+<span class="font-body-md text-body-md font-semibold text-on-surface">Tariq R. (Used Desk)</span>
+</div>
+<div class="flex items-center gap-1.5 text-secondary font-label-numeric-sm text-xs font-medium">
+<span class="material-symbols-outlined text-xs">pending_actions</span>
+<span>Appraisal pending valuation desk input</span>
+</div>
+</div>
+</div>
+<!-- Why Checklist Diagnostic -->
+<div class="flex flex-col gap-2 bg-surface-container-low p-space-md rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline font-semibold">Diagnostic Proof &amp; Condition Verification</span>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-x-space-md gap-y-1.5 font-body-sm text-body-sm">
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>Uploaded comprehensive Mulkiya card &amp; 14 detail photos of 2021 Range Rover trade-in</span>
+</div>
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>Explicit willingness to sign purchase agreement today if valuation &gt; AED 260k</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>Used car valuation desk has sat on inspection dossier for 3 hours 12 minutes</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>Client messaged at 13:40 stating competitor dealership offered instant buyout</span>
+</div>
+</div>
+</div>
+<!-- Evidence Line (Timeline Audit Trail) -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-1">
+<div class="flex items-center gap-2 flex-wrap font-label-numeric-sm text-label-numeric-sm text-outline">
+<span class="text-on-surface font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">history_toggle_off</span>
+            4 source events (Click to view timeline audit):
+          </span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            11:36:12 Mulkiya Upload
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            12:00:00 Assigned Tariq R.
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            13:40:15 Competing Offer Msg
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-error-container text-on-error-container font-semibold hover:opacity-80 transition-opacity">
+            14:15:00 Appraisal SLA Escalation
+          </button>
+</div>
+<span class="font-label-numeric-sm text-xs text-outline">Session Hash: #DXB-G63-TR2</span>
+</div>
+<!-- Recommended Action Callout -->
+<div class="p-space-md rounded-lg bg-surface-container-high flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-primary text-xl mt-0.5">notification_important</span>
+<div class="flex flex-col space-y-0.5">
+<span class="font-body-md text-body-md font-bold text-on-surface">Recommended action:</span>
+<p class="font-body-md text-body-md text-on-surface-variant">
+            Desk Principal to provide algorithmic instant trade guarantee at AED 265,000 and initiate immediate VIP phone call.
+          </p>
+</div>
+</div>
+<!-- Action Buttons Row & Workflow State Selector -->
+<div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md pt-space-xs">
+<div class="flex items-center gap-2 flex-wrap">
+<button class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-2 shadow-sm transition-all">
+<span class="material-symbols-outlined text-base">chat</span>
+<span>WhatsApp</span>
+</button>
+<button class="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold flex items-center gap-2 transition-all">
+<span class="material-symbols-outlined text-base">call</span>
+<span>Call</span>
+</button>
+<button class="px-3 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary font-body-sm text-body-sm font-semibold flex items-center gap-1.5 transition-all">
+<span class="material-symbols-outlined text-base">open_in_new</span>
+<span>Open Inspector</span>
+</button>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline px-2">Status:</span>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-primary font-body-sm text-xs font-semibold shadow-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Pending Review
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Recovered
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Lost with Reason
+          </button>
+</div>
+</div>
+</div>
+<!-- CARD 3: UNPRICED INQUIRY / IMPACT NOT COMPUTABLE -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md transition-all">
+<!-- Card Head: Severity & Core Identifiers -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm pb-space-sm bg-surface-container-low p-space-md rounded-lg">
+<div class="flex items-center gap-space-sm flex-wrap">
+<span class="px-2.5 py-1 rounded font-label-numeric-sm text-[11px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-outline">help_center</span>
+            UNPRICED INQUIRY
+          </span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Vikram Malhotra</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface-variant">+971 55 319 7780</span>
+<span class="px-2 py-0.5 rounded text-xs bg-surface-container-high text-secondary font-medium">Showroom Walk-in Client</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-1 rounded text-xs font-medium bg-surface-container-highest text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-primary">directions_walk</span>
+            Showroom Walk-in
+          </span>
+<span class="font-label-numeric-sm text-[11px] text-outline">Lead Age: 5h 45m</span>
+</div>
+</div>
+<!-- Main Specifications & Financial Valuation Row -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md bg-surface-container p-space-md rounded-lg">
+<!-- Vehicle Profile -->
+<div class="flex flex-col space-y-1">
+<span class="font-table-header text-table-header uppercase text-outline">Target Inventory Unit</span>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">2022 Porsche 911 GT3 Touring</span>
+</div>
+<div class="flex items-center gap-space-sm font-label-numeric-sm text-label-numeric-sm">
+<span class="bg-surface-container-lowest px-1.5 py-0.5 rounded text-on-surface font-semibold">STK-POA-009</span>
+<span class="text-outline">List:</span>
+<span class="font-bold text-outline">Price on Application (POA)</span>
+</div>
+</div>
+<!-- Financial Impact Box with Popover (Impact not computable) -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high relative">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-outline">Capital Exposure</span>
+<button class="font-body-sm text-[11px] text-primary hover:text-on-primary-fixed-variant font-medium flex items-center gap-0.5 underline" onclick="toggleTooltip('tooltip-c3')">
+              How is this computed?
+              <span class="material-symbols-outlined text-xs">help</span>
+</button>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline-md text-headline-md font-semibold text-outline">Impact not computable</span>
+</div>
+<span class="font-body-sm text-xs text-outline">Missing wholesale acquisition base cost in DMS</span>
+<!-- Tooltip Popover -->
+<div class="hidden absolute top-10 right-0 z-30 w-80 p-space-md bg-surface-container-lowest rounded-xl shadow-xl text-on-surface space-y-2" id="tooltip-c3">
+<div class="flex items-center justify-between pb-1">
+<span class="font-headline-md text-xs font-bold text-on-surface">Valuation Engine Notice</span>
+<button class="text-outline hover:text-on-surface" onclick="toggleTooltip('tooltip-c3')"><span class="material-symbols-outlined text-sm">close</span></button>
+</div>
+<p class="font-body-sm text-xs text-on-surface-variant leading-relaxed">
+              Consignment vehicle with unconfirmed reserve. Cannot calculate algorithmic slippage until appraisal baseline and minimum owner margin are established by General Manager.
+            </p>
+<div class="pt-1.5 flex justify-between font-label-numeric-sm text-[10px] text-outline bg-surface-container-low px-2 py-1 rounded">
+<span>Status: RESERVE_MISSING</span>
+<span>Flag: CONSIGNMENT</span>
+</div>
+</div>
+</div>
+<!-- Floor Officer & Allocation Details -->
+<div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high">
+<span class="font-table-header text-table-header uppercase text-outline">Handling Desk</span>
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs">SM</span>
+<span class="font-body-md text-body-md font-semibold text-on-surface">S. Mansoor (Exotics)</span>
+</div>
+<div class="flex items-center gap-1.5 text-secondary font-label-numeric-sm text-xs font-medium">
+<span class="material-symbols-outlined text-xs">hourglass_empty</span>
+<span>Awaiting consignment release document</span>
+</div>
+</div>
+</div>
+<!-- Why Checklist Diagnostic -->
+<div class="flex flex-col gap-2 bg-surface-container-low p-space-md rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline font-semibold">Diagnostic Proof &amp; Condition Verification</span>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-x-space-md gap-y-1.5 font-body-sm text-body-sm">
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>Client visited showroom floor in person; test driver license scanned</span>
+</div>
+<div class="flex items-start gap-2 text-on-surface">
+<span class="material-symbols-outlined text-base text-primary">check_circle</span>
+<span>High intent recorded: client owns 991.2 Carrera and ready to wire deposit</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>Vehicle entered inventory as POA without required minimum floor reserve</span>
+</div>
+<div class="flex items-start gap-2 text-error font-medium">
+<span class="material-symbols-outlined text-base text-error">warning</span>
+<span>Sales executive failed to provide formal written quotation prior to customer departure</span>
+</div>
+</div>
+</div>
+<!-- Evidence Line (Timeline Audit Trail) -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-1">
+<div class="flex items-center gap-2 flex-wrap font-label-numeric-sm text-label-numeric-sm text-outline">
+<span class="text-on-surface font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">history_toggle_off</span>
+            3 source events (Click to view timeline audit):
+          </span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            09:15:20 Showroom Check-In
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors">
+            10:02:40 Test Drive Concluded
+          </button>
+<span class="text-outline">→</span>
+<button class="px-2 py-0.5 rounded bg-error-container text-on-error-container font-semibold hover:opacity-80 transition-opacity">
+            10:45:00 Customer Departed No Quote
+          </button>
+</div>
+<span class="font-label-numeric-sm text-xs text-outline">Session Hash: #DXB-GT3-CON01</span>
+</div>
+<!-- Recommended Action Callout -->
+<div class="p-space-md rounded-lg bg-surface-container-high flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-primary text-xl mt-0.5">rate_review</span>
+<div class="flex flex-col space-y-0.5">
+<span class="font-body-md text-body-md font-bold text-on-surface">Recommended action:</span>
+<p class="font-body-md text-body-md text-on-surface-variant">
+            Contact consignor to approve floor target and dispatch formal digital spec sheet with guaranteed delivery slot.
+          </p>
+</div>
+</div>
+<!-- Action Buttons Row & Workflow State Selector -->
+<div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md pt-space-xs">
+<div class="flex items-center gap-2 flex-wrap">
+<button class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-2 shadow-sm transition-all">
+<span class="material-symbols-outlined text-base">chat</span>
+<span>WhatsApp</span>
+</button>
+<button class="px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm font-semibold flex items-center gap-2 transition-all">
+<span class="material-symbols-outlined text-base">call</span>
+<span>Call</span>
+</button>
+<button class="px-3 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary font-body-sm text-body-sm font-semibold flex items-center gap-1.5 transition-all">
+<span class="material-symbols-outlined text-base">open_in_new</span>
+<span>Open Inspector</span>
+</button>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-lg">
+<span class="font-table-header text-table-header uppercase text-outline px-2">Status:</span>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-primary font-body-sm text-xs font-semibold shadow-sm flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Pending Review
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Recovered
+          </button>
+<button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant font-body-sm text-xs font-medium flex items-center gap-1 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+            Recorded - Lost with Reason
+          </button>
+</div>
+</div>
+</div>
+</div>
+<!-- OUTCOME LEDGER SECTION: RECORDED TODAY -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-xl">fact_check</span>
+<h2 class="font-headline-md text-headline-md font-bold text-on-surface">Outcome Ledger: Recorded Today</h2>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-surface-container-high text-on-surface">2 Resolution Logs</span>
+</div>
+<span class="font-label-numeric-sm text-xs text-outline">Audit compliant under UAE Commercial Agency Registry rules</span>
+</div>
+<!-- Data Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-outline font-table-header text-table-header uppercase">
+<th class="py-2.5 px-3 rounded-l-lg">Timestamp</th>
+<th class="py-2.5 px-3">Lead / Buyer</th>
+<th class="py-2.5 px-3">Inventory Unit</th>
+<th class="py-2.5 px-3">Resolution Outcome</th>
+<th class="py-2.5 px-3 text-right">Recovered Gross</th>
+<th class="py-2.5 px-3 text-right rounded-r-lg">Auditor / Agent</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-high font-body-md text-body-md">
+<!-- Row 1: Recovered -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-3 font-label-numeric-sm text-label-numeric-sm text-outline">13:14:02 GST</td>
+<td class="py-3 px-3">
+<div class="flex flex-col">
+<span class="font-semibold text-on-surface">Salem Al-Husseini</span>
+<span class="font-label-numeric-sm text-[11px] text-outline">+971 50 119 2883</span>
+</div>
+</td>
+<td class="py-3 px-3">
+<div class="flex items-center gap-1.5">
+<span class="font-medium text-on-surface">2023 BMW X7 M60i</span>
+<span class="font-label-numeric-sm text-[10px] bg-surface-container px-1 py-0.5 rounded text-outline">STK-BM-774</span>
+</div>
+</td>
+<td class="py-3 px-3">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold bg-secondary-fixed text-on-secondary-fixed">
+<span class="material-symbols-outlined text-xs">check_circle</span>
+                RECOVERED &amp; BOOKED
+              </span>
+</td>
+<td class="py-3 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-primary">
+              +AED 32,000
+            </td>
+<td class="py-3 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+              Rashid A. (Dealer Principal)
+            </td>
+</tr>
+<!-- Row 2: Lost with Reason -->
+<tr class="hover:bg-surface-container-low transition-colors">
+<td class="py-3 px-3 font-label-numeric-sm text-label-numeric-sm text-outline">11:05:44 GST</td>
+<td class="py-3 px-3">
+<div class="flex flex-col">
+<span class="font-semibold text-on-surface">Marcus Vance</span>
+<span class="font-label-numeric-sm text-[11px] text-outline">+971 54 882 0192</span>
+</div>
+</td>
+<td class="py-3 px-3">
+<div class="flex items-center gap-1.5">
+<span class="font-medium text-on-surface">2022 Ford Bronco Badlands</span>
+<span class="font-label-numeric-sm text-[10px] bg-surface-container px-1 py-0.5 rounded text-outline">STK-FB-202</span>
+</div>
+</td>
+<td class="py-3 px-3">
+<div class="flex flex-col">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded font-label-numeric-sm text-[11px] font-bold bg-surface-container-high text-on-surface-variant w-fit">
+<span class="material-symbols-outlined text-xs">cancel</span>
+                  CLOSED - LOST
+                </span>
+<span class="font-body-sm text-[11px] text-outline mt-0.5">Purchased elsewhere: Competitor offered lower interest rate</span>
+</div>
+</td>
+<td class="py-3 px-3 text-right font-label-numeric-md text-label-numeric-md text-outline">
+              AED 0
+            </td>
+<td class="py-3 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">
+              Kareem B. (Sales Rep)
+            </td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<script>
+  function toggleTooltip(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isHidden = el.classList.contains('hidden');
+    // Hide all open tooltips first
+    document.querySelectorAll('[id^="tooltip-c"]').forEach(t => t.classList.add('hidden'));
+    if (isHidden) {
+      el.classList.remove('hidden');
+    }
+  }
+
+  // Close tooltips when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('[id^="tooltip-c"]') && !e.target.closest('button[onclick^="toggleTooltip"]')) {
+      document.querySelectorAll('[id^="tooltip-c"]').forEach(t => t.classList.add('hidden'));
+    }
+  });
+</script></main></div></body></html>
