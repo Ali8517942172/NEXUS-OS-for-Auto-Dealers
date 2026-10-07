@@ -9,7 +9,7 @@ n8n workflow `JDqy54w2HUH7pHgW`, published 7 September 2026.
 That is the design, not a fault. `WAHA Auth Gate` had one defect and it was the
 opposite: an unset env var made it *pass everything through*.
 
-**No lead has ever arrived here.** No Facebook Page is registered, ALBA has no
+**No lead has ever arrived here.** No Facebook Page is registered, Tenant A has no
 Page, and neither `META_APP_SECRET` nor `META_PAGE_ACCESS_TOKEN` is set.
 
 ## The shape, and why it has two hops
@@ -180,7 +180,7 @@ a registered Page still resolves to nothing.
        insert into lead_ingest_provider_identity
          (endpoint_id, source_key, provider, identity_kind, identity_value, label)
        values ('4d4f5cf2-f966-4d4e-9d9e-605757c615b7', 'meta_lead_ads_facebook',
-               'meta', 'facebook_page_id', '<the Page id>', 'ALBA CARS page');
+               'meta', 'facebook_page_id', '<the Page id>', 'Tenant A page');
 
    and re-enable that endpoint (`status='active'`), which is deliberately
    `disabled` today precisely so the dashboard cannot claim Facebook is connected

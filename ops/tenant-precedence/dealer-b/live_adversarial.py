@@ -6,7 +6,7 @@ tenant-precedence fix (see ops/tenant-precedence/code/*.js) exists to
 survive:
 
   A. dealer-A's token, body claims dealer B's tenant_id  -> must be REFUSED
-  B. dealer-B's token, body claims ALBA's tenant_id       -> must be REFUSED
+  B. dealer-B's token, body claims Tenant A's tenant_id       -> must be REFUSED
   C. dealer-B's token, no tenant_id claim in the body      -> must RESOLVE to
                                                                dealer B
 
@@ -552,7 +552,7 @@ def do_reverify(run_json_path, env, state):
     # node's own captured body will show, so it's what reconstruction must
     # match against. It is NOT the same thing as forbidden_tenant_id below:
     # for the no-claim case nothing was claimed (claimed_tenant_id is None)
-    # but a row is still forbidden from landing under ALBA (same asymmetry
+    # but a row is still forbidden from landing under Tenant A (same asymmetry
     # main()'s live run always had between claim_tenant_id and
     # forbidden_tenant_id for that case).
     claim_field_value = {

@@ -16,7 +16,7 @@
 -- set AND has been shown to work, because nexus_lead_source_readiness()
 -- reports CONNECTED on the mere existence of an active production endpoint
 -- (GO-LIVE.md:329-333). It does not know whether the token exists. These two
--- rows were created active on 7 September, ALBA saw a green CONNECTED pill
+-- rows were created active on 7 September, Tenant A saw a green CONNECTED pill
 -- over a dead source, and they were disabled again the same day
 -- (GO-LIVE.md:334-341). Section 1 is safe to run today. Section 2 is not.
 --
@@ -38,7 +38,7 @@ begin;
 -- ───────────────────────────────────────────────────────────────────────────
 -- 0 · THE ONE VALUE THE OWNER MUST SUBSTITUTE
 -- ───────────────────────────────────────────────────────────────────────────
--- Replace REPLACE_ME_FACEBOOK_PAGE_ID below with ALBA CARS' Facebook Page id:
+-- Replace REPLACE_ME_FACEBOOK_PAGE_ID below with Tenant A' Facebook Page id:
 -- DIGITS ONLY, 5 to 32 of them. No `fb_` prefix, no spaces, not the Page NAME.
 -- It is on the Page's About tab and in Business Suite. It is PUBLIC -- it is
 -- not a credential, it does not belong in .env, and pasting it into a ticket
@@ -85,7 +85,7 @@ select e.endpoint_id,
        'meta',
        'facebook_page_id',
        'REPLACE_ME_FACEBOOK_PAGE_ID',
-       'ALBA CARS Facebook Page'
+       'Tenant A Facebook Page'
   from public.lead_ingest_endpoint e
   join public.tenants t on t.id = e.tenant_id
  where t.slug       = 'alba-cars'

@@ -339,10 +339,10 @@ the execution began.
 
 **1. An anonymous caller writes to the dealership's audit trail, and it is
 filed under the dealership.** The ten refusals produced **nine `audit_log`
-rows**. Eight carry `tenant_id = fff6a2b5…` (ALBA). Only `ask-ai` files the
+rows**. Eight carry `tenant_id = fff6a2b5…` (Tenant A). Only `ask-ai` files the
 refusal under the quarantine tenant `02c86264…` with
 `"TENANT UNRESOLVED (unauthenticated)"`. So an unauthenticated stranger can
-append unbounded rows to ALBA's audit log at roughly one row per request. Today
+append unbounded rows to Tenant A's audit log at roughly one row per request. Today
 that is noise on the Automation screen; with a second dealership onboarded it
 is one dealership's screen filled with traffic that was never theirs.
 **`ask-ai`'s behaviour is the correct pattern and the other eight should copy
@@ -436,7 +436,7 @@ Three further reasons that are mine rather than inherited:
   one drops a real customer message on any Supabase blip or timeout — and
   because `Resolve Tenant` fails closed (correctly), the drop is silent.
 - **Real customer traffic is flowing right now.** An inbound 1:1 message landed
-  at 14:13:54 UTC mid-run, resolved to ALBA. This is not a quiet box.
+  at 14:13:54 UTC mid-run, resolved to Tenant A. This is not a quiet box.
 
 ### What I did verify, so the owner knows the target is sound
 
@@ -445,13 +445,13 @@ fail-closed semantics. Measured on production:
 
 | call | rows | result |
 |---|---|---|
-| `('whatsapp_waha_session','default')` | **1** | ALBA `fff6a2b5…`, integration `75d67b05…` |
+| `('whatsapp_waha_session','default')` | **1** | Tenant A `fff6a2b5…`, integration `75d67b05…` |
 | `('whatsapp_waha_session','acme-motors')` | **0** | — |
 | `('whatsapp_waha_session','')` | **0** | — |
 | `('whatsapp_cloud_phone_number_id','default')` | **0** | — |
 
 `channel_registry` holds exactly the row the cutover needs
-(`external_identifier = 'default'` → ALBA, `status = 'active'`), and
+(`external_identifier = 'default'` → Tenant A, `status = 'active'`), and
 `external_identifier` matches the value live traffic actually carries. **The
 target is correct and ready; only the sequencing is holding it.**
 
@@ -462,7 +462,7 @@ before `Resolve Tenant`, `tenant_source: 'channel_registry'`, and **keep the
 fail-closed `return []` branch** — that branch is the node's entire purpose.
 Ten-second rollback stays: disable the new lookup node and restore the
 `$env.NEXUS_TENANT_MAP` / `BUILTIN` body, then republish. **Do not roll back by
-disabling `Resolve Tenant` itself** — since 5 September that sends live ALBA
+disabling `Resolve Tenant` itself** — since 5 September that sends live Tenant A
 traffic to the quarantine tenant, where the dealership cannot see it.
 
 ---
@@ -502,7 +502,7 @@ separates the outcomes exactly and risks nothing.
 | A3 | no `session` key at all | **0 items** | **`Resolve Tenant`** | **PASS** |
 | A4 | `session:""` | **0 items** | **`Resolve Tenant`** | **PASS** |
 | A5 | `session:"default"` + `tenant_id:"11111111-…"` in body | **1 item** — `tenant_id: fff6a2b5…`, `tenant_source:"waha_session"` | `Is Real Inbound?` | **PASS — forged tenant ignored** |
-| A6 | `session:"acme-motors"` + valid ALBA `tenant_id` in body | **0 items** | **`Resolve Tenant`** | **PASS — body cannot rescue an unknown session** |
+| A6 | `session:"acme-motors"` + valid Tenant A `tenant_id` in body | **0 items** | **`Resolve Tenant`** | **PASS — body cannot rescue an unknown session** |
 | A7 | `session:"constructor"` | **0 items** | **`Resolve Tenant`** | **PASS — prototype guard holds** |
 | A8 | `session:"toString"` | **0 items** | **`Resolve Tenant`** | **PASS** |
 
@@ -549,7 +549,7 @@ the endpoint is safe, and the two must not be conflated:
   unchanged and it is what item 07 closes.
 - With one dealership configured, the resolver's allowlist has exactly one key.
   Its refusal behaviour is proven; its *discrimination* between two dealerships
-  cannot be proven here, because `NEXUS_TENANT_MAP` is unset and only ALBA
+  cannot be proven here, because `NEXUS_TENANT_MAP` is unset and only Tenant A
   exists.
 
 ---
@@ -579,7 +579,7 @@ select * from public.nexus_tenancy_readiness();   -- 0 BLOCKERs (3 WARN, 4 INFO)
 own item-5 probe, filed under the quarantine tenant with
 `"TENANT UNRESOLVED (unauthenticated)"`. That is the quarantine mechanism
 working exactly as designed: an unattributable anonymous request retained
-visibly rather than filed under ALBA. It is not a workflow that forgot its
+visibly rather than filed under Tenant A. It is not a workflow that forgot its
 `tenant_id`. Recorded here so the next daily census does not chase a ghost;
 `nexus_tenancy_readiness` surfaces it as the third WARN.
 

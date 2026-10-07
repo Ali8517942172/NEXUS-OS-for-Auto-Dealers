@@ -48,6 +48,8 @@
      all, and the Leads screen would show it as "No arrival recorded" — the
      exact legacy shape this layer exists to stop producing.
    · IT DOES NOT REBUILD THE FORM. lib/manual-lead-form.js already holds the
+     form (since 7 Oct 2026 rendered INLINE here as well as in the dialog —
+     one template, one request-id rule, one RPC), the
      dialog, the source picker, the CSPRNG request id and the duplicate-aware
      reporting, and it is already proven in CI. One implementation of a write
      is worth more than a second one that looks nicer. This screen is the place
@@ -96,13 +98,14 @@
    filters by dealership — the database refuses another dealership's rows, this
    file does not hide them. */
 
-import { db, onIdentityChange } from '../lib/data.js';
+import { ME, db, onIdentityChange } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
-import { manualLeadDialog } from '../lib/manual-lead-form.js';
+import { aed, ago, dubaiDate, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
+import { leadDrawer } from '../lib/lead-drawer.js';
+import { manualLeadForm, recordedCard } from '../lib/manual-lead-form.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { displayName, maskPhone } from '../lib/privacy.js';
+import { BTN, emptyState, errorState, kpiTile, skeleton, trustFooter } from '../lib/stitch-ui.js';
 import { connectionState, leadPhase } from '../lib/vocabulary.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
@@ -112,9 +115,6 @@ const plural = (c, one, many) => (Number(c) === 1 ? one : many);
 const muted = h => `<div class="ds-cell-sub">${h}</div>`;
 const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
-const bold  = h => `<div style="font-weight:600">${h}</div>`;
-const wrap  = h => `<div style="white-space:normal">${h}</div>`;
-const chip  = t => `<span class="chip">${esc(t)}</span>`;
 
 /* A null is not a zero and is never printed as one. "No figure came back" and
    "nothing was recorded" are different facts and only the second is a finding. */
@@ -143,8 +143,8 @@ onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
 const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
+  ? `<button type="button" class="${BTN.secondary}" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button type="button" class="${BTN.secondary}" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
 const wireGo = card => {
   card.querySelectorAll('[data-go]').forEach(b => {
     if (b.disabled) return;
@@ -225,326 +225,297 @@ function readinessByKey(rows) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   SCREEN
-   ══════════════════════════════════════════════════════════════════════════ */
+   SCREEN — Stitch layout, 7 Oct 2026
+   ══════════════════════════════════════════════════════════════════════════
+   design/stitch/record-a-lead-manual-floor-intake-history--e75a21.html is the
+   layout: header with the one call to action, a KPI row, the intake form, the
+   manual intake ledger and "What this screen cannot tell you". The result card
+   beside the form is record-a-lead-form--78385b's. The form is
+   lib/manual-lead-form.js rendered inline — the same template, request-id rule
+   and RPC as the dialog on the Leads screen, so this is still one
+   implementation of the write, now with a door that is open by default. */
+const CARD_HEAD = 'px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-space-sm flex-wrap';
+const SECTION = 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm';
+const TH = 'px-4 py-2.5 font-table-header text-table-header uppercase tracking-wider text-outline text-left';
+const TD = 'px-4 py-2.5 align-top font-body-sm text-body-sm text-on-surface';
+const NOTE = {
+  info: 'flex items-start gap-2.5 p-3 rounded-lg border border-blue-200 bg-blue-50/60 text-blue-950 font-body-sm text-body-sm',
+  warm: 'flex items-start gap-2.5 p-3 rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm',
+  hot:  'flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm',
+};
+const note = (t, icon, html) =>
+  `<div class="${NOTE[t] || NOTE.info}"><span class="material-symbols-outlined text-[18px] shrink-0">${esc(icon)}</span><div class="min-w-0 flex-1">${html}</div></div>`;
+const SRC_TAG = {
+  walk_in:    'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-[11px] font-semibold uppercase',
+  phone_call: 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-50 text-cyan-800 font-label-numeric-sm text-[11px] font-semibold uppercase',
+  other:      'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold uppercase',
+};
+const SRC_ICON = { walk_in: 'directions_walk', phone_call: 'call' };
+/* Midnight in Dubai, for "today's" count. The showroom's day, not the
+   reader's — every absolute time in this build is pinned to Asia/Dubai. */
+const dubaiDay = v => dubaiDate(v, '');
+
+const actorName = () => String((ME && (ME.name || ME.email)) || 'Signed-in user');
+
 SCREENS.recordlead = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Leads or Money Leaks and restyle a screen nobody converted.
-     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
-     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* `nx-stitch` on a wrapper this screen appends, never on `#screen` — a class
+     set there would follow the operator onto a screen nobody migrated. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
   /* Every visit re-reads. See the note on `shared` above for what that repairs
      and why a stale picture of what has been recorded is worse than a slow one. */
   resetReads();
+  const readAt = new Date();
 
   /* A save re-renders the whole screen rather than splicing the new lead in by
-     hand. The row a salesperson needs to see is the one the DATABASE made —
-     with its real origin, its event id and its promoted state — not a
-     client-side guess at what it probably looks like. `host` is emptied first
-     because this screen APPENDS its panels rather than replacing them. */
-  const rerender = () => { host.innerHTML = ''; SCREENS.recordlead(host); };
-  const openDialog = () => manualLeadDialog(() => rerender());
-  const wireRecord = card => {
-    card.querySelectorAll('[data-record]').forEach(b => b.addEventListener('click', openDialog));
-    wireGo(card);
+     hand: the row a salesperson needs to see is the one the DATABASE made.
+     `host` is emptied first because this screen APPENDS its root. The result
+     card survives the re-render through `lastRecorded`. */
+  const rerender = r => { host.innerHTML = ''; SCREENS.recordlead(host).then(() => { if (r) showRecorded(host, r); }); };
+
+  root.innerHTML = `
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-space-sm">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container text-primary font-label-numeric-sm text-label-numeric-sm font-semibold uppercase"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>Showroom intake</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">Work · Record a lead</span>
+        </div>
+        <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Record a Lead</h1>
+        <p class="font-body-md text-body-md text-on-surface-variant mt-0.5 max-w-3xl">The only path in this product through which a person can put an enquiry into NEXUS — for the customer who walked in or telephoned. It is recorded as your word that the enquiry happened, with your name and the time on it, and it arrives with a real origin rather than as a lead nobody can place.</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        ${linkBtn('leads', 'Open Leads')}${linkBtn('leadsources', 'Open Lead Sources')}
+        <button type="button" class="${BTN.primary}" data-jump-form><span class="material-symbols-outlined text-[18px]">add_circle</span>Record a walk-in or a phone call</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-space-md" data-kpis>${skeleton({ rows: 1 })}</div>
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-space-md items-start">
+      <div data-form></div>
+      <div class="flex flex-col gap-space-md" data-side>
+        <div data-recorded></div>
+        <div data-ready>${skeleton({ rows: 2 })}</div>
+      </div>
+    </div>
+    <div data-ledger>${skeleton({ rows: 3 })}</div>
+    <div data-limits></div>
+    <div data-foot></div>`;
+
+  const q = s => root.querySelector(s);
+  manualLeadForm(q('[data-form]'), { onSaved: r => rerender(r) });
+  q('[data-jump-form]').addEventListener('click', () => {
+    q('[data-form]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    q('[data-form] #mlName')?.focus();
+  });
+  wireGo(root);
+
+  const [s, d, o] = await Promise.all([settle(readManualSources()), settle(readReadiness()), settle(readOrigin())]);
+  if (!root.isConnected) return;
+  const { usable, unreadable, keys } = s.err ? { usable: [], unreadable: 0, keys: new Set() } : manualRows(s.v);
+
+  /* ── The readiness card: what a person may record here ─────────────────
+     Rendered whether or not the readiness read succeeded: the server decides
+     what may be recorded, not this page, and hiding the working lead path
+     because a decorative read failed would be the worst trade available. */
+  {
+    const ready = d.err ? null : readinessByKey(d.v);
+    let bodyHtml;
+    if (s.err) {
+      bodyHtml = errorState({ what: 'the list of sources a person may record', err: s.err });
+    } else if (!usable.length) {
+      bodyHtml = emptyState({ icon: 'inbox', title: 'No source in the catalogue can be recorded by a person',
+        body: unreadable
+          ? 'The catalogue was read and every entry in it came back without a key this screen can file an enquiry under. That is not a claim that no manual source exists — it is a claim that none could be read, and nothing has been saved.'
+          : 'The catalogue was read and holds no source whose enquiries arrive as a person rather than as a message from another system, so there is nothing to file a walk-in or a phone call under.' });
+    } else {
+      bodyHtml = `<div class="flex flex-col divide-y divide-outline-variant/20">${usable.map(m => {
+        const r = ready ? ready.get(m.key) : undefined;
+        let stateHtml;
+        if (!ready) stateHtml = muted('Not read on this visit, so nothing is being stated about it.');
+        else if (!r) stateHtml = warm('This source is in the catalogue and does not appear in this dealership’s readiness answer at all, so nothing here can say how it is set up. Recording under it may still be refused by the database, which is the thing that decides.');
+        else {
+          const st = connectionState(r.state);
+          const label = str(r.state) || 'NO STATE RECORDED';
+          /* Our own words when the state is recognised; the database's own
+             string, verbatim, when it is not. */
+          stateHtml = `<div>${pill(st ? st.label : label, st ? st.tone : 'unknown', { verbatim: !st })}</div>`
+            + (st ? '' : muted('This screen does not recognise that state, so it is shown exactly as the database returned it and nothing is inferred from it.'))
+            + (r.note ? muted(esc(r.note)) : '');
+        }
+        return `<div class="py-3 flex items-start gap-3">
+          <span class="material-symbols-outlined text-[20px] text-primary">${esc(SRC_ICON[m.key] || 'edit_note')}</span>
+          <div class="min-w-0 flex-1"><div class="font-body-md text-body-sm font-semibold text-on-surface">${esc(m.name || m.key)}</div>${stateHtml}</div>
+        </div>`;
+      }).join('')}</div>`
+      + (unreadable ? note('hot', 'report', `<strong>Part of the catalogue came back in a shape this screen cannot read.</strong> ${esc(count(unreadable))} ${plural(unreadable, 'entry carries', 'entries carry')} no key an enquiry could be filed under, so ${plural(unreadable, 'it is', 'they are')} neither offered nor counted.`) : '')
+      + (d.err ? note('warm', 'warning', '<strong>Whether each source is set up for this dealership could not be read.</strong> The sources are still offered and recording still works — the database decides what may be filed, not this page.') : '')
+      + `<p class="ds-cell-sub" style="white-space:normal">That state is the database’s answer about an automatic feed. A walk-in and a telephone call have no feed and never will: the deliverer is the person reading this screen, and the form is the whole of the path.</p>`;
+    }
+    q('[data-ready]').innerHTML = `<section class="${SECTION}"><div class="${CARD_HEAD}"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">fact_check</span>
+      <span class="font-headline-md text-headline-md text-on-surface">What you may record</span></div></div><div class="p-space-md flex flex-col gap-2">${bodyHtml}</div></section>`;
+  }
+
+  /* ── KPI row and ledger ─────────────────────────────────────────────────
+     THE THREE-WAY SPLIT ON TEST TRAFFIC is kept: business, test and
+     unclassified are counted apart and only the first is the headline. */
+  const filterUnknown = s.err || !usable.length;
+  const T = o.err ? null : splitTraffic(o.v);
+  const mine = T && !filterUnknown ? T.business.filter(r => keys.has(str(r.source_key))) : [];
+  const mineTest = T && !filterUnknown ? T.test.filter(r => keys.has(str(r.source_key))) : [];
+  const mineUnclassified = T && !filterUnknown ? T.unclassified.filter(r => keys.has(str(r.source_key))) : [];
+  const capped = T ? T.all.length >= ARRIVALS_LIMIT : null;
+  const newest = mine.length ? mine[0].received_at : null;
+  const today = dubaiDay(readAt);
+  const mineToday = mine.filter(r => dubaiDay(r.received_at) === today);
+  const known = !o.err && !filterUnknown;
+
+  q('[data-kpis]').innerHTML = [
+    kpiTile({ label: 'Recorded today', value: known ? count(mineToday.length) : null,
+      sub: known ? `Enquiries typed in since midnight, Dubai time (${esc(today)}).` : 'Not countable — the arrivals or the source list could not be read.' }),
+    kpiTile({ label: 'Recorded by hand', value: known ? count(mine.length) : null,
+      sub: !known ? 'Not countable on this visit.'
+        : mine.length
+          ? (capped ? `Counted over the ${count(ARRIVALS_LIMIT)} most recent arrivals, so this is a floor and not a total.` : 'Counted over every arrival this screen can read.')
+          : 'Nothing has ever been recorded by hand in this database. The manual paths are the ones that work today, so that is the whole funnel sitting unused.' }),
+    kpiTile({ label: 'Most recent', value: newest ? ago(newest) : (known ? 'None' : null),
+      sub: newest ? `${dubaiStamp(newest)}, Dubai time.` : 'No hand-recorded enquiry has a time against it.' }),
+    kpiTile({ label: 'Counted nowhere above', value: known ? count(mineTest.length + mineUnclassified.length) : null,
+      sub: `${count(mineTest.length)} marked as test traffic and ${count(mineUnclassified.length)} that do not say which. Neither is added into the headline.` }),
+  ].join('');
+
+  /* The ledger joins each arrival to the lead it became, so the row can carry
+     the customer, the number and what they asked about. One read, by id, of
+     rows the dealership already owns; masked through lib/privacy.js. */
+  let leadById = new Map(), leadErr = null;
+  const ids = [...new Set(mine.map(r => r.lead_id).filter(v => v != null))].slice(0, 200);
+  if (ids.length) {
+    try {
+      const rows = await db(`leads?select=id,name,phone,vehicle_interest,budget_aed&id=in.(${ids.map(encodeURIComponent).join(',')})`);
+      leadById = new Map((rows || []).map(l => [String(l.id), l]));
+    } catch (e) { leadErr = e; }
+  }
+  if (!root.isConnected) return;
+
+  const ledgerHead = `<div class="${CARD_HEAD}">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md text-on-surface">Manual intake ledger</span>
+          ${known ? `<span class="px-2 py-0.5 rounded bg-surface-container-highest font-label-numeric-sm text-label-numeric-sm font-bold text-primary">${count(mine.length)} ${plural(mine.length, 'record', 'records')}</span>` : ''}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">Every enquiry a person has put into NEXUS, newest first. Test traffic is counted nowhere in the headline.</div>
+      </div>
+      <div class="relative"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[16px]">search</span>
+        <input type="search" data-ledger-q aria-label="Filter ledger records" placeholder="Filter ledger records…" class="h-9 pl-8 pr-3 rounded-lg bg-surface-container-lowest border border-outline-variant/50 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-primary"></div>
+    </div>`;
+
+  const drawLedger = filterText => {
+    if (o.err) {
+      /* An empty table here would report a failed read as a finding, and
+         "nothing has ever been recorded" is exactly the finding this panel
+         exists to make — so it is not made on a read that did not happen. */
+      return errorState({ what: 'the arrivals record', err: o.err });
+    }
+    if (filterUnknown) {
+      return emptyState({ icon: 'help', title: 'Which arrivals were recorded by hand could not be determined',
+        body: `The arrivals record holds ${count(T.all.length)} ${plural(T.all.length, 'arrival', 'arrivals')} in the window read here. Which of them a person typed in is decided by the source they arrived under, and the list of sources a person may record under ${s.err ? 'could not be read' : 'came back empty'}. Nothing is being guessed.` });
+    }
+    if (!mine.length) {
+      return emptyState({ icon: 'edit_note', title: 'Nothing has ever been recorded by hand',
+        body: 'The arrivals record was read and holds no enquiry under any source a person may record. That is not a slow month for a feed — it is nobody using the one path that works. The form above is that path.' });
+    }
+    const qx = String(filterText || '').trim().toLowerCase();
+    const rows = mine.filter(r => {
+      if (!qx) return true;
+      const l = leadById.get(String(r.lead_id)) || {};
+      return [r.source, r.source_key, r.lead_id, l.name, l.phone, l.vehicle_interest].join(' ').toLowerCase().includes(qx);
+    });
+    if (!rows.length) return `<div class="p-space-md">${emptyState({ icon: 'search_off', title: 'No ledger record matches', body: 'Nothing in the hand-recorded arrivals matches what is typed in the filter.' })}</div>`;
+    return `<div class="overflow-x-auto"><table class="w-full border-collapse">
+      <thead><tr class="bg-surface-container-low border-b border-outline-variant/30">
+        <th class="${TH}">Recorded at</th><th class="${TH}">Intake source</th><th class="${TH}">Customer</th>
+        <th class="${TH}">Phone</th><th class="${TH}">Vehicle asked about</th><th class="${TH}">Stated budget</th>
+        <th class="${TH}">How far it got</th><th class="${TH}">How the origin is attested</th>
+      </tr></thead>
+      <tbody class="divide-y divide-outline-variant/20">${rows.map(r => {
+        const l = r.lead_id != null ? leadById.get(String(r.lead_id)) : null;
+        const ph = leadPhase(r.phase);
+        const label = str(r.phase) || 'NO STAGE RECORDED';
+        const key = str(r.source_key);
+        return `<tr class="hover:bg-surface-container-low transition-colors">
+          <td class="${TD}"><div class="font-label-numeric-sm text-label-numeric-sm" title="${esc(dubaiStamp(r.received_at))}">${esc(dubaiStamp(r.received_at))}</div><div class="ds-cell-sub">${esc(ago(r.received_at))}</div></td>
+          <td class="${TD}"><span class="${SRC_TAG[key] || SRC_TAG.other}"><span class="material-symbols-outlined text-[13px]">${esc(SRC_ICON[key] || 'edit_note')}</span>${esc(str(r.source) || key || 'No source name')}</span></td>
+          <td class="${TD}">${r.lead_id == null
+            ? warm('No lead id is recorded against this arrival, so it was recorded but never became a lead anybody can work. That is a loss with a record of it, not an enquiry that never happened.')
+            : l ? `<div class="font-semibold">${esc(displayName(l.name, l.id))}</div><div class="ds-cell-sub">Lead #${esc(String(r.lead_id))}</div>`
+              : `<div>Lead #${esc(String(r.lead_id))}</div>${muted(leadErr ? 'The lead row could not be read.' : 'The lead row did not come back on this read.')}`}</td>
+          <td class="${TD} font-label-numeric-sm">${l && str(l.phone) ? esc(maskPhone(str(l.phone))) : '<span class="ds-t-tertiary">—</span>'}</td>
+          <td class="${TD}">${l && str(l.vehicle_interest) ? esc(str(l.vehicle_interest)) : '<span class="ds-t-tertiary">—</span>'}</td>
+          <td class="${TD} font-label-numeric-sm">${l && n0(l.budget_aed) != null ? esc(aed(l.budget_aed)) : '<span class="ds-t-tertiary">—</span>'}</td>
+          <td class="${TD}"><div>${pill(ph ? ph.label : label, ph ? ph.tone : 'unknown', { verbatim: !ph })}</div>${ph ? '' : hot('This screen does not recognise that stage, so it is shown exactly as the database returned it.')}${str(r.disposition_reason) ? muted(esc(str(r.disposition_reason))) : ''}</td>
+          <td class="${TD}" style="white-space:normal;max-width:260px">${str(r.origin_explanation) ? esc(str(r.origin_explanation)) : muted('The database recorded no explanation of how this origin is attested, so none is being invented here.')}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="px-space-md py-2.5 bg-surface-container-low border-t border-outline-variant/30 font-label-numeric-sm text-label-numeric-sm text-outline">Showing ${count(rows.length)} of ${count(mine.length)} hand-recorded arrivals · a hand-recorded enquiry is attested by the person who typed it and by nothing stronger — that is exactly what a walk-in is${leadErr ? ' · the lead rows could not be read, so customer columns are blank' : ''}</div>`;
   };
+  q('[data-ledger]').innerHTML = `<section class="${SECTION}">${ledgerHead}<div data-ledger-body>${drawLedger('')}</div></section>`;
+  q('[data-ledger-q]').addEventListener('input', e => { q('[data-ledger-body]').innerHTML = drawLedger(e.target.value); });
 
-  const loadSources = () => readManualSources();
-  const loadSourcesAndState = async () => {
-    const [s, d] = await Promise.all([settle(readManualSources()), settle(readReadiness())]);
-    if (s.err) throw s.err;   /* Without the catalogue there is no list to draw. */
-    return { s, d };
-  };
-  const loadArrivals = async () => {
-    const [o, s] = await Promise.all([settle(readOrigin()), settle(readManualSources())]);
-    if (o.err && s.err) throw o.err;
-    return { o, s };
-  };
-  /* Never throws. The last panel's whole job is to state what this screen
-     cannot tell you, and handing it a "couldn't load" card would silence the one
-     panel that is still true when everything else failed. */
-  const loadSoft = async () => {
-    const [o, s] = await Promise.all([settle(readOrigin()), settle(readManualSources())]);
-    return { o, s };
-  };
+  /* ── The limits of this screen ──────────────────────────────────────────
+     Fixed, true whether or not the reads succeeded. */
+  const manualCount = s.err ? null : usable.length;
+  const limits = [
+    { icon: 'groups', limit: 'It counts what was recorded, never what happened.',
+      why: 'Every figure here is a count of enquiries somebody typed in. A customer who walked onto the forecourt and was never entered is invisible to this database, and no number on this page is evidence about how many people came through the door.' },
+    { icon: 'content_copy', limit: 'It cannot tell two reps recording one customer from two customers.',
+      why: 'Two people entering the same walk-in produce two leads, deliberately: they are two acts of recording. The duplicate guard only stops the SAME form being submitted twice — it does not look at names, phone numbers or faces.' },
+    { icon: 'call_missed', limit: 'It says nothing about whether anybody followed up.',
+      why: 'A lead recorded here is a lead that exists. Whether it was called back, quoted or left to go cold is answered on the Leads screen and by the follow-up engines.' },
+    { icon: 'history', limit: capped == null
+        ? 'The arrivals record is read in a capped window, and it could not be read on this visit.'
+        : capped ? `The counts above are floors, not totals — the cap of ${num(ARRIVALS_LIMIT)} arrivals was reached.`
+          : 'The arrivals record is read in a capped window, and on this visit the window held everything.',
+      why: `This screen reads the ${num(ARRIVALS_LIMIT)} most recent arrivals, newest first.` },
+    { icon: 'rule', limit: 'It does not decide what you are allowed to record.',
+      why: 'The form offers the sources whose enquiries arrive as a person, and the database refuses anything else regardless. '
+        + (manualCount == null ? 'Which sources those are could not be read on this visit.' : `${num(manualCount)} ${plural(manualCount, 'source is', 'sources are')} offered in this build.`) },
+  ];
+  q('[data-limits]').innerHTML = `<section class="${SECTION}">
+    <div class="px-space-md py-3 flex items-start gap-3 border-b border-outline-variant/30">
+      <span class="w-9 h-9 rounded-lg bg-surface-container text-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-[20px]">info</span></span>
+      <div><div class="font-headline-md text-headline-md text-on-surface">What this screen cannot tell you</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">Listed because a screen that only shows what it knows reads as though it knows everything.</div></div>
+    </div>
+    ${(o.err || s.err) ? `<div class="px-space-md pt-space-md">${note('warm', 'warning', '<strong>Part of this screen could not be read on this visit.</strong> The limits below are true regardless. The panels above are unread rather than empty — nothing is being cleared and nothing is being blamed.')}</div>` : ''}
+    <div class="p-space-md grid grid-cols-1 md:grid-cols-2 gap-space-md">${limits.map(l => `
+      <div class="p-space-md rounded-lg bg-surface-container-low flex items-start gap-3">
+        <span class="material-symbols-outlined text-[18px] text-outline">${esc(l.icon)}</span>
+        <div><div class="font-body-md text-body-sm font-semibold text-on-surface">${esc(l.limit)}</div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">${esc(l.why)}</p></div>
+      </div>`).join('')}</div>
+  </section>`;
 
-  /* ────────────────────────────────────────────────────────────────────────
-     P1 · The door itself
-     ──────────────────────────────────────────────────────────────────────
-     The button is the point of the screen, so it is rendered before any figure
-     and it is rendered whether or not the readiness read succeeded: the server
-     decides what may be recorded, not this page, and hiding the only working
-     lead path in the product because a decorative read failed would be the
-     worst trade available here. */
-  panel(root, {
-    title: 'Record a walk-in or a phone call',
-    sub: 'The only path in this product through which a person can put an enquiry into NEXUS. It is recorded as your '
-       + 'word that this enquiry happened, with your name and the time on it, and it arrives with a real origin '
-       + 'rather than as a lead nobody can place',
-    actions: linkBtn('leads', 'Open Leads') + ' ' + linkBtn('leadsources', 'Open Lead Sources'),
-    load: loadSourcesAndState,
-    render: ({ s, d }) => {
-      const { usable, unreadable } = manualRows(s.v);
-      const ready = d.err ? null : readinessByKey(d.v);
-
-      if (!usable.length) {
-        return stateEmpty('No source in the catalogue can be recorded by a person',
-          unreadable
-            ? 'The catalogue was read and every entry in it came back without a key this screen can file an enquiry '
-              + 'under. That is not a claim that no manual source exists — it is a claim that none could be read, and '
-              + 'nothing has been saved.'
-            : 'The catalogue was read and holds no source whose enquiries arrive as a person rather than as a message '
-              + 'from another system, so there is nothing to file a walk-in or a phone call under. Nothing has been '
-              + 'saved and nothing is being ruled out about enquiries arriving by other means.',
-          'inbox');
-      }
-
-      const shapeFault = unreadable
-        ? `<div class="banner hot">
-             <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold('Part of the catalogue came back in a shape this screen cannot read.')}
-               ${muted(esc(count(unreadable)) + ' '
-                 + plural(unreadable, 'entry carries', 'entries carry')
-                 + ' no key an enquiry could be filed under, so '
-                 + plural(unreadable, 'it is', 'they are')
-                 + ' neither offered below nor counted. '
-                 + plural(unreadable, 'It is', 'They are')
-                 + ' reported rather than dropped.')}</div></div>`
-        : '';
-
-      const btn = `<div style="margin-top:4px;margin-bottom:16px">
-          <button class="btn primary" data-record="1">
-            <span class="material-symbols-outlined">person_add</span> Record a walk-in or phone call
-          </button></div>`;
-
-      const stateUnread = d.err
-        ? `<div class="banner warm" style="margin-top:12px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('Whether each source is set up for this dealership could not be read.')}
-               ${muted(esc(str(d.err.message) || 'No reason was given.')
-                 + ' The sources below are still offered and recording still works — the database decides what may be '
-                 + 'filed, not this page. What is missing is only the line describing how each one is set up, so none '
-                 + 'is being cleared and none is being blamed.')}</div></div>`
-        : '';
-
-      const rows = usable.map(m => ({ ...m, r: ready ? ready.get(m.key) : undefined }));
-
-      return btn + shapeFault + table([
-        { label: 'What you may record', strong: true, render: m => wrap(
-            bold(esc(m.name || m.key)) + muted(chip('Entered by a person'))) },
-        { label: 'How this dealership is set up for it', render: m => {
-            if (!ready) return wrap(muted('Not read on this visit, so nothing is being stated about it.'));
-            if (!m.r) return wrap(warm('This source is in the catalogue and does not appear in this dealership’s '
-              + 'readiness answer at all, so nothing here can say how it is set up. Recording under it may still be '
-              + 'refused by the database, which is the thing that decides.'));
-            const st = connectionState(m.r.state);
-            const label = str(m.r.state) || 'NO STATE RECORDED';
-            /* Provenance is the caller's to state. Our own words when the state
-               is recognised; the database's own string, verbatim, when it is
-               not — and only the second earns pill()'s "no wording for that
-               status" note. */
-            return `<div>${pill(st ? st.label : label, st ? st.tone : 'unknown', { verbatim: !st })}</div>`
-              + (st ? '' : muted('This screen does not recognise that state, so it is shown exactly as the database '
-                  + 'returned it and nothing is inferred from it.'))
-              + (m.r.note ? muted(esc(m.r.note)) : '');
-          } },
-        { label: 'What that means here', render: () => wrap(muted(
-            'That state is the database’s answer about an automatic feed — whether a provider could deliver an '
-            + 'enquiry on its own. A walk-in and a telephone call have no feed and never will: the deliverer is the '
-            + 'person reading this screen, and the button above is the whole of the path. Nothing will arrive under '
-            + 'these sources that somebody does not type.')) },
-      ], rows) + stateUnread;
-    },
-  }).then(wireRecord);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P2 · What has ever actually been recorded by hand
-     ──────────────────────────────────────────────────────────────────────
-     The finding, stated at the size of a finding. One arrival in the life of
-     this database is not a quiet week and is not rendered as one. */
-  panel(root, {
-    title: 'Everything ever recorded by hand',
-    sub: 'Every enquiry a person has put into NEXUS, newest first. Test traffic is counted nowhere in the headline, '
-       + 'and an arrival whose marking is absent is counted in neither figure',
-    actions: linkBtn('leads', 'Open Leads'),
-    load: loadArrivals,
-    render: ({ o, s }) => {
-      const { usable, keys } = manualRows(s.v);
-
-      if (o.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the arrivals record</h3>
-          <p>How many enquiries have been recorded by hand cannot be answered without the arrivals record, which did
-             not come back${esc(str(o.err.message) ? ' (' + str(o.err.message) + ')' : '')}. Showing an empty table
-             here would be reporting a failed read as a finding, and "nothing has ever been recorded" is exactly the
-             finding this panel exists to make — so it is not being made on a read that did not happen.</p></div>`;
-      }
-
-      const T = splitTraffic(o.v);
-      /* If the catalogue failed, the set of manual keys is unknown. Rather than
-         guessing which sources are manual — and there is no column on an arrival
-         that says so — the panel says the filter could not be applied. */
-      const filterUnknown = s.err || !usable.length;
-      const mine = filterUnknown ? [] : T.business.filter(r => keys.has(str(r.source_key)));
-      const mineTest = filterUnknown ? [] : T.test.filter(r => keys.has(str(r.source_key)));
-      const mineUnclassified = filterUnknown
-        ? [] : T.unclassified.filter(r => keys.has(str(r.source_key)));
-
-      if (filterUnknown) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Which arrivals were recorded by hand could not be determined</h3>
-          <p>The arrivals record was read and holds ${esc(count(T.all.length))}
-             ${esc(plural(T.all.length, 'arrival', 'arrivals'))} in the window read here. Which of them a person typed
-             in is decided by the source they arrived under, and the list of sources a person may record under
-             ${esc(s.err ? 'could not be read' : 'came back empty')}. There is no column on an arrival that says
-             "a person typed this", so nothing is being guessed and no count is being stated.</p></div>`;
-      }
-
-      const capped = T.all.length >= ARRIVALS_LIMIT;
-      const newest = mine.length ? mine[0].received_at : null;
-
-      const totalTile = kpi('Recorded by hand', count(mine.length),
-        muted(mine.length
-          ? `${plural(mine.length, 'This enquiry was', 'These enquiries were')} typed in by a person and
-             ${plural(mine.length, 'carries', 'carry')} that as ${plural(mine.length, 'its', 'their')} origin. `
-            + (capped
-                ? `Counted over the ${esc(count(ARRIVALS_LIMIT))} most recent arrivals, so this is a floor and not a
-                   total.`
-                : 'Counted over every arrival this screen can read.')
-          : 'Nothing has ever been recorded by hand in this database. Both of the lead paths that actually work at '
-            + 'this dealership are manual ones, so that is not a quiet week — it is the whole funnel sitting unused.'),
-        mine.length ? 't-ok' : 't-hot');
-
-      const newestTile = kpi('Most recent', newest ? esc(ago(newest)) : 'None',
-        muted(newest
-          ? esc(dubaiStamp(newest)) + ', Dubai time.'
-          : 'No hand-recorded enquiry has a time against it, because none has been recorded.'));
-
-      const sideTile = kpi('Counted nowhere above', count(mineTest.length + mineUnclassified.length),
-        muted(`${esc(count(mineTest.length))} ${plural(mineTest.length, 'arrival is', 'arrivals are')} marked as test `
-          + `traffic and ${esc(count(mineUnclassified.length))} `
-          + `${plural(mineUnclassified.length, 'does', 'do')} not say which `
-          + `${plural(mineUnclassified.length, 'it is', 'they are')}. Neither is added into the headline: counting an `
-          + 'unclassified arrival as business inflates the number a dealership acts on, and counting it as test hides '
-          + 'a real enquiry.'),
-        (mineTest.length + mineUnclassified.length) ? 't-warm' : '');
-
-      const tiles = `<div class="grid g3">${totalTile}${newestTile}${sideTile}</div>`;
-
-      if (!mine.length) {
-        return tiles + stateEmpty('Nothing has ever been recorded by hand',
-          'The arrivals record was read and holds no enquiry under any source a person may record. This dealership’s '
-          + 'only active lead endpoints are the manual ones, so an empty table here is not the absence of a feed having '
-          + 'a slow month — it is the absence of anybody using the one path that works. The button above is that path.',
-          'edit_note');
-      }
-
-      return tiles + `<div style="margin-top:12px">` + table([
-        { label: 'Arrived', render: r => wrap(
-            `<div title="${esc(dubaiStamp(r.received_at))}">${esc(ago(r.received_at))}</div>`
-            + muted(esc(dubaiStamp(r.received_at)) + ', Dubai time.')) },
-        { label: 'Recorded under', strong: true, render: r => wrap(
-            bold(esc(str(r.source) || str(r.source_key) || 'A source with no name recorded'))
-            + muted(str(r.channel_family) ? chip(str(r.channel_family)) : 'No channel family recorded.')) },
-        { label: 'How far it got', render: r => {
-            const ph = leadPhase(r.phase);
-            const label = str(r.phase) || 'NO STAGE RECORDED';
-            return `<div>${pill(ph ? ph.label : label, ph ? ph.tone : 'unknown', { verbatim: !ph })}</div>`
-              + (ph ? muted(esc(ph.blurb))
-                    : hot('This screen does not recognise that stage, so it is shown exactly as the database returned '
-                        + 'it. A stage nobody recognises decides whether this arrival is a lead that made it through '
-                        + 'or one that was lost, and neither is being assumed.'))
-              + (str(r.disposition_reason) ? muted(esc(str(r.disposition_reason))) : '');
-          } },
-        { label: 'Became a lead', render: r => (r.lead_id
-            ? wrap(`<div>${esc(String(r.lead_id))}</div>` + muted('This arrival was promoted and exists on the Leads '
-                + 'screen under that id.'))
-            : wrap(warm('No lead id is recorded against this arrival, so it was recorded but never became a lead '
-                + 'anybody can work. That is a loss with a record of it, not an enquiry that never happened.'))) },
-        { label: 'How the origin is attested', render: r => wrap(
-            (str(r.origin_explanation)
-              ? esc(str(r.origin_explanation))
-              : muted('The database recorded no explanation of how this origin is attested, so none is being '
-                  + 'invented here.'))
-            + muted('A hand-recorded enquiry is attested by the person who typed it and by nothing stronger. That is '
-                + 'not a weakness to hide — it is exactly what a walk-in is.')) },
-      ], mine) + `</div>`;
-    },
-  }).then(wireRecord);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P3 · The limits of this screen
-     ──────────────────────────────────────────────────────────────────────
-     Fixed rows, true whether or not the reads above succeeded, which is why
-     this panel takes the soft load: a panel whose job is to state what it cannot
-     tell you must not go blank at exactly the moment it knows least. */
-  panel(root, {
-    title: 'What this screen cannot tell you',
-    sub: 'Five things that are outside what the database can answer. They are listed because a screen that only shows '
-       + 'what it knows reads as though it knows everything',
-    load: loadSoft,
-    render: ({ o, s }) => {
-      const all = o.err ? null : (Array.isArray(o.v) ? o.v : []);
-      const capped = all ? all.length >= ARRIVALS_LIMIT : null;
-      const manualCount = s.err ? null : manualRows(s.v).usable.length;
-
-      const rows = [
-        { limit: 'It counts what was recorded, never what happened.',
-          why: 'Every figure here is a count of enquiries somebody typed in. A customer who walked onto the forecourt '
-             + 'and was never entered is invisible to this database and to this screen, and no number on this page is '
-             + 'evidence about how many people came through the door. The gap between those two is exactly what this '
-             + 'screen exists to shrink, and it cannot measure itself.' },
-        { limit: 'It cannot tell two reps recording one customer from two customers.',
-          why: 'Two people entering the same walk-in produce two leads, and that is deliberate: they are two separate '
-             + 'acts of recording. Nothing here merges them, and the duplicate guard only stops the SAME dialog being '
-             + 'submitted twice — it does not look at names, phone numbers or faces.' },
-        { limit: 'It says nothing about whether anybody followed up.',
-          why: 'A lead recorded here is a lead that exists. Whether it was called back, quoted, or left to go cold is '
-             + 'answered on the Leads screen and by the follow-up engines, and a healthy count on this page is not '
-             + 'evidence about any of that.' },
-        { limit: capped == null
-            ? 'The arrivals record is read in a capped window, and it could not be read on this visit.'
-            : capped
-              ? `The counts above are floors, not totals — the cap of ${num(ARRIVALS_LIMIT)} arrivals was reached.`
-              : 'The arrivals record is read in a capped window, and on this visit the window held everything.',
-          why: `This screen reads the ${num(ARRIVALS_LIMIT)} most recent arrivals, newest first. `
-             + (capped == null
-                  ? 'Whether that cap was reached on this visit is unknown, because the read failed, so no count above '
-                    + 'should be treated as a total.'
-                  : capped
-                    ? 'That many came back, so an older hand-recorded enquiry may exist outside the window and would '
-                      + 'not be counted above.'
-                    : 'Fewer than the cap came back, so nothing was truncated on this visit — though that is a fact '
-                      + 'about this read, not a permanent property.') },
-        { limit: 'It does not decide what you are allowed to record.',
-          why: 'The picker offers the sources whose enquiries arrive as a person, and the database refuses anything '
-             + 'else regardless of what this page offers. '
-             + (manualCount == null
-                  ? 'Which sources those are could not be read on this visit, so none is being named here.'
-                  : `${num(manualCount)} ${plural(manualCount, 'source is', 'sources are')} offered in this build. `)
-             + 'A source a person could record under that never appears here is a seeding question, not something '
-               + 'this screen can add.' },
-      ];
-
-      const head = (o.err || s.err)
-        ? `<div class="banner warm">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('Part of this screen could not be read on this visit.')}
-               ${muted(esc(str(o.err && o.err.message) || str(s.err && s.err.message) || 'No reason was given.')
-                 + ' The limits below are true regardless, so they are still shown. The panels above are unread rather '
-                 + 'than empty — nothing is being cleared and nothing is being blamed.')}</div></div>`
-        : '';
-
-      return head + table([
-        { label: 'What it cannot tell you', strong: true, render: r => wrap(esc(r.limit)) },
-        { label: 'Why', render: r => wrap(esc(r.why)) },
-      ], rows);
-    },
-  }).then(wireRecord);
+  q('[data-foot]').innerHTML = trustFooter({
+    source: 'lead_source_catalogue · nexus_lead_source_readiness · v_lead_origin',
+    asOf: dubaiStamp(readAt),
+    evidence: o.err ? 'The arrivals record could not be read' : `${count(T.all.length)} arrivals read${capped ? ` (capped at ${num(ARRIVALS_LIMIT)})` : ''}`,
+    actor: actorName(),
+  });
 };
+
+/* The result card goes into the side column after a save, and its Open lead
+   button reads the lead the database made and opens it in the lead drawer. */
+function showRecorded(host, r) {
+  const slot = host.querySelector('[data-recorded]');
+  if (!slot || !r) return;
+  slot.innerHTML = recordedCard(r);
+  slot.querySelector('[data-screen-link]')?.addEventListener('click', () => go('leads'));
+  slot.querySelector('[data-open-recorded]')?.addEventListener('click', async e => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(b.dataset.openRecorded)}&limit=1`);
+      if (rows && rows.length) leadDrawer(rows[0]);
+      else slot.insertAdjacentHTML('beforeend', `<div class="mt-2">${muted('That lead is not readable right now — it may have been removed since it was recorded.')}</div>`);
+    } catch (err) {
+      slot.insertAdjacentHTML('beforeend', `<div class="mt-2">${hot('The lead could not be read — ' + esc(err.message || String(err)))}</div>`);
+    } finally { b.disabled = false; }
+  });
+}

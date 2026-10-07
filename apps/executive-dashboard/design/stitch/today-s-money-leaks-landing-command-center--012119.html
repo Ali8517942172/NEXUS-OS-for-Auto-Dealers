@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed-variant":"#34466e","on-secondary":"#ffffff","error":"#ba1a1a","on-error":"#ffffff","surface-container-highest":"#dbe2fb","secondary-fixed":"#d9e2ff","on-secondary-fixed":"#041a40","secondary-fixed-dim":"#b4c6f5","background":"#faf8ff","primary":"#004ba8","on-primary-container":"#dee6ff","tertiary-fixed":"#a0efff","surface-dim":"#d2d9f3","on-primary":"#ffffff","on-secondary-container":"#465780","on-background":"#131b2d","on-tertiary-fixed-variant":"#004e59","inverse-primary":"#afc6ff","primary-fixed-dim":"#afc6ff","on-tertiary":"#ffffff","surface-tint":"#155ac0","on-tertiary-container":"#b1f1ff","on-primary-fixed":"#001a43","inverse-surface":"#283043","surface-container":"#e9edff","surface-container-low":"#f2f3ff","on-surface":"#131b2d","primary-container":"#2563c9","tertiary-fixed-dim":"#44d8f0","outline-variant":"#c2c6d5","secondary-container":"#bccefe","secondary":"#4c5e87","tertiary-container":"#007281","on-error-container":"#93000a","inverse-on-surface":"#edf0ff","surface-bright":"#faf8ff","surface":"#faf8ff","on-tertiary-fixed":"#001f25","on-surface-variant":"#424753","on-primary-fixed-variant":"#004398","tertiary":"#005864","surface-container-high":"#e1e8ff","surface-variant":"#dbe2fb","outline":"#737784","error-container":"#ffdad6","surface-container-lowest":"#ffffff","primary-fixed":"#d9e2ff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-xl":"2rem","space-lg":"1.5rem","space-sm":"0.5rem","space-xs":"0.25rem","margin":"1.5rem","space-md":"1rem","gutter":"1rem"},"fontFamily":{"label-numeric-sm":["JetBrains Mono"],"headline-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"table-header":["Inter"],"headline-lg":["Inter"],"label-numeric-md":["JetBrains Mono"],"body-md":["Inter"],"body-sm":["Inter"],"body-lg":["Inter"],"headline-xl":["Inter"]},"fontSize":{"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}]}}}}</script></head><body class="bg-[#F7F8FA] font-body-md text-on-surface min-h-screen antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-[#16294F] text-[#C7D3EA] z-50 flex flex-col font-body-md select-none border-r border-[#1E3566]"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="font-headline-md text-white font-bold tracking-tight text-[15px]">NEXUS OS</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#0A3D4D] text-[#38D0E8] border border-[#13667E]">PRO</span></div><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#38D0E8] animate-pulse"></span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Work</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="todays-money-leaks" href="#">Today's Money Leaks</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#">Overview</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="leads" href="#">Leads</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="record-a-lead" href="#">Record a Lead</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-sources" href="#">Lead Sources</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="channels" href="#">Channels</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="integrations" href="#">Integrations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#">Conversations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#">Appointments</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance" href="#">Compliance</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Revenue Recovery</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="revenue-recovery" href="#">Revenue Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-recovery" href="#">Lead Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deal-rescue" href="#">Deal Rescue</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="attribution" href="#">Attribution</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="policy" href="#">Policy</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Assets</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#">Inventory</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#">Competitors</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Intelligence</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="ask-ai" href="#">Ask AI</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#">Finance Desk</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#">Customer 360</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Operations</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#">Action Center</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#">Campaigns</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#">Deals</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="automation" href="#">Automation</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="team" href="#">Team</a></nav><nav class="space-y-1 pt-2 border-t border-[#1E3566]" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="setup" href="#">Setup</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="subscription" href="#">Subscription</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#">Settings</a></nav></div><div class="p-3 border-t border-[#1E3566] shrink-0"><div class="flex items-center justify-between gap-2 p-1.5 rounded-[6px] bg-[#11203E] border border-[#1E3566]"><div class="flex items-center gap-2.5 min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-white text-[16px]">person</span></div><div class="min-w-0 text-left leading-tight"><div class="text-[12px] font-semibold text-white truncate">Faris M.</div><div class="text-[10px] text-[#8598BA] truncate">GM / Sales Director</div></div></div><button class="p-1 text-[#8598BA] hover:text-[#38D0E8] hover:bg-[#1E3566] rounded transition-colors shrink-0" title="Sign out"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 flex items-center justify-between px-5 font-body-md"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2.5 shrink-0 pr-4 border-r border-[#E8EAEF]"><span class="font-headline-md font-bold text-[#0F1729] text-[14px] tracking-tight">Demo Motors</span><span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] uppercase font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>Dubai Showroom</span></div><div class="relative max-w-md w-full"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span><input class="w-full h-8 pl-8 pr-12 text-[13px] bg-surface-container-lowest border border-[#E8EAEF] rounded-[6px] text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Search leads, chassis / VIN, stock #..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm text-outline border border-[#E8EAEF] rounded bg-[#F7F8FA]">⌘K</kbd></div></div><div class="flex items-center gap-4 shrink-0"><div class="flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF]"><span class="text-[11px] font-label-numeric-sm font-semibold text-secondary">AED</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="text-[11px] font-label-numeric-sm text-on-surface">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-1 text-[11px] font-label-numeric-sm text-secondary"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="">LIVE SYNC</span></div><button class="relative p-1 text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error"></span></button><div class="h-6 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right leading-none"><div class="text-[13px] font-semibold text-[#0F1729]">Faris M.</div><div class="text-[11px] text-secondary mt-0.5">GM / Sales Director</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen"><div class="flex flex-col w-full">
+<div class="w-full max-w-[1600px] mx-auto p-6 space-y-6">
+<!-- 1. Setup-Progress Banner -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div class="flex items-start md:items-center gap-3.5 min-w-0">
+<div class="w-9 h-9 rounded-[6px] bg-secondary-container/40 flex items-center justify-center shrink-0 text-primary">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-on-surface text-[14px] font-semibold tracking-tight">Setup Progress</span>
+<span class="font-label-numeric-sm text-secondary text-[11px]">4 of 6 telemetry sources active</span>
+</div>
+<p class="font-body-sm text-on-surface-variant text-[13px] truncate mt-0.5">
+            DMS &amp; Meta Ads pending. Automated margin scanning active across Floor, WhatsApp, and Google.
+          </p>
+</div>
+</div>
+<div class="flex items-center gap-4 shrink-0">
+<div class="w-40 sm:w-56 flex flex-col gap-1">
+<div class="flex justify-between items-center text-[11px] font-label-numeric-sm text-secondary">
+<span>HEALTH RATIO</span>
+<span class="font-semibold text-primary">67%</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full transition-all duration-500" style="width: 67%;"></div>
+</div>
+</div>
+<a class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-surface text-primary border border-[#E8EAEF] hover:bg-surface-container-low text-[13px] font-medium transition-colors" href="#">
+<span>Complete Setup</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- 2. 'Right now' Operational Strip -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+<!-- Active floor buyers -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex items-center justify-between">
+<div class="space-y-1">
+<div class="text-[11px] font-table-header uppercase tracking-wider text-secondary flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Active Floor Buyers
+          </div>
+<div class="font-label-numeric-lg text-[28px] font-bold text-on-surface leading-none">06</div>
+<div class="text-[11px] font-body-sm text-secondary">Dubai Showroom Main Pods</div>
+</div>
+<div class="w-10 h-10 rounded-[6px] bg-surface-container-low flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[22px]">storefront</span>
+</div>
+</div>
+<!-- Inquiries unattended > 5m -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex items-center justify-between">
+<div class="space-y-1">
+<div class="text-[11px] font-table-header uppercase tracking-wider text-error flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+            Unattended &gt; 5m
+          </div>
+<div class="flex items-baseline gap-2">
+<span class="font-label-numeric-lg text-[28px] font-bold text-error leading-none">02</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">HOT LEAK</span>
+</div>
+<div class="text-[11px] font-body-sm text-secondary">SLA threshold breach</div>
+</div>
+<div class="w-10 h-10 rounded-[6px] bg-[#FDECEA] flex items-center justify-center text-error">
+<span class="material-symbols-outlined text-[22px]">timer_off</span>
+</div>
+</div>
+<!-- Stalled deal exposure -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex items-center justify-between">
+<div class="space-y-1">
+<div class="text-[11px] font-table-header uppercase tracking-wider text-secondary">Stalled Deal Exposure</div>
+<div class="font-label-numeric-lg text-[24px] font-bold text-on-surface leading-none">
+<span class="text-[14px] font-normal text-secondary mr-1">AED</span>1,480,000
+          </div>
+<div class="text-[11px] font-body-sm text-secondary">Across 4 unconfirmed quotes</div>
+</div>
+<div class="w-10 h-10 rounded-[6px] bg-surface-container-low flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[22px]">account_balance_wallet</span>
+</div>
+</div>
+<!-- Sentinel scanner cycle -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex items-center justify-between">
+<div class="space-y-1">
+<div class="text-[11px] font-table-header uppercase tracking-wider text-secondary flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#157A5B]"></span>
+            Sentinel Scanner Cycle
+          </div>
+<div class="font-label-numeric-md text-[16px] font-semibold text-[#157A5B] flex items-center gap-1 leading-none mt-1">
+<span>ACTIVE</span>
+<span class="text-secondary text-[12px] font-normal font-label-numeric-sm ml-1">• 28s ago</span>
+</div>
+<div class="text-[11px] font-body-sm text-secondary">Next telemetry sweep in 32s</div>
+</div>
+<div class="w-10 h-10 rounded-[6px] bg-[#E6F4EF] flex items-center justify-center text-[#157A5B]">
+<span class="material-symbols-outlined text-[22px]">radar</span>
+</div>
+</div>
+</div>
+<!-- 3. 'Waiting on you' Decisions Block -->
+<div class="space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<h2 class="font-headline-md text-on-surface text-[15px] font-semibold tracking-tight">Waiting on you</h2>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A] border border-[#F3DFBD]">
+            2 decisions require GM sign-off
+          </span>
+</div>
+<span class="text-[11px] font-body-sm text-secondary hidden sm:inline">Execution locks auto-expire in 45 min</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Decision 1 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between space-y-4 relative">
+<div class="space-y-2.5">
+<div class="flex items-start justify-between gap-3">
+<div class="flex items-center gap-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">HOT</span>
+<span class="font-label-numeric-sm text-[12px] font-semibold text-primary">#L-9941</span>
+<span class="text-secondary text-[12px]">•</span>
+<span class="font-body-sm font-semibold text-on-surface text-[13px]">Sheikh Mansoor Al-Nahyan</span>
+</div>
+<span class="text-[11px] font-label-numeric-sm text-secondary">Wait time: 2h 14m</span>
+</div>
+<p class="font-body-sm text-[13px] text-on-surface-variant leading-relaxed">
+              Assigned sales executive unresponsive following test drive. Lead VIP tier requires direct GM reassignment to prevent off-market attrition.
+            </p>
+<div class="flex items-center gap-2 text-[12px] font-label-numeric-sm text-secondary bg-surface-container-low px-2.5 py-1.5 rounded-[6px]">
+<span class="material-symbols-outlined text-[16px] text-secondary">swap_horiz</span>
+              Target: <span class="font-semibold text-on-surface">Faris M. (Director Desk)</span>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E8EAEF]">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface-container-low transition-colors">
+              Defer
+            </button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px]">check</span>
+              Approve Reassignment to Faris M.
+            </button>
+</div>
+</div>
+<!-- Decision 2 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between space-y-4 relative">
+<div class="space-y-2.5">
+<div class="flex items-start justify-between gap-3">
+<div class="flex items-center gap-2">
+<span class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">WARM</span>
+<span class="font-label-numeric-sm text-[12px] font-semibold text-primary">#D-3195</span>
+<span class="text-secondary text-[12px]">•</span>
+<span class="font-body-sm font-semibold text-on-surface text-[13px]">2023 Porsche 911 GTS</span>
+</div>
+<span class="text-[11px] font-label-numeric-sm text-secondary">Walkout Risk: High</span>
+</div>
+<p class="font-body-sm text-[13px] text-on-surface-variant leading-relaxed">
+              Authorize AED 15,000 floor trade-in incentive buffer to match confirmed written bid from Al Aweer competitor. Front gross remains +AED 28,400.
+            </p>
+<div class="flex items-center justify-between text-[12px] font-label-numeric-sm text-secondary bg-surface-container-low px-2.5 py-1.5 rounded-[6px]">
+<span>Incentive Allowance:</span>
+<span class="font-bold text-on-surface">AED 15,000</span>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E8EAEF]">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface-container-low transition-colors">
+              Decline
+            </button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px]">done_all</span>
+              Authorize Incentive
+            </button>
+</div>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[11px] font-body-sm text-outline italic">When resolved: "Nothing is waiting on a decision"</span>
+</div>
+</div>
+<!-- Main Grid: Leaks List (Left 8 cols) + Diagnostics & Legend (Right 4 cols) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<!-- 4. 'Today's money leaks — what is leaking, worst first' (8 Cols) -->
+<div class="lg:col-span-8 space-y-3.5">
+<div class="flex items-center justify-between pb-1">
+<div>
+<h2 class="font-headline-md text-on-surface text-[16px] font-semibold tracking-tight">Today's Money Leaks</h2>
+<p class="font-body-sm text-secondary text-[12px]">Ranked strictly by attributable financial severity and time sensitivity</p>
+</div>
+<div class="flex items-center gap-1.5 text-[11px] font-label-numeric-sm text-secondary">
+<span>SORT:</span>
+<span class="font-semibold text-primary">IMPACT DESCENDING</span>
+</div>
+</div>
+<!-- Leak #1 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-5 space-y-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8EAEF] pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">HOT</span>
+<span class="font-headline-md text-[14px] font-bold text-on-surface">VIP Walk-in Inquiry unattended after showroom departure</span>
+</div>
+<div class="text-right">
+<div class="font-label-numeric-sm text-[10px] uppercase text-secondary">Impact Exposure</div>
+<div class="font-label-numeric-lg text-[18px] font-bold text-error leading-none">AED 420,000</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-body-sm text-[12px]">
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Root Cause (Why)</div>
+<p class="text-on-surface-variant">Customer completed test drive 2h ago; sales exec failed to log quote within mandatory 30m window.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Evidence Trail</div>
+<p class="text-on-surface-variant">Visitor badge #042 exit timestamp 10:14 AM. Open CRM lead <span class="font-label-numeric-sm text-primary font-medium">#L-9941</span>.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Recommended Action</div>
+<p class="text-on-surface-variant">Trigger automated VIP WhatsApp offer with pre-approval checklist.</p>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2 text-[11px] font-label-numeric-sm text-secondary">
+<span class="material-symbols-outlined text-[16px] text-secondary">verified_user</span>
+              Attributed to Process Breach
+            </div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface transition-colors">Dismiss</button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[15px]">bolt</span>
+                Approve Action
+              </button>
+</div>
+</div>
+</div>
+<!-- Leak #2 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-5 space-y-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8EAEF] pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">HOT</span>
+<span class="font-headline-md text-[14px] font-bold text-on-surface">Trade-in Valuation delay causing buyer disengagement</span>
+</div>
+<div class="text-right">
+<div class="font-label-numeric-sm text-[10px] uppercase text-secondary">Impact Exposure</div>
+<div class="font-label-numeric-lg text-[18px] font-bold text-error leading-none">AED 295,000</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-body-sm text-[12px]">
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Root Cause (Why)</div>
+<p class="text-on-surface-variant">Appraisal inspection done for 2021 BMW X5M (#AP-4109) but equity figure withheld at desk.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Evidence Trail</div>
+<p class="text-on-surface-variant">Buyer sent 2 follow-ups on WhatsApp (+971 50 849 1922) with 0 agent reply in 44m.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Recommended Action</div>
+<p class="text-on-surface-variant">Lock trade-in valuation at AED 182,000 and push formal finance bridge.</p>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2 text-[11px] font-label-numeric-sm text-secondary">
+<span class="material-symbols-outlined text-[16px] text-secondary">chat</span>
+              WhatsApp SLA Flagged
+            </div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface transition-colors">Dismiss</button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[15px]">bolt</span>
+                Approve Action
+              </button>
+</div>
+</div>
+</div>
+<!-- Leak #3 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-5 space-y-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8EAEF] pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">WARM</span>
+<span class="font-headline-md text-[14px] font-bold text-on-surface">Aged Floor Unit nearing 75-day holding threshold</span>
+</div>
+<div class="text-right">
+<div class="font-label-numeric-sm text-[10px] uppercase text-secondary">Impact Exposure</div>
+<div class="font-label-numeric-lg text-[18px] font-bold text-[#96570A] leading-none">AED 360,000</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-body-sm text-[12px]">
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Root Cause (Why)</div>
+<p class="text-on-surface-variant">2022 Defender 110 V8 (#DXB-7401) holding depreciation cost +AED 180/day floor rent.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Evidence Trail</div>
+<p class="text-on-surface-variant">Online views dropped 42% over past 14 days; competitor listing priced 3.2% lower in Al Aweer.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Recommended Action</div>
+<p class="text-on-surface-variant">Re-align web listing price to AED 348,000 and broadcast blast to 18 warm Defender leads.</p>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2 text-[11px] font-label-numeric-sm text-secondary">
+<span class="material-symbols-outlined text-[16px] text-secondary">inventory_2</span>
+              Holding Cost Accruing
+            </div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface transition-colors">Dismiss</button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[15px]">bolt</span>
+                Approve Action
+              </button>
+</div>
+</div>
+</div>
+<!-- Leak #4 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-5 space-y-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E8EAEF] pb-3">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">WARM</span>
+<span class="font-headline-md text-[14px] font-bold text-on-surface">Bank pre-approval pending documentation sign-off</span>
+</div>
+<div class="text-right">
+<div class="font-label-numeric-sm text-[10px] uppercase text-secondary">Impact Exposure</div>
+<div class="font-label-numeric-lg text-[18px] font-bold text-[#96570A] leading-none">AED 195,000</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-body-sm text-[12px]">
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Root Cause (Why)</div>
+<p class="text-on-surface-variant">Emirates NBD auto-loan conditional approval expires in 6 hours for deal #D-3304 (Audi RS6 Avant).</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Evidence Trail</div>
+<p class="text-on-surface-variant">Salary certificate uploaded lacks HR stamp; customer phone was unreachable at 09:30 AM.</p>
+</div>
+<div class="bg-surface p-3 rounded-[6px] border border-[#E8EAEF]/60">
+<div class="font-label-numeric-sm text-[10px] text-secondary font-semibold uppercase mb-1">Recommended Action</div>
+<p class="text-on-surface-variant">Dispatch courier for physical doc pick-up or initiate digital UAE PASS verification link.</p>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2 text-[11px] font-label-numeric-sm text-secondary">
+<span class="material-symbols-outlined text-[16px] text-secondary">schedule</span>
+              Finance Window &lt; 6h
+            </div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium text-secondary hover:bg-surface transition-colors">Dismiss</button>
+<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-[15px]">bolt</span>
+                Approve Action
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Diagnostics, Connectors, Informational & Money Words Legend (4 Cols) -->
+<div class="lg:col-span-4 space-y-4">
+<!-- 5. 'Checks that came back clear' -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 space-y-3">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-on-surface text-[13px] font-semibold flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[#157A5B] text-[18px]">verified</span>
+              Checks that came back clear
+            </h3>
+<span class="text-[10px] font-label-numeric-sm text-[#157A5B] font-semibold">3 PASSED</span>
+</div>
+<div class="space-y-2 text-[12px]">
+<div class="p-2.5 rounded-[6px] bg-[#E6F4EF]/50 flex items-start justify-between gap-2">
+<div>
+<div class="font-medium text-on-surface text-[12px]">Floor Walkaround SLA</div>
+<div class="text-[11px] text-secondary">Avg response 3.8m vs 5.0m max</div>
+</div>
+<span class="font-label-numeric-sm text-[10px] font-bold text-[#157A5B] shrink-0">CLEAR</span>
+</div>
+<div class="p-2.5 rounded-[6px] bg-[#E6F4EF]/50 flex items-start justify-between gap-2">
+<div>
+<div class="font-medium text-on-surface text-[12px]">RTA Title Encumbrance Scan</div>
+<div class="text-[11px] text-secondary">34 stock units checked live</div>
+</div>
+<span class="font-label-numeric-sm text-[10px] font-bold text-[#157A5B] shrink-0">0 LIEN FLAGS</span>
+</div>
+<div class="p-2.5 rounded-[6px] bg-[#E6F4EF]/50 flex items-start justify-between gap-2">
+<div>
+<div class="font-medium text-on-surface text-[12px]">WhatsApp API Health</div>
+<div class="text-[11px] text-secondary">99.4% receipt confirmation rate</div>
+</div>
+<span class="font-label-numeric-sm text-[10px] font-bold text-[#157A5B] shrink-0">LATENCY OK</span>
+</div>
+</div>
+</div>
+<!-- 6. 'Checks that could not run' -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 space-y-3">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-on-surface text-[13px] font-semibold flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[#96570A] text-[18px]">warning</span>
+              Checks that could not run
+            </h3>
+<span class="text-[10px] font-label-numeric-sm text-[#96570A] font-semibold">2 PENDING</span>
+</div>
+<div class="space-y-2 text-[12px]">
+<div class="p-2.5 rounded-[6px] bg-[#FEF3E2]/50 border border-[#F3DFBD]/50 space-y-1">
+<div class="font-medium text-on-surface text-[12px] flex items-center justify-between">
+<span>CDK / Pinewood DMS Sync</span>
+<span class="font-label-numeric-sm text-[10px] text-[#96570A]">OFFLINE</span>
+</div>
+<p class="text-[11px] text-secondary leading-tight">
+                Requires active DMS connector in <span class="font-medium text-primary">Setup &gt; Integrations</span>.
+              </p>
+</div>
+<div class="p-2.5 rounded-[6px] bg-[#FEF3E2]/50 border border-[#F3DFBD]/50 space-y-1">
+<div class="font-medium text-on-surface text-[12px] flex items-center justify-between">
+<span>Meta Lead Ads Webhook</span>
+<span class="font-label-numeric-sm text-[10px] text-[#96570A]">BLOCKED</span>
+</div>
+<p class="text-[11px] text-secondary leading-tight">
+                Awaiting Meta App Review security token handshake.
+              </p>
+</div>
+</div>
+</div>
+<!-- 7. 'Alerts that are not leaks' -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 space-y-3">
+<h3 class="font-headline-md text-on-surface text-[13px] font-semibold flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary text-[18px]">info</span>
+            Alerts that are not leaks
+          </h3>
+<div class="space-y-2 text-[12px]">
+<div class="p-2.5 rounded-[6px] bg-surface flex items-start gap-2.5 border border-[#E8EAEF]">
+<span class="material-symbols-outlined text-[16px] text-secondary shrink-0 mt-0.5">policy</span>
+<p class="text-[11px] text-on-surface-variant leading-snug">
+                Routine RTA testing fee rate adjustment announced for Nov 1st (<span class="font-semibold text-on-surface">+AED 50 per test</span>).
+              </p>
+</div>
+<div class="p-2.5 rounded-[6px] bg-surface flex items-start gap-2.5 border border-[#E8EAEF]">
+<span class="material-symbols-outlined text-[16px] text-secondary shrink-0 mt-0.5">electrical_services</span>
+<p class="text-[11px] text-on-surface-variant leading-snug">
+                Scheduled UAE Central Bank NOC gateway maintenance Sunday 02:00 - 04:00 GST.
+              </p>
+</div>
+</div>
+</div>
+<!-- 8. Legend: 'The four money words' -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 space-y-3">
+<div class="flex items-center justify-between border-b border-[#E8EAEF] pb-2">
+<h3 class="font-headline-md text-on-surface text-[13px] font-bold uppercase tracking-wider text-secondary">
+              The Four Money Words
+            </h3>
+<span class="material-symbols-outlined text-[16px] text-secondary">menu_book</span>
+</div>
+<div class="space-y-2.5 text-[12px]">
+<div>
+<div class="font-label-numeric-sm text-[11px] font-bold text-on-surface flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                ESTIMATED
+              </div>
+<p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                Theoretical total value of the inventory, deal, or pipeline exposed to friction.
+              </p>
+</div>
+<div>
+<div class="font-label-numeric-sm text-[11px] font-bold text-[#C8321F] flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-[#C8321F]"></span>
+                ATTRIBUTED
+              </div>
+<p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                Specific portion of the loss directly caused by the process failure, delay, or SLA breach.
+              </p>
+</div>
+<div>
+<div class="font-label-numeric-sm text-[11px] font-bold text-error flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                CONFIRMED
+              </div>
+<p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                Verified loss or slippage signed off after customer disengagement or lost opportunity.
+              </p>
+</div>
+<div>
+<div class="font-label-numeric-sm text-[11px] font-bold text-[#157A5B] flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>
+                RECOVERED
+              </div>
+<p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                Successfully captured AED margin after executing NEXUS automated or GM-approved intervention.
+              </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></main></div>
+</body></html>

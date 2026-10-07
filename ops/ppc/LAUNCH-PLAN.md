@@ -92,10 +92,10 @@ Why:
   over his WhatsApp number will click the advertiser's name. A personal profile
   Page at the other end reads as a freelancer, and it is the cheapest possible
   way to lose a lead we already paid for.
-- **There is no ALBA CARS Page and we must not create the impression of one.**
-  ALBA Cars is tenant #1, the pilot, not the vendor and not a customer
-  reference. ALBA's name, logo or premises must not appear in any ad, image,
-  caption or Page identity. Advertising from an "ALBA" identity would tell a
+- **There is no Tenant A Page and we must not create the impression of one.**
+  Tenant A is tenant #1, the pilot, not the vendor and not a customer
+  reference. Tenant A's name, logo or premises must not appear in any ad, image,
+  caption or Page identity. Advertising from an "Tenant A" identity would tell a
   competing dealer that a rival showroom is selling him software — which is
   both untrue and commercially fatal.
 
@@ -420,7 +420,7 @@ the reliable identifier; the UTMs are the human-readable backup.
 ## DECIDED — 17 September 2026, by Ali
 
 **Meta Page: run from the "Adqonic" Page** (business portfolio `Adqonic`,
-`business_id 1414977205987811`). There is **no ALBA CARS Page** in the Business
+`business_id 1414977205987811`). There is **no Tenant A Page** in the Business
 Manager and NEXUS has no Page of its own, so this was the only option that lets
 spend start today.
 

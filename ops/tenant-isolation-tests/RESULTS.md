@@ -180,7 +180,7 @@ and (select count(*) from public.tenants w
 ```
 
 Production today holds exactly one active non-quarantine tenant (`alba-cars`)
-plus one quarantine tenant, so the function returns ALBA CARS.
+plus one quarantine tenant, so the function returns Tenant A.
 
 **The day dealership #2 is created with `status='active'`, that count becomes 2
 and `nexus_scoped_tenant_id()` returns NULL for every `service_role` caller.**

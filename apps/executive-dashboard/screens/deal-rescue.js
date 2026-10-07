@@ -62,22 +62,22 @@
 
 import { db } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { aed, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { aed, dubaiStamp, esc, num } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { SX, BANNER, BANNER_ICON, kpi, panel, table, pill, stateEmpty, unknownPill, linkBtn, wireGo, engineHeader, engineFooter } from './revenue.js';
+import { comingSoonPanel } from '../lib/stitch-ui.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold   = h => `<div style="font-weight:600">${h}</div>`;
-const wrap   = h => `<div style="white-space:normal">${h}</div>`;
-const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
+const muted  = h => `<div class="${SX.sub}">${h}</div>`;
+const hot    = h => `<div class="${SX.hot}">${h}</div>`;
+const bold   = h => `<div class="${SX.bold}">${h}</div>`;
+const wrap   = h => `<div class="${SX.wrap}">${h}</div>`;
+const mono   = v => `<span class="${SX.mono}">${esc(str(v))}</span>`;
 
 const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed `
@@ -87,7 +87,7 @@ const readFailed = (what, err) =>
    engine's own reason. A dash in the Value column of a deal screen reads as
    "worth nothing", and this engine has never said that about anything. */
 const unknownCell = (state, reason) =>
-  `<span class="pill unknown"><span class="dot"></span>${esc(str(state) || 'UNKNOWN')}</span>`
+  `${unknownPill(str(state) || 'UNKNOWN')}`
   + muted(esc(str(reason)) || 'The engine records no reason for this state, which is itself a gap.');
 
 const shared = make => {
@@ -99,30 +99,26 @@ const shared = make => {
 };
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
-};
+/* linkBtn() and wireGo() come from the engine-desk kit in screens/revenue.js. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.dealrescue = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Leads or Money Leaks and restyle a screen nobody converted.
-     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
-     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen.
+     Design: design/stitch/deal-rescue-at-risk-deals-desk--497bb5.html (primary) and --c58152. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Deal Rescue',
+    sub: 'Deals at risk of slipping — and, today, why this database cannot yet show a deal while it is still in progress.',
+    actionsHtml: linkBtn('deals', 'Open Deals') + linkBtn('revenue', 'Open Revenue Recovery'),
+  }));
+  wireGo(root);
 
   const readDeals = shared(() => db('v_deal_rescue'
     + '?select=deal_evidence,deal_evidence_ref,deal_evidence_source,customer_label,lead_id,identity_state,'
@@ -253,8 +249,8 @@ SCREENS.dealrescue = async host => {
             unreachable.length ? 't-hot' : '');
 
       const empty = (deals && !deals.length)
-        ? `<div class="banner info" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">handyman</span>
+        ? `<div class="${BANNER.info}">
+             <span class="${BANNER_ICON}">handyman</span>
              <div>
                ${bold('Nothing is at risk, and that is not the same as everything being healthy.')}
                ${muted('This engine ranks deals that are in progress. This database records a sale at the moment it '
@@ -268,205 +264,7 @@ SCREENS.dealrescue = async host => {
            </div>`
         : '';
 
-      return `<div class="grid g4">${dealTile}${candTile}${readyTile}${stateTile}</div>` + empty;
-    },
-  }).then(wireGo);
-
-  /* ══════════════════════════════════════════════════════════════════════
-     P2 · Everything examined, and why each one is not a deal
-     ══════════════════════════════════════════════════════════════════════ */
-  panel(root, {
-    title: 'Everything examined, and why it is not a deal',
-    sub: 'This is the engine declining to invent a deal lifecycle. Each row was considered as evidence that something '
-       + 'is in flight, and each verdict is recorded with its reason',
-    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('actions', 'Open Action Center'),
-    load: () => readCandidates(),
-    render: rows => {
-      const K = candFacts(rows);
-      if (!K.cands.length) {
-        return stateEmpty('Nothing was examined',
-          'The candidate view returned no rows at all, so this engine found nothing it could even consider — which is '
-          + 'not the same as considering things and clearing them. Nothing is being claimed about whether a deal '
-          + 'exists.', 'search');
-      }
-
-      const body = table([
-        { label: 'What it is', strong: true, render: k =>
-            wrap(`<div>${esc(str(k.customer_label) || str(k.candidate_ref) || 'unnamed row')}</div>`)
-            + muted(`${esc(str(k.candidate_kind))} &middot; <span class="mono">${esc(str(k.source_table))}</span>`
-              + (k.observed_at ? ` &middot; ${esc(dubaiStamp(k.observed_at))}` : '')) },
-        { label: 'Verdict', render: k => (up(k.verdict) === 'IN_FLIGHT_DEAL'
-            ? pill(str(k.verdict), 'ok', { verbatim: true })
-            : pill(str(k.verdict) || 'NO VERDICT RECORDED', '', { verbatim: true })) },
-        { label: 'Why it is not a deal', render: k => wrap(muted(esc(str(k.verdict_basis))
-            || 'The engine records no reason for this verdict, which is itself a gap — a refusal without a reason is '
-              + 'not a refusal anybody can check.')) },
-        { label: 'Who it is', render: k => (k.lead_id != null
-            ? `<div>Lead #${esc(str(k.lead_id))}</div>`
-              + muted(esc(str(k.identity_basis)) || 'No identity basis is recorded.')
-            : unknownCell(k.identity_state, k.identity_basis)) },
-        { label: 'Evidence tier', render: k => (str(k.evidence_tier)
-            ? pill(str(k.evidence_tier), '', { verbatim: true })
-            : muted('No tier. Only an admitted deal is graded, so a refused candidate carries none — that is the '
-                + 'absence of a grade, not a low one.')) },
-        { label: 'Value', align: 'r', render: k => (n0(k.deal_value_aed) != null
-            ? `<div>${aed(k.deal_value_aed)}</div>` + muted(esc(str(k.deal_value_state)))
-            : unknownCell(k.deal_value_state, str(k.deal_value_basis).replace(/^UNKNOWN\.\s*/i, ''))) },
-      ], K.cands);
-
-      const verdictSummary = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">The verdicts, counted</div>
-          ${table([
-            { label: 'Verdict', strong: true, render: v => mono(v.k) },
-            { label: 'Candidates', align: 'r', render: v => num(v.n) },
-            { label: 'Reaches the engine?', render: v => (up(v.k) === 'IN_FLIGHT_DEAL'
-                ? pill('Admitted', 'ok', { verbatim: false })
-                : pill('Refused', 'hot', { verbatim: false })) },
-          ], [...K.verdicts.entries()].map(([k, n]) => ({ k, n })))}
-        </div>`;
-
-      const kindSummary = muted(`Examined across ${num(K.sources.size)} source `
-        + `${plural(K.sources.size, 'table', 'tables')}: `
-        + [...K.kinds.entries()].map(([k, n]) => `${num(n)} &times; <span class="mono">${esc(k)}</span>`).join(', ')
-        + `. ${num(K.valued.length)} of ${num(K.cands.length)} carry a monetary figure at all, and where one is `
-        + 'present it is what that row actually records — a confirmed sale amount is confirmed revenue, never a value '
-        + 'at stake.');
-
-      return body + verdictSummary + `<div class="section">${kindSummary}</div>`;
-    },
-  }).then(wireGo);
-
-  /* ══════════════════════════════════════════════════════════════════════
-     P3 · The state vocabulary, and the one state that has no branch
-     ══════════════════════════════════════════════════════════════════════ */
-  panel(root, {
-    title: 'Every state this engine may return',
-    sub: 'A state with no branch behind it and a state with a branch and no rows are two different findings, and this '
-       + 'engine records which is which',
-    load: () => readStates(),
-    render: rows => {
-      const states = rows || [];
-      if (!states.length) {
-        return stateEmpty('The state model returned no rows',
-          'This engine publishes its own vocabulary and none came back, so this screen cannot say what it is able to '
-          + 'say. That is a missing reference table, not a finding about deals.', 'checklist');
-      }
-      const noBranch = states.filter(s => s.engine_can_produce === false);
-      const noRows   = states.filter(s => s.engine_can_produce !== false && !n0(s.deals_in_state_now));
-
-      const body = table([
-        { label: 'State', strong: true, render: s =>
-            pill(str(s.state), s.engine_can_produce === false ? 'hot' : 'ok', { verbatim: true })
-            + muted(wrap(esc(str(s.meaning)) || 'No meaning is recorded for this state.')) },
-        { label: 'Observation', render: s => pill(str(s.observation) || 'UNKNOWN', '', { verbatim: true }) },
-        { label: 'Deals in it now', align: 'r', render: s => (s.engine_can_produce === false
-            /* NOT a zero. A count of zero would say the engine looked and found
-               none; no branch exists, so it never looked and never could. */
-            ? `<span class="pill unknown"><span class="dot"></span>NO BRANCH</span>`
-            : n0(s.deals_in_state_now) != null
-              ? num(s.deals_in_state_now)
-              : '<span class="t-muted">not counted</span>') },
-        { label: 'What it would take', render: s => wrap(muted(esc(str(s.requires))
-            || 'The engine records no requirement for this state.')) },
-      ], states);
-
-      /* The unreachable states get their own block. Inside a table row,
-         "FINANCE_BLOCKED · 0" is indistinguishable from a bucket that was
-         checked and found empty, and those are opposite claims. */
-      const blocked = noBranch.length
-        ? noBranch.map(s => `<div class="banner warm" style="margin-top:12px">
-             <span class="material-symbols-outlined" style="font-size:20px">block</span>
-             <div>
-               ${bold(`${esc(str(s.state))} is unreachable by design — it is not an empty bucket.`)}
-               ${muted(`Blocked by <span class="mono">${esc(str(s.blocked_by) || 'not stated')}</span>. `
-                 + esc(str(s.requires) || 'The engine records no requirement for this state.'))}
-               ${muted('No branch of this engine returns it and none has been written. A bucket showing zero here '
-                 + 'would say the engine looked and found nothing, which is the opposite of what is true.')}
-             </div></div>`).join('')
-        : '';
-
-      const note = muted(`${num(states.length)} ${plural(states.length, 'state is', 'states are')} defined. `
-        + `${num(noBranch.length)} ${plural(noBranch.length, 'has', 'have')} no branch at all; `
-        + `${num(noRows.length)} ${plural(noRows.length, 'has a branch that works and nothing in it', 'have branches that work and nothing in them')}. `
-        + 'Do not read a zero as evidence a branch is broken, or a branch as evidence of data.');
-
-      return body + blocked + `<div class="section" style="margin-top:16px">${note}</div>`;
-    },
-  }).then(wireGo);
-
-  /* ══════════════════════════════════════════════════════════════════════
-     P4 · The purchase order
-     ══════════════════════════════════════════════════════════════════════ */
-  panel(root, {
-    title: 'What would have to exist before this engine has anything to rank',
-    sub: 'A purchase order, not a wish list. Every row names the live evidence that it is missing, and every '
-       + 'measurable one is re-measured on each read so this list cannot quietly go stale',
-    load: () => readReadiness(),
-    render: rows => {
-      const R = readyFacts(rows);
-      if (!R.reqs.length) {
-        return stateEmpty('No prerequisites are recorded',
-          'The readiness view is empty, so this screen cannot say what is blocking the engine — and an unstated '
-          + 'blocker is not an absent one.', 'checklist');
-      }
-
-      const body = table([
-        { label: 'Requirement', strong: true, render: p =>
-            wrap(`<div>${esc(str(p.requirement))}</div>`)
-            + muted(`<span class="mono">${esc(str(p.id))}</span> &middot; ${esc(str(p.kind))}`) },
-        { label: 'Met', render: p => (p.met_now === true
-            ? pill('Met', 'ok', { verbatim: false })
-            : p.met_now === false
-              ? pill('Not met', 'hot', { verbatim: false })
-              /* NULL is its own answer. The view's comment is explicit: unknown
-                 is not met, and a caller who can see no rows must not be told a
-                 requirement is satisfied. */
-              : pill('Not measurable', 'unknown', { verbatim: false })) },
-        { label: 'Measured on this read', render: p => wrap(muted(esc(str(p.measured_now))
-            || 'The view returned no measurement for this prerequisite, so whether it is met is unknown rather than '
-              + 'unmet.')) },
-        { label: 'What it unlocks', render: p => wrap(muted(esc(str(p.unlocks))
-            || 'The engine records nothing that this would unlock.')
-            + (Array.isArray(p.unlocks_states) && p.unlocks_states.length
-                ? muted('States: ' + p.unlocks_states.map(v => `<span class="mono">${esc(str(v))}</span>`).join(', '))
-                : '')) },
-        { label: 'Why it is not just code', render: p => wrap(muted(esc(str(p.why_not_code))
-            || 'The engine records no account of why this is not a coding task.')) },
-      ], R.reqs);
-
-      const evidence = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">The live evidence behind each of those, as the engine measured it</div>
-          ${table([
-            { label: 'Requirement', strong: true, render: p => mono(p.id) },
-            /* Two rows, not one, and the split is the point. `platform_evidence`
-               is what is true of NEXUS for every dealership alike; `measured_now`
-               is what is true of THIS dealership, counted on this read through
-               its own row-level security. They used to be one column called
-               evidence_today, which stored ALBA CARS' counts and printed them to
-               whoever opened the screen - see migration 20260906070947. */
-            { label: 'What is true of NEXUS, for every dealership',
-              render: p => wrap(muted(esc(str(p.platform_evidence))
-                || 'The engine records nothing about the platform against this requirement.')) },
-            { label: 'What is true of this dealership, measured on this read',
-              render: p => wrap(muted(esc(str(p.measured_now))
-                || 'Not measured. That is not the same as met.')) },
-          ], R.reqs)}
-        </div>`;
-
-      const kinds = [...R.kinds.entries()]
-        .map(([k, n]) => `${num(n)} ${esc(k.toLowerCase())}`).join(', ');
-      const note = muted(`${num(R.met.length)} of ${num(R.reqs.length)} `
-        + `${plural(R.reqs.length, 'requirement is', 'requirements are')} met (${kinds}). `
-        + (R.unmeasured.length
-            ? `${num(R.unmeasured.length)} could not be measured and ${plural(R.unmeasured.length, 'is', 'are')} `
-              + 'reported as unknown rather than folded in with the unmet ones. '
-            : '')
-        + 'None of the outstanding ones is a coding task waiting on somebody: they are a deal record that starts when '
-        + 'a deal starts, an appointments feed, a lender decision, and a hard link from a sale to the unit that was '
-        + 'sold — systems the sales floor already uses, writing down what they already know.'
-        + (R.measuredAt ? ` Measured ${esc(dubaiStamp(R.measuredAt))}.` : ''));
-
-      return body + evidence + `<div class="section">${note}</div>`;
+      return `<div class="${SX.g4}">${dealTile}${candTile}${readyTile}${stateTile}</div>` + empty;
     },
   }).then(wireGo);
 
@@ -498,7 +296,7 @@ SCREENS.dealrescue = async host => {
       const R = r.err ? null : readyFacts(r.v);
 
       const desk = deals == null
-        ? `<div class="section">${readFailed('The Deal Rescue engine', d.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The Deal Rescue engine', d.err)}</div>`
         : table([
             { label: 'Customer', strong: true, render: x =>
                 `<div>${esc(str(x.customer_label) || 'not named')}</div>`
@@ -510,7 +308,7 @@ SCREENS.dealrescue = async host => {
             { label: 'Stuck for', align: 'r', render: x => (n0(x.days_since_movement) != null
                 ? `<div>${num(x.days_since_movement)} d</div>`
                   + muted(`at risk past ${num(x.at_risk_days)} d, stalled past ${num(x.stalled_days)} d`)
-                : '<span class="t-muted">no movement recorded</span>') },
+                : `<span class="${SX.dim}">no movement recorded</span>`) },
             { label: 'Value at stake', align: 'r', render: x => (n0(x.deal_value_aed) != null
                 ? aed(x.deal_value_aed)
                 : unknownCell(x.deal_value_state, str(x.deal_value_basis).replace(/^UNKNOWN\.\s*/i, ''))) },
@@ -522,7 +320,7 @@ SCREENS.dealrescue = async host => {
                 + muted(esc(str(x.action_reason)) || 'No reason is recorded for this recommendation.') },
           ], deals, {
             empty: stateEmpty('The desk is empty because the engine admits no deal',
-              'Every candidate was refused with a reason, and those reasons are listed above. This is not a queue '
+              'Every candidate was refused with a reason, and those reasons are listed below. This is not a queue '
               + 'somebody has cleared and it is not a queue that failed to load — it is a queue that cannot have '
               + 'anything in it while no record of an in-flight deal exists.', 'handyman'),
           });
@@ -564,21 +362,234 @@ SCREENS.dealrescue = async host => {
         ['Tenant', tenantLine],
         ['Action', R && R.next
           ? `Nothing here is waiting on a decision. The next thing that would change this page is `
-            + `<span class="mono">${esc(str(R.next.id))}</span> — ${esc(str(R.next.requirement))}`
+            + `<span class="${SX.mono}">${esc(str(R.next.id))}</span> — ${esc(str(R.next.requirement))}`
           : 'Not established on this render.'],
       ];
 
-      const stripHtml = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">Where this page stands</div>
-          <dl class="kv">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
+      const stripHtml = `<div class="${SX.note}">
+          <div class="${SX.caps}">Where this page stands</div>
+          <dl class="${SX.kv}">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
         </div>`;
 
       const settings = (deals && deals.length && deals.some(x => x.settings_are_defaults === true))
-        ? `<div class="banner info">${muted('The at-risk and stalled windows above are this product&rsquo;s defaults '
+        ? `<div class="${BANNER.info}">${muted('The at-risk and stalled windows above are this product&rsquo;s defaults '
             + 'rather than windows this dealership has set.')}</div>`
         : '';
 
       return desk + settings + stripHtml;
     },
   }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P2 · Everything examined, and why each one is not a deal
+     ══════════════════════════════════════════════════════════════════════ */
+  panel(root, {
+    title: 'Everything examined, and why it is not a deal',
+    sub: 'This is the engine declining to invent a deal lifecycle. Each row was considered as evidence that something '
+       + 'is in flight, and each verdict is recorded with its reason',
+    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('actions', 'Open Action Center'),
+    load: () => readCandidates(),
+    render: rows => {
+      const K = candFacts(rows);
+      if (!K.cands.length) {
+        return stateEmpty('Nothing was examined',
+          'The candidate view returned no rows at all, so this engine found nothing it could even consider — which is '
+          + 'not the same as considering things and clearing them. Nothing is being claimed about whether a deal '
+          + 'exists.', 'search');
+      }
+
+      const body = table([
+        { label: 'What it is', strong: true, render: k =>
+            wrap(`<div>${esc(str(k.customer_label) || str(k.candidate_ref) || 'unnamed row')}</div>`)
+            + muted(`${esc(str(k.candidate_kind))} &middot; <span class="${SX.mono}">${esc(str(k.source_table))}</span>`
+              + (k.observed_at ? ` &middot; ${esc(dubaiStamp(k.observed_at))}` : '')) },
+        { label: 'Verdict', render: k => (up(k.verdict) === 'IN_FLIGHT_DEAL'
+            ? pill(str(k.verdict), 'ok', { verbatim: true })
+            : pill(str(k.verdict) || 'NO VERDICT RECORDED', '', { verbatim: true })) },
+        { label: 'Why it is not a deal', render: k => wrap(muted(esc(str(k.verdict_basis))
+            || 'The engine records no reason for this verdict, which is itself a gap — a refusal without a reason is '
+              + 'not a refusal anybody can check.')) },
+        { label: 'Who it is', render: k => (k.lead_id != null
+            ? `<div>Lead #${esc(str(k.lead_id))}</div>`
+              + muted(esc(str(k.identity_basis)) || 'No identity basis is recorded.')
+            : unknownCell(k.identity_state, k.identity_basis)) },
+        { label: 'Evidence tier', render: k => (str(k.evidence_tier)
+            ? pill(str(k.evidence_tier), '', { verbatim: true })
+            : muted('No tier. Only an admitted deal is graded, so a refused candidate carries none — that is the '
+                + 'absence of a grade, not a low one.')) },
+        { label: 'Value', align: 'r', render: k => (n0(k.deal_value_aed) != null
+            ? `<div>${aed(k.deal_value_aed)}</div>` + muted(esc(str(k.deal_value_state)))
+            : unknownCell(k.deal_value_state, str(k.deal_value_basis).replace(/^UNKNOWN\.\s*/i, ''))) },
+      ], K.cands);
+
+      const verdictSummary = `<div class="${SX.note}">
+          <div class="${SX.caps}">The verdicts, counted</div>
+          ${table([
+            { label: 'Verdict', strong: true, render: v => mono(v.k) },
+            { label: 'Candidates', align: 'r', render: v => num(v.n) },
+            { label: 'Reaches the engine?', render: v => (up(v.k) === 'IN_FLIGHT_DEAL'
+                ? pill('Admitted', 'ok', { verbatim: false })
+                : pill('Refused', 'hot', { verbatim: false })) },
+          ], [...K.verdicts.entries()].map(([k, n]) => ({ k, n })))}
+        </div>`;
+
+      const kindSummary = muted(`Examined across ${num(K.sources.size)} source `
+        + `${plural(K.sources.size, 'table', 'tables')}: `
+        + [...K.kinds.entries()].map(([k, n]) => `${num(n)} &times; <span class="${SX.mono}">${esc(k)}</span>`).join(', ')
+        + `. ${num(K.valued.length)} of ${num(K.cands.length)} carry a monetary figure at all, and where one is `
+        + 'present it is what that row actually records — a confirmed sale amount is confirmed revenue, never a value '
+        + 'at stake.');
+
+      return body + verdictSummary + `<div class="${SX.note}">${kindSummary}</div>`;
+    },
+  }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P4 · The purchase order
+     ══════════════════════════════════════════════════════════════════════ */
+  panel(root, {
+    title: 'What would have to exist before this engine has anything to rank',
+    sub: 'A purchase order, not a wish list. Every row names the live evidence that it is missing, and every '
+       + 'measurable one is re-measured on each read so this list cannot quietly go stale',
+    load: () => readReadiness(),
+    render: rows => {
+      const R = readyFacts(rows);
+      if (!R.reqs.length) {
+        return stateEmpty('No prerequisites are recorded',
+          'The readiness view is empty, so this screen cannot say what is blocking the engine — and an unstated '
+          + 'blocker is not an absent one.', 'checklist');
+      }
+
+      const body = table([
+        { label: 'Requirement', strong: true, render: p =>
+            wrap(`<div>${esc(str(p.requirement))}</div>`)
+            + muted(`<span class="${SX.mono}">${esc(str(p.id))}</span> &middot; ${esc(str(p.kind))}`) },
+        { label: 'Met', render: p => (p.met_now === true
+            ? pill('Met', 'ok', { verbatim: false })
+            : p.met_now === false
+              ? pill('Not met', 'hot', { verbatim: false })
+              /* NULL is its own answer. The view's comment is explicit: unknown
+                 is not met, and a caller who can see no rows must not be told a
+                 requirement is satisfied. */
+              : pill('Not measurable', 'unknown', { verbatim: false })) },
+        { label: 'Measured on this read', render: p => wrap(muted(esc(str(p.measured_now))
+            || 'The view returned no measurement for this prerequisite, so whether it is met is unknown rather than '
+              + 'unmet.')) },
+        { label: 'What it unlocks', render: p => wrap(muted(esc(str(p.unlocks))
+            || 'The engine records nothing that this would unlock.')
+            + (Array.isArray(p.unlocks_states) && p.unlocks_states.length
+                ? muted('States: ' + p.unlocks_states.map(v => `<span class="${SX.mono}">${esc(str(v))}</span>`).join(', '))
+                : '')) },
+        { label: 'Why it is not just code', render: p => wrap(muted(esc(str(p.why_not_code))
+            || 'The engine records no account of why this is not a coding task.')) },
+      ], R.reqs);
+
+      const evidence = `<div class="${SX.note}">
+          <div class="${SX.caps}">The live evidence behind each of those, as the engine measured it</div>
+          ${table([
+            { label: 'Requirement', strong: true, render: p => mono(p.id) },
+            /* Two rows, not one, and the split is the point. `platform_evidence`
+               is what is true of NEXUS for every dealership alike; `measured_now`
+               is what is true of THIS dealership, counted on this read through
+               its own row-level security. They used to be one column called
+               evidence_today, which stored Tenant A's counts and printed them to
+               whoever opened the screen - see migration 20260906070947. */
+            { label: 'What is true of NEXUS, for every dealership',
+              render: p => wrap(muted(esc(str(p.platform_evidence))
+                || 'The engine records nothing about the platform against this requirement.')) },
+            { label: 'What is true of this dealership, measured on this read',
+              render: p => wrap(muted(esc(str(p.measured_now))
+                || 'Not measured. That is not the same as met.')) },
+          ], R.reqs)}
+        </div>`;
+
+      const kinds = [...R.kinds.entries()]
+        .map(([k, n]) => `${num(n)} ${esc(k.toLowerCase())}`).join(', ');
+      const note = muted(`${num(R.met.length)} of ${num(R.reqs.length)} `
+        + `${plural(R.reqs.length, 'requirement is', 'requirements are')} met (${kinds}). `
+        + (R.unmeasured.length
+            ? `${num(R.unmeasured.length)} could not be measured and ${plural(R.unmeasured.length, 'is', 'are')} `
+              + 'reported as unknown rather than folded in with the unmet ones. '
+            : '')
+        + 'None of the outstanding ones is a coding task waiting on somebody: they are a deal record that starts when '
+        + 'a deal starts, an appointments feed, a lender decision, and a hard link from a sale to the unit that was '
+        + 'sold — systems the sales floor already uses, writing down what they already know.'
+        + (R.measuredAt ? ` Measured ${esc(dubaiStamp(R.measuredAt))}.` : ''));
+
+      return body + evidence + `<div class="${SX.note}">${note}</div>`;
+    },
+  }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P3 · The state vocabulary, and the one state that has no branch
+     ══════════════════════════════════════════════════════════════════════ */
+  panel(root, {
+    title: 'Every state this engine may return',
+    sub: 'A state with no branch behind it and a state with a branch and no rows are two different findings, and this '
+       + 'engine records which is which',
+    load: () => readStates(),
+    render: rows => {
+      const states = rows || [];
+      if (!states.length) {
+        return stateEmpty('The state model returned no rows',
+          'This engine publishes its own vocabulary and none came back, so this screen cannot say what it is able to '
+          + 'say. That is a missing reference table, not a finding about deals.', 'checklist');
+      }
+      const noBranch = states.filter(s => s.engine_can_produce === false);
+      const noRows   = states.filter(s => s.engine_can_produce !== false && !n0(s.deals_in_state_now));
+
+      const body = table([
+        { label: 'State', strong: true, render: s =>
+            pill(str(s.state), s.engine_can_produce === false ? 'hot' : 'ok', { verbatim: true })
+            + muted(wrap(esc(str(s.meaning)) || 'No meaning is recorded for this state.')) },
+        { label: 'Observation', render: s => pill(str(s.observation) || 'UNKNOWN', '', { verbatim: true }) },
+        { label: 'Deals in it now', align: 'r', render: s => (s.engine_can_produce === false
+            /* NOT a zero. A count of zero would say the engine looked and found
+               none; no branch exists, so it never looked and never could. */
+            ? unknownPill('NO BRANCH')
+            : n0(s.deals_in_state_now) != null
+              ? num(s.deals_in_state_now)
+              : `<span class="${SX.dim}">not counted</span>`) },
+        { label: 'What it would take', render: s => wrap(muted(esc(str(s.requires))
+            || 'The engine records no requirement for this state.')) },
+      ], states);
+
+      /* The unreachable states get their own block. Inside a table row,
+         "FINANCE_BLOCKED · 0" is indistinguishable from a bucket that was
+         checked and found empty, and those are opposite claims. */
+      const blocked = noBranch.length
+        ? noBranch.map(s => `<div class="${BANNER.warm}">
+             <span class="${BANNER_ICON}">block</span>
+             <div>
+               ${bold(`${esc(str(s.state))} is unreachable by design — it is not an empty bucket.`)}
+               ${muted(`Blocked by <span class="${SX.mono}">${esc(str(s.blocked_by) || 'not stated')}</span>. `
+                 + esc(str(s.requires) || 'The engine records no requirement for this state.'))}
+               ${muted('No branch of this engine returns it and none has been written. A bucket showing zero here '
+                 + 'would say the engine looked and found nothing, which is the opposite of what is true.')}
+             </div></div>`).join('')
+        : '';
+
+      const note = muted(`${num(states.length)} ${plural(states.length, 'state is', 'states are')} defined. `
+        + `${num(noBranch.length)} ${plural(noBranch.length, 'has', 'have')} no branch at all; `
+        + `${num(noRows.length)} ${plural(noRows.length, 'has a branch that works and nothing in it', 'have branches that work and nothing in them')}. `
+        + 'Do not read a zero as evidence a branch is broken, or a branch as evidence of data.');
+
+      return body + blocked + `<div class="${SX.note}">${note}</div>`;
+    },
+  }).then(wireGo);
+
+  /* deal-rescue--c58152's honest "Needs DMS integration" block.
+     Trade-in equity and title deeds are a deal-desk concern this database
+     holds nothing about, so they are shown as not built rather than as a
+     clean desk. */
+  const tradeIn = el('div');
+  tradeIn.innerHTML = comingSoonPanel({ kind: 'coming-soon', icon: 'swap_horiz', title: 'Trade-in equity & title deeds',
+    body: 'Whether a trade-in valuation, an outstanding finance settlement or a title transfer is holding a deal up. NEXUS holds no trade-in, settlement or title record, so nothing here can be flagged — that is not the same as nothing being stuck.',
+    prerequisite: 'Needs your DMS connected (trade-in appraisals, settlement letters, title status).' });
+  root.appendChild(tradeIn);
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'v_deal_rescue · v_deal_rescue_candidates · v_deal_rescue_readiness · v_deal_rescue_state_model',
+    evidence: 'Every candidate examined carries its recorded verdict; prerequisites re-measured on read',
+  }));
 };

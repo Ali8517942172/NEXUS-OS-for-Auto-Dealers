@@ -62,7 +62,7 @@ update public.lead_source_catalogue
 > deployed dashboard still has no button — which is precisely the defect
 > `20260907200000` removed, re-introduced by its own fix.
 
-**Check** — as an ALBA session, `nexus_lead_source_readiness()` shows `walk_in`
+**Check** — as an Tenant A session, `nexus_lead_source_readiness()` shows `walk_in`
 and `phone_call` as **CONNECTED**, and the Lead Sources screen shows them green
 with no "unknown state" FAULT row.
 
@@ -224,7 +224,7 @@ to write.
 insert into public.lead_ingest_provider_identity
   (endpoint_id, source_key, provider, identity_kind, identity_value, label)
 values ('4d4f5cf2-f966-4d4e-9d9e-605757c615b7', 'meta_lead_ads_facebook',
-        'meta', 'facebook_page_id', '<the Page id>', 'ALBA CARS page');
+        'meta', 'facebook_page_id', '<the Page id>', 'Tenant A page');
 
 update public.lead_ingest_endpoint set status = 'active'
  where public_key = 'alba-prod-meta-leadads-facebook';

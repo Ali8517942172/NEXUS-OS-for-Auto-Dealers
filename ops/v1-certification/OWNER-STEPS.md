@@ -203,7 +203,7 @@ swap. Doing this before 4.1 means the one channel monitor is watching the
 transport you are leaving.
 
 ### 4.3 Deactivate each `whatsapp_waha_session` `channel_registry` row
-(`status <> 'active'`, **not** deleted). **SECRET: no.** ALBA's is
+(`status <> 'active'`, **not** deleted). **SECRET: no.** Tenant A's is
 `75d67b05-1cd4-4f81-8afd-3c2186f25590`.
 
 ### 4.4 Remove the `waha` service, its env vars, then recreate `n8n` **and**

@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface-container-highest":"#dbe2fb","surface-variant":"#dbe2fb","error":"#ba1a1a","outline":"#737784","on-primary-fixed":"#001a43","surface-bright":"#faf8ff","on-surface":"#131b2d","surface-tint":"#155ac0","secondary-fixed-dim":"#b4c6f5","on-primary-fixed-variant":"#004398","on-secondary-fixed":"#041a40","on-primary-container":"#dee6ff","on-error-container":"#93000a","tertiary-container":"#007281","on-tertiary-container":"#b1f1ff","surface":"#faf8ff","error-container":"#ffdad6","tertiary":"#005864","primary-fixed":"#d9e2ff","secondary-fixed":"#d9e2ff","on-tertiary-fixed":"#001f25","on-secondary":"#ffffff","on-surface-variant":"#424753","surface-container-lowest":"#ffffff","on-tertiary-fixed-variant":"#004e59","inverse-on-surface":"#edf0ff","tertiary-fixed-dim":"#44d8f0","background":"#faf8ff","on-primary":"#ffffff","secondary":"#4c5e87","surface-container-low":"#f2f3ff","surface-container":"#e9edff","primary-fixed-dim":"#afc6ff","on-tertiary":"#ffffff","inverse-primary":"#afc6ff","primary":"#004ba8","secondary-container":"#bccefe","tertiary-fixed":"#a0efff","surface-container-high":"#e1e8ff","on-secondary-container":"#465780","inverse-surface":"#283043","on-background":"#131b2d","on-secondary-fixed-variant":"#34466e","primary-container":"#2563c9","outline-variant":"#c2c6d5","surface-dim":"#d2d9f3","on-error":"#ffffff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-sm":"0.5rem","space-xs":"0.25rem","space-lg":"1.5rem","space-xl":"2rem","gutter":"1rem","margin":"1.5rem","space-md":"1rem"},"fontFamily":{"table-header":["Inter"],"headline-lg":["Inter"],"label-numeric-lg":["JetBrains Mono"],"label-numeric-sm":["JetBrains Mono"],"body-lg":["Inter"],"label-numeric-md":["JetBrains Mono"],"headline-xl":["Inter"],"body-sm":["Inter"],"body-md":["Inter"],"headline-md":["Inter"]},"fontSize":{"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}]}}}};</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-on-surface text-surface-container-highest z-50 flex flex-col justify-between select-none shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col h-full overflow-hidden"><div class="h-14 px-space-md flex items-center justify-between border-b border-surface-variant/10 shrink-0"><div class="flex items-center gap-space-sm"><div class="w-7 h-7 rounded bg-primary-container flex items-center justify-center text-on-primary font-headline-md text-headline-md tracking-wider">N</div><div><div class="font-headline-md text-body-md text-surface tracking-tight font-semibold">NEXUS OS</div><div class="font-label-numeric-sm text-body-sm text-surface-variant/60">REV COCKPIT v4.2</div></div></div><span class="material-symbols-outlined text-surface-variant/40 text-[18px]">terminal</span></div><div class="flex-1 overflow-y-auto px-space-xs py-space-sm space-y-space-md"><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">Work</div><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="todays-money-leaks" href="#"><span class="material-symbols-outlined text-[18px]">error_med</span><span>Today's Money Leaks</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="overview" href="#"><span class="material-symbols-outlined text-[18px]">grid_view</span><span>Overview</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="leads" href="#"><span class="material-symbols-outlined text-[18px]">filter_list</span><span>Leads</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[18px]">person_add</span><span>Record a Lead</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[18px]">hub</span><span>Lead Sources</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="channels" href="#"><span class="material-symbols-outlined text-[18px]">alt_route</span><span>Channels</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="integrations" href="#"><span class="material-symbols-outlined text-[18px]">extension</span><span>Integrations</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="conversations" href="#"><span class="material-symbols-outlined text-[18px]">forum</span><span>Conversations</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="appointments" href="#"><span class="material-symbols-outlined text-[18px]">event_available</span><span>Appointments</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="compliance" href="#"><span class="material-symbols-outlined text-[18px]">verified_user</span><span>Compliance</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">Revenue Recovery</div><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[18px]">monetization_on</span><span>Revenue Recovery</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[18px]">replay</span><span>Lead Recovery</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[18px]">shield_with_heart</span><span>Deal Rescue</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="attribution" href="#"><span class="material-symbols-outlined text-[18px]">stacked_line_chart</span><span>Attribution</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="policy" href="#"><span class="material-symbols-outlined text-[18px]">policy</span><span>Policy</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">Assets</div><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r transition-colors bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim" data-path="inventory" href="#"><span class="material-symbols-outlined text-[18px]">directions_car</span><span>Inventory</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="competitors" href="#"><span class="material-symbols-outlined text-[18px]">radar</span><span>Competitors</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">Intelligence</div><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[18px]">psychology</span><span>Ask AI</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[18px]">calculate</span><span>Finance Desk</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[18px]">contacts</span><span>Customer 360</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">Operations</div><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="action-center" href="#"><span class="material-symbols-outlined text-[18px]">task_alt</span><span>Action Center</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="campaigns" href="#"><span class="material-symbols-outlined text-[18px]">campaign</span><span>Campaigns</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="deals" href="#"><span class="material-symbols-outlined text-[18px]">handshake</span><span>Deals</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="automation" href="#"><span class="material-symbols-outlined text-[18px]">smart_toy</span><span>Automation</span></a><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="team" href="#"><span class="material-symbols-outlined text-[18px]">groups</span><span>Team</span></a></nav></div><div class="border-t border-surface-variant/10 p-space-sm bg-on-surface/90 space-y-space-xs shrink-0"><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-surface-variant hover:text-surface transition-colors font-body-md text-body-md" data-path="setup" href="#"><span class="material-symbols-outlined text-[18px]">settings_suggest</span><span>Setup</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-surface-variant hover:text-surface transition-colors font-body-md text-body-md" data-path="subscription" href="#"><span class="material-symbols-outlined text-[18px]">credit_card</span><span>Subscription</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-surface-variant hover:text-surface transition-colors font-body-md text-body-md" data-path="settings" href="#"><span class="material-symbols-outlined text-[18px]">tune</span><span>Settings</span></a></nav><div class="pt-space-xs mt-space-xs border-t border-surface-variant/10 flex items-center justify-between"><div class="flex items-center gap-space-sm min-w-0"><div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0 font-label-numeric-sm text-label-numeric-sm text-on-primary font-bold">FM</div><div class="min-w-0 flex-1"><div class="font-headline-md text-body-sm text-surface truncate font-semibold">Faris M.</div><div class="font-body-sm text-body-sm text-surface-variant/60 truncate">GM / Sales Dir</div></div></div><button class="p-1 text-surface-variant hover:text-error transition-colors rounded" title="Sign out" type="button"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest z-40 flex items-center justify-between px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[20px]">store</span><span class="font-headline-md text-body-md text-on-surface font-semibold">Demo Motors</span><span class="text-on-surface-variant text-body-sm">· Dubai Showroom</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-low"><div class="w-1.5 h-1.5 rounded-full bg-tertiary-container animate-pulse"></div><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">SYNC</span><span class="font-label-numeric-sm text-label-numeric-sm text-tertiary-container font-semibold">42ms</span></div></div><div class="flex-1 max-w-md mx-space-lg"><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-outline text-[18px]">search</span><input class="w-full pl-9 pr-8 py-1.5 bg-surface-container-low rounded font-body-sm text-body-sm text-on-surface placeholder:text-outline outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary transition-all" placeholder="Omnibar: Search VIN, Deal ID, Client, Stock # (Press /)" type="text"/><span class="absolute right-2 font-label-numeric-sm text-label-numeric-sm text-outline px-1 rounded bg-surface-container">/</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center p-0.5 rounded bg-surface-container-low font-label-numeric-sm text-label-numeric-sm"><button class="px-2 py-1 rounded bg-surface-container-lowest text-primary font-semibold shadow-[0_1px_8px_rgba(0,0,0,0.04)]" type="button">AED</button><button class="px-2 py-1 text-on-surface-variant hover:text-on-surface transition-colors" type="button">USD</button></div><button class="relative p-1.5 text-on-surface-variant hover:text-on-surface transition-colors rounded" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-error"></span></button><div class="flex items-center gap-space-sm pl-space-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="hidden xl:block text-left"><div class="font-headline-md text-body-sm text-on-surface font-semibold leading-tight">Faris M.</div><div class="font-body-sm text-body-sm text-on-surface-variant leading-tight">GM Desk</div></div></div></div></header><main class="relative pt-14 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Dynamic Sidebar Nav State Sync -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const inventoryLink = document.querySelector('aside a[data-path="inventory"]');
+      if (inventoryLink) {
+        inventoryLink.classList.remove('text-surface-variant', 'hover:bg-surface-variant/10', 'hover:text-surface');
+        inventoryLink.classList.add('bg-primary', 'text-surface', 'font-semibold', 'border-l-[3px]', 'border-tertiary-fixed-dim');
+      }
+    });
+  </script>
+<!-- Cockpit Sub-Header & Command Context Bar -->
+<section class="w-full bg-surface-container-lowest px-space-lg py-space-md shadow-sm">
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div>
+<div class="flex items-center gap-space-sm mb-1">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary/10 text-primary font-label-numeric-sm text-label-numeric-sm font-semibold tracking-wide uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+            Asset Command Module
+          </span>
+<span class="text-outline text-body-sm">•</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant font-medium">REV-SNTL-DXB-V4</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Inventory — Assets &amp; Profit Sentinel</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 max-w-4xl">
+          Real-time vehicle stock aging, capital velocity, margin exposure monitoring, and algorithmic holding risk analysis for Dubai showroom.
+        </p>
+</div>
+<div class="flex items-center gap-space-sm shrink-0">
+<button class="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">tune</span>
+<span>Matrix Thresholds</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">file_download</span>
+<span>Ledger Export</span>
+</button>
+<button class="inline-flex items-center gap-2 px-4 py-2 rounded bg-primary-container hover:bg-primary text-on-primary font-body-md text-body-sm font-semibold shadow-md transition-all active:scale-[0.99]" onclick="openVehicleModal()" type="button">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+<span>+ Add Vehicle</span>
+</button>
+</div>
+</div>
+<!-- Filter & Operational Toolbar -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-sm mt-space-md pt-space-sm bg-surface-container-low/60 p-space-sm rounded-lg">
+<div class="md:col-span-5 relative">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px]">search</span>
+<input class="w-full pl-9 pr-8 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:ring-1 focus:ring-primary outline-none shadow-sm transition-all" id="inventorySearch" placeholder="Filter by VIN, Stock # (e.g. #DXB-7721), Make, or Trim..." type="text"/>
+<span class="absolute right-2.5 top-2 font-label-numeric-sm text-label-numeric-sm text-outline px-1 rounded bg-surface-container">ESC</span>
+</div>
+<div class="md:col-span-3">
+<div class="relative">
+<select class="w-full pl-3 pr-8 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer appearance-none">
+<option value="all">Risk Band: All Monitored Assets</option>
+<option value="green">Safe Threshold (0 - 30 Days)</option>
+<option value="amber">Amber Watch (31 - 59 Days)</option>
+<option selected="" value="red">Red Critical (&gt; 60 Days Aging)</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-2.5 text-outline text-[18px] pointer-events-none">expand_more</span>
+</div>
+</div>
+<div class="md:col-span-3">
+<div class="relative">
+<select class="w-full pl-3 pr-8 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer appearance-none">
+<option selected="" value="szr">Location: Dubai Sheikh Zayed Rd (SZR)</option>
+<option value="alquoz">Location: Al Quoz Inspection &amp; Detailing Hub</option>
+<option value="port">Location: Jebel Ali Port Customs Bonded</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-2.5 text-outline text-[18px] pointer-events-none">pin_drop</span>
+</div>
+</div>
+<div class="md:col-span-1 flex items-center justify-end">
+<button class="w-full h-full min-h-[38px] flex items-center justify-center rounded bg-surface-container-lowest hover:bg-surface-variant/30 text-on-surface-variant shadow-sm transition-colors" title="Reset View" type="button">
+<span class="material-symbols-outlined text-[20px]">restart_alt</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Executive Profit Sentinel KPI Strip -->
+<section class="w-full px-space-lg py-space-md">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- Card 1: Capital Tied Up -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm relative overflow-hidden group">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5 font-table-header text-table-header uppercase text-on-surface-variant tracking-wider">
+<span>Capital Tied Up</span>
+<span class="material-symbols-outlined text-outline text-[14px]" title="Sum of net capitalized book value across active stock">info</span>
+</div>
+<div class="mt-2 flex items-baseline gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold">AED</span>
+<span class="font-label-numeric-lg text-headline-xl text-on-surface font-bold tracking-tight">42,850,000</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">
+              48 physical luxury units in stock <span class="font-label-numeric-sm text-primary font-medium">(Ø 892k/unit)</span>
+</p>
+</div>
+<div class="p-2.5 rounded-lg bg-surface-container text-primary">
+<span class="material-symbols-outlined text-[24px]">account_balance_wallet</span>
+</div>
+</div>
+<div class="mt-3 w-full bg-surface-container-low h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 72%"></div>
+</div>
+</div>
+<!-- Card 2: Gross Margin Exposed -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm relative overflow-hidden group">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5 font-table-header text-table-header uppercase text-error tracking-wider">
+<span>Gross Margin Exposed</span>
+<span class="inline-flex w-2 h-2 rounded-full bg-error animate-pulse"></span>
+</div>
+<div class="mt-2 flex items-baseline gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-error font-semibold">AED</span>
+<span class="font-label-numeric-lg text-headline-xl text-error font-bold tracking-tight">3,640,000</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">
+              Margin at risk on units exceeding <span class="font-label-numeric-sm text-error font-semibold">45 days</span> aging
+            </p>
+</div>
+<div class="p-2.5 rounded-lg bg-error-container text-error">
+<span class="material-symbols-outlined text-[24px]">trending_down</span>
+</div>
+</div>
+<div class="mt-3 flex items-center justify-between text-body-sm font-label-numeric-sm text-error">
+<span>Daily Erosion: ~AED 14,200</span>
+<span>-8.4% Net Yield</span>
+</div>
+</div>
+<!-- Card 3: Past Critical Threshold -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm relative overflow-hidden group">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5 font-table-header text-table-header uppercase text-error tracking-wider">
+<span>Past Critical Threshold</span>
+<span class="px-1.5 py-0.2 rounded bg-error-container text-error font-label-numeric-sm text-body-sm font-bold">URGENT</span>
+</div>
+<div class="mt-2 flex items-baseline gap-2">
+<span class="font-label-numeric-lg text-headline-xl text-on-surface font-bold tracking-tight">9</span>
+<span class="font-body-lg text-body-lg text-on-surface-variant font-medium">Stalled Units</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">
+              Stalled &gt; 60 days on floor <span class="font-label-numeric-sm text-on-surface font-semibold">(AED 280/day/unit)</span>
+</p>
+</div>
+<div class="p-2.5 rounded-lg bg-surface-container-high text-error">
+<span class="material-symbols-outlined text-[24px]">timer_off</span>
+</div>
+</div>
+<div class="mt-3 flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Action required:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-semibold hover:underline cursor-pointer">5 Reprice, 4 Desk Review</span>
+</div>
+</div>
+<!-- Card 4: Average Days in Stock -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm relative overflow-hidden group">
+<div class="flex items-start justify-between">
+<div>
+<div class="flex items-center gap-1.5 font-table-header text-table-header uppercase text-on-surface-variant tracking-wider">
+<span>Average Days in Stock</span>
+<span class="material-symbols-outlined text-outline text-[14px]">speed</span>
+</div>
+<div class="mt-2 flex items-baseline gap-2">
+<span class="font-label-numeric-lg text-headline-xl text-on-surface font-bold tracking-tight">38.4</span>
+<span class="font-body-md text-body-md text-on-surface-variant">Days</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">
+              Floor SLA Target Velocity: <span class="font-label-numeric-sm text-tertiary-container font-semibold">&lt; 30.0 days</span>
+</p>
+</div>
+<div class="p-2.5 rounded-lg bg-secondary-container text-on-secondary-container">
+<span class="material-symbols-outlined text-[24px]">event_repeat</span>
+</div>
+</div>
+<div class="mt-3 flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm">
+<span class="text-error font-semibold flex items-center"><span class="material-symbols-outlined text-[14px]">arrow_upward</span>+4.2d</span>
+<span class="text-outline">vs prior month cycle</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Main Viewport: Grid Splitting Inventory Table & Unit Inspector Drawer -->
+<section class="w-full px-space-lg pb-space-xl">
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
+<!-- Primary Fleet Table (8 Cols) -->
+<div class="xl:col-span-8 flex flex-col bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<!-- Table Toolbar Bar -->
+<div class="px-space-md py-3 bg-surface-container-low flex flex-wrap items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-body-md text-on-surface font-bold tracking-tight">Showroom Floor Inventory</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-numeric-sm text-label-numeric-sm font-semibold">6 Units Filtered</span>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="flex items-center gap-1 text-on-surface-variant font-body-sm text-body-sm">
+<button class="flex items-center gap-1 px-2 py-1 rounded hover:bg-surface-container text-on-surface-variant text-body-sm font-medium transition-colors" id="toggleAllMasksBtn" onclick="toggleAllCostMasks()" type="button">
+<span class="material-symbols-outlined text-[16px]" id="globalMaskIcon">visibility</span>
+<span id="globalMaskText">Reveal Cost Basis</span>
+</button>
+</div>
+<div class="flex items-center bg-surface-container rounded p-0.5 font-label-numeric-sm text-label-numeric-sm">
+<button class="px-2 py-1 rounded bg-surface-container-lowest text-primary font-bold shadow-sm" type="button">Active</button>
+<button class="px-2 py-1 text-on-surface-variant hover:text-on-surface" type="button">Booked (3)</button>
+<button class="px-2 py-1 text-on-surface-variant hover:text-on-surface" type="button">Transit (2)</button>
+</div>
+</div>
+</div>
+<!-- Table Viewport -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-table-header text-table-header uppercase">
+<th class="py-2.5 px-space-md w-28">Stock No</th>
+<th class="py-2.5 px-space-md min-w-[260px]">Vehicle Specs &amp; Unit Details</th>
+<th class="py-2.5 px-space-md text-right w-28">Days in Stock</th>
+<th class="py-2.5 px-space-md text-right min-w-[130px]">Net Cost</th>
+<th class="py-2.5 px-space-md text-right min-w-[130px]">List Price</th>
+<th class="py-2.5 px-space-md text-center w-28">Risk Band</th>
+<th class="py-2.5 px-space-md text-right min-w-[150px]">Sentinel Action</th>
+<th class="py-2.5 px-space-sm text-center w-12"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container text-body-sm">
+<!-- ROW 1: DXB-7721 (Selected Unit) -->
+<tr class="bg-surface-container/60 hover:bg-surface-container transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-7721')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-primary">#DXB-7721</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">POD-02 SZR</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="High quality studio shot of a 2024 Porsche 911 GT3 in Shark Blue finish, high gloss carbon ceramic brakes, immaculate luxury showroom lighting in Dubai, side three quarter angle" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkEIWJJKtvxzQhHWDzdixwj1sWcbHVasC8d8x4yX4U5zx_Kpj-aowXI3IDNR9ssev1FLPTMjDT2XIFcES4gKJIFDqaMieDBGgG27thpep4fxKBXH7lR34VQu8WnjI54TR4VEVVM8X9KUQqo2bGwu5dlcRuTqgjjAB3glqmavk2MmN7g3gu0WJmaN48Yfb5CKtrQ-LBzEbUhYGK-BpNQrQrizr5b0m7W4vlwFT00A"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2024 Porsche 911 GT3</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Shark Blue • 1,240 km • GCC Spec</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">
+<span class="material-symbols-outlined text-[13px]">alarm</span>
+                    74d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 720,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 720k</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 840,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">CRITICAL</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-error text-on-error font-label-numeric-sm text-label-numeric-sm font-bold shadow-sm hover:brightness-110 transition-all" onclick="event.stopPropagation(); executeRepriceAction('DXB-7721', 815000);" type="button">
+<span>REPRICE</span>
+<span class="text-on-error/80">(-25k)</span>
+</button>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- ROW 2: DXB-8812 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-8812')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-secondary">#DXB-8812</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">BAY-14 SZR</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="Obsidian black Mercedes-AMG G63 luxury SUV parked inside modern Dubai automotive showroom with gleaming LED strip floor reflections" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQInIurHHKeXXYvETkFxNROTCe6WoKA0YzyQ5ZVvr4BFi1aCuU9PUepxaGB7htIGRdq7aUYzpAFckzk4gSzoZAGgRGU7RFjmYudRBrUUsekGRf8zcIzDgt1wkGguTAWXmH2pXzCaBR74lTt4lMudcPMDSAgWKuXYUFGKFcdD4xEhKfU-RTZS6P-4XXVZhyopOBf4qnwJOeie20QK_g1pUNeKudaPtyQN8oJmZRbg"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2024 Mercedes-AMG G63</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Obsidian Black • 3,800 km • GCC Spec</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-surface-container-high text-on-secondary-fixed-variant font-label-numeric-sm text-label-numeric-sm font-bold">
+<span class="material-symbols-outlined text-[13px]">schedule</span>
+                    58d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 790,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 790k</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 895,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container-high text-secondary font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">ELEVATED</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-block px-2.5 py-1 rounded bg-surface-container text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">
+                    WATCH (BAY)
+                  </span>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- ROW 3: DXB-9043 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-9043')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-secondary">#DXB-9043</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">VIP POD 01</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="2023 Ferrari 296 GTB in vivid Rosso Corsa red parked on polished concrete floor with dramatic aerodynamic reflections, front angle" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCF7O7e5NDv1pwplgFQFvRNFqjdh7d5BUBK4X3wlcAbYuN_8RWzKgxygOnxlYHmbeFlVVpuuiZ7ObhiU3kM7Utht_u8CpYR4BoTVOtgduG6RUBrao3xzL7m_gQnbnrCzXtslVqcLf2QHgNofAYdVbXPvjT4OfJrBIuefZw8__4jzw2KLTWU1Ik3CuMzD3Aw-IFWkkdVL3ph8Q7NSr1G6V9_QCsv3LCri_Ywai7EYQ"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2023 Ferrari 296 GTB</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Rosso Corsa • 2,100 km • Assetto Fiorano</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">
+<span class="material-symbols-outlined text-[13px]">alarm</span>
+                    65d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 1,150,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 1.15M</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 1,290,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">CRITICAL</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<button class="inline-flex items-center gap-1 px-2 py-1 rounded bg-on-surface text-surface font-label-numeric-sm text-label-numeric-sm font-semibold hover:bg-on-surface-variant transition-colors" type="button">
+<span>MGR REVIEW</span>
+</button>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- ROW 4: DXB-4491 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-4491')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-secondary">#DXB-4491</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">FL-WEST 08</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="2024 Land Rover Defender 110 V8 in Carpathian Grey metallic, black exterior styling package, sitting under architectural spot lighting in a high end automotive boutique" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClZ5VA26beLKwRPdXtMwo796C6TbwtSggxJ5U3gx7c58UL1FyZJfNYjAN8qqx0RCtlLYokirrT5sUru-yz8yf2x800eMynuTstmHD9cUo01x1VxhA8PFhT8okTjk9Tj3_U7SZhoFFfQsc-xSWson6nwCLstgs7XV1eKPoY9r7u_DLOmcOIybjoHJGH_XOD2DTpwIVMRXCRKGt3QZjpge3PYWUG9Jw_yfg1zOih4Q"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2024 Defender 110 V8</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Carpathian Grey • 6,400 km • GCC Spec</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-surface-container text-tertiary font-label-numeric-sm text-label-numeric-sm font-semibold">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>
+                    22d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 480,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 480k</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 565,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container-highest text-tertiary font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">SAFE</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-block px-2.5 py-1 rounded bg-surface-container-low text-on-surface-variant font-label-numeric-sm text-label-numeric-sm font-semibold">
+                    HOLD
+                  </span>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- ROW 5: DXB-3310 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-3310')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-secondary">#DXB-3310</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">ROTUNDA 01</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="Black Diamond 2023 Rolls-Royce Cullinan with Mandarin bespoke leather interior, Spirit of Ecstasy illuminated, luxury Dubai showroom floor environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCAtCb8lNAtk3sIt2dqNso7itIBX7lAVKd4OVGHO0Z_1PPGPMYW3Q35TYpzjgWPjfwpWUy216gv6xU64VJ6pqnU0zeTrAmWspJPzWDG46PHRkB16OrRyd2I85Fwa5tXK87E9viQBXJ4nPq6nq551WbJTT9-EX_cadykGgTy_RcN-t-dG5Zq6FucHXa87W09KO4C0hZy2_VsiWw8Snv3uIZmwn5IT91Crh1BnynBnQ"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2023 Rolls-Royce Cullinan</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Black Diamond • 8,900 km • Mandarin Interior</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold">
+<span class="material-symbols-outlined text-[13px]">alarm</span>
+                    81d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 1,720,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 1.72M</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 1,950,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-error-container text-error font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">CRITICAL</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<button class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-error text-on-error font-label-numeric-sm text-label-numeric-sm font-bold shadow-sm hover:brightness-110 transition-all" onclick="event.stopPropagation(); executeRepriceAction('DXB-3310', 1900000);" type="button">
+<span>REPRICE</span>
+<span class="text-on-error/80">(-50k)</span>
+</button>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- ROW 6: DXB-8832 -->
+<tr class="bg-surface-container-lowest hover:bg-surface-container-low transition-colors cursor-pointer group" onclick="selectUnitRow(this, 'DXB-8832')">
+<td class="py-3 px-space-md align-middle">
+<div class="flex flex-col">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-secondary">#DXB-8832</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">FL-EAST 04</span>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle">
+<div class="flex items-center gap-space-sm">
+<img class="w-14 h-10 object-cover rounded shadow-sm shrink-0" data-alt="2024 BMW M4 Competition Coupe finished in vibrant Isle of Man Green metallic parked inside an architectural garage showcase" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAxfItb_oOVRCQSvUf8uRRRwMuzvYxjRor9avHtpY8giGM_CBSNgor0B5_rSznOALq5TppZsI_zx-fH8OdX8cnsd81U1_5QNPri6yjK0sLE6T2tp7CHhNwTDitdA3CodxIH_96KPWtj0UxZVIGJna3dqR7NeXVF_9oNdTV0kLiV9X4ppURxiUri9GbCtCptqhCD9FwgirhMA69Kke6T8tl--UyzlPYu59_FpHKLFw"/>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md text-on-surface font-semibold truncate group-hover:text-primary transition-colors">2024 BMW M4 Competition</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Isle of Man Green • 1,100 km • M-Carbon Bucket Seats</div>
+</div>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-flex items-center justify-end gap-1 px-2 py-0.5 rounded bg-surface-container text-tertiary font-label-numeric-sm text-label-numeric-sm font-semibold">
+<span class="material-symbols-outlined text-[13px]">bolt</span>
+                    12d
+                  </span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<div class="inline-flex items-center justify-end gap-1 font-label-numeric-md text-label-numeric-md font-semibold text-on-surface-variant cost-field" data-raw="AED 460,000">
+<span class="cost-mask tracking-wider">••••••••</span>
+<span class="cost-value hidden font-label-numeric-md text-label-numeric-md text-on-surface">AED 460k</span>
+<button class="text-outline hover:text-on-surface p-0.5 transition-colors" onclick="event.stopPropagation(); toggleSingleCost(this);" type="button">
+<span class="material-symbols-outlined text-[14px]">visibility_off</span>
+</button>
+</div>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 540,000</span>
+</td>
+<td class="py-3 px-space-md align-middle text-center">
+<span class="inline-block px-2 py-0.5 rounded bg-surface-container-highest text-tertiary font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">SAFE</span>
+</td>
+<td class="py-3 px-space-md align-middle text-right">
+<span class="inline-block px-2.5 py-1 rounded bg-surface-container-low text-on-surface-variant font-label-numeric-sm text-label-numeric-sm font-semibold">
+                    HOLD
+                  </span>
+</td>
+<td class="py-3 px-space-sm align-middle text-center">
+<button class="p-1 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Pagination & Bottom Health Metric -->
+<div class="p-space-md bg-surface-container-low flex flex-col sm:flex-row items-center justify-between gap-space-sm font-body-sm text-body-sm text-on-surface-variant">
+<div class="flex items-center gap-space-md">
+<span>Showing <strong class="font-semibold text-on-surface">1 - 6</strong> of 48 live units</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-medium">9 units flag Sentinel Alert</span>
+</div>
+<div class="flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm">
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-outline hover:text-on-surface shadow-sm" type="button">Prev</button>
+<button class="px-2.5 py-1 rounded bg-primary text-on-primary font-bold shadow-sm" type="button">1</button>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container shadow-sm" type="button">2</button>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container shadow-sm" type="button">3</button>
+<button class="px-2.5 py-1 rounded bg-surface-container-lowest text-outline hover:text-on-surface shadow-sm" type="button">Next</button>
+</div>
+</div>
+</div>
+<!-- Right Unit Inspector Drawer (4 Cols) -->
+<aside class="xl:col-span-4 bg-surface-container-lowest rounded-xl shadow-md overflow-hidden flex flex-col sticky top-20">
+<!-- Drawer Header -->
+<div class="p-space-md bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="w-2.5 h-2.5 rounded-full bg-error animate-pulse"></span>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight font-bold">Unit Inspector • #DXB-7721</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Live Ledger &amp; Velocity Diagnostics</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1.5 rounded hover:bg-surface-container text-outline hover:text-on-surface transition-colors" title="Print Spec Sheet" type="button">
+<span class="material-symbols-outlined text-[18px]">print</span>
+</button>
+<button class="p-1.5 rounded hover:bg-surface-container text-outline hover:text-on-surface transition-colors" title="Share Ledger" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- Vehicle Visual Summary Card -->
+<div class="relative w-full h-44 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Detailed wide photo of a 2024 Porsche 911 GT3 Shark Blue with carbon fiber roof, parked under showroom spotlights at Dubai dealership" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDdg4QqNmqPMoP13MHMSFXqPi9FumwYVFzzSu12FocUKslqSyuluDBoVGi4VGfUrtj457We7JcJHMz5QgZS7y2XSKjRsyIDhDdE8SWNHRwDHKru5JVjQI-5mQQKCYZ5mwMKgJ8Ia84DNmnpGHCJxLYZp-AgyjYuhPKGzzOff8zfx55yvwUXz5bqor5c0fJ5va6vNMKDMGMSuKNFhGe5S3eioOMGtIKmlBTYBlre0Q"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/90 via-on-surface/30 to-transparent flex flex-col justify-end p-space-md text-surface">
+<div class="flex items-center justify-between">
+<span class="px-2 py-0.5 rounded bg-error text-surface font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider">
+                Holding 74 Days (Overdue)
+              </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-surface-variant/90">SZR Main Pod 02</span>
+</div>
+<div class="font-headline-md text-body-lg text-surface font-bold mt-1">2024 Porsche 911 GT3</div>
+<div class="flex items-center gap-2 font-label-numeric-sm text-label-numeric-sm text-surface-variant/80 mt-0.5">
+<span>VIN: WP0AF2A97RS291884</span>
+<span>•</span>
+<span>Dubai Registered (V-VIP Plate)</span>
+</div>
+</div>
+</div>
+<!-- Financial Ledger Panel -->
+<div class="p-space-md flex flex-col gap-space-sm">
+<div class="flex items-center justify-between pb-1 border-b border-surface-container">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant tracking-wider">Financial Breakdown</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold">AED CURRENCY LEDGER</span>
+</div>
+<div class="space-y-2 py-1 font-body-sm text-body-sm">
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Acquisition Cost Basis</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">AED 720,000</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Reconditioning &amp; Ceramic PPF</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">AED 18,500</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1 text-on-surface-variant">
+<span>Holding Cost Accrual</span>
+<span class="material-symbols-outlined text-[14px] text-error" title="74 days @ AED 200/day floor rent allocation">warning</span>
+</div>
+<span class="font-label-numeric-md text-label-numeric-md text-error font-semibold">+ AED 14,800</span>
+</div>
+<div class="pt-2 border-t border-surface-container flex items-center justify-between">
+<span class="font-body-md text-body-sm text-on-surface font-bold">Current Total Cost Basis</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface font-bold">AED 753,300</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-on-surface-variant">Target List Price</span>
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">AED 840,000</span>
+</div>
+</div>
+<!-- Margin Dial Bar -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1.5 mt-1">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Projected Gross Margin</span>
+<div class="flex items-baseline gap-1.5">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">AED 86,700</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary-container font-semibold">(10.3%)</span>
+</div>
+</div>
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 48%"></div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant text-right">Floor Minimum Safe Target: 12.5%</span>
+</div>
+<!-- Profit Sentinel Risk Diagnostic Callout -->
+<div class="mt-2 p-space-sm rounded-lg bg-error-container/40 border border-error/20 flex flex-col gap-2">
+<div class="flex items-center gap-1.5 text-error">
+<span class="material-symbols-outlined text-[18px]">gavel</span>
+<span class="font-headline-md text-body-sm font-bold tracking-tight">Profit Sentinel Risk Diagnostic</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface leading-snug">
+              Unit has exceeded <strong>60-day turnover SLA</strong>. Online inquiry velocity dropped <strong>34%</strong> this week. Two direct competitor GT3 units in Al Aweer listed at <strong>AED 815,000</strong>.
+            </p>
+<div class="p-2 rounded bg-surface-container-lowest text-body-sm text-on-surface">
+<span class="font-label-numeric-sm text-label-numeric-sm uppercase font-bold text-primary block mb-0.5">Algorithmic Recommendation:</span>
+              Re-price to <strong>AED 815,000</strong> to trigger instant price-drop alerts to <strong>6 interested high-intent leads</strong>.
+            </div>
+</div>
+<!-- Quick Actions Bar -->
+<div class="grid grid-cols-1 gap-2 pt-2">
+<button class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded bg-primary text-on-primary font-body-md text-body-sm font-semibold shadow-sm hover:bg-on-primary-fixed-variant transition-colors" onclick="broadcastToLeads('DXB-7721')" type="button">
+<span class="material-symbols-outlined text-[18px]">cell_tower</span>
+<span>Broadcast to 6 Active Leads</span>
+</button>
+<div class="grid grid-cols-2 gap-2">
+<button class="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-body-md text-body-sm font-semibold transition-colors" onclick="executeRepriceAction('DXB-7721', 815000)" type="button">
+<span class="material-symbols-outlined text-[18px] text-error">price_change</span>
+<span>Update Price</span>
+</button>
+<button class="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-body-md text-body-sm font-semibold transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">transfer_within_a_station</span>
+<span>Transfer Bay</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</section>
+<!-- Add / Edit Vehicle Modal Dialog (Profit Sentinel Registry) -->
+<div class="fixed inset-0 z-50 bg-on-surface/40 backdrop-blur-sm hidden items-center justify-center p-space-md" id="addVehicleModal">
+<div class="w-full max-w-3xl bg-surface-container-lowest rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[921px]">
+<!-- Modal Header -->
+<div class="px-space-lg py-space-md bg-surface-container-low flex items-center justify-between border-b border-surface-container">
+<div>
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-primary text-surface font-label-numeric-sm text-label-numeric-sm font-bold">SENTINEL-IN</span>
+<h3 class="font-headline-lg text-headline-md text-on-surface font-bold tracking-tight">Add New Vehicle to Inventory</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Initialize stock capital tracking &amp; algorithmic holding velocity rules.</p>
+</div>
+<button class="p-1.5 text-outline hover:text-on-surface rounded hover:bg-surface-container transition-colors" onclick="closeVehicleModal()" type="button">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Modal Body (Form Fields) -->
+<form class="overflow-y-auto p-space-lg space-y-space-md" id="addVehicleForm" onsubmit="handleVehicleSubmit(event)">
+<!-- VIN Rapid Decode Row -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-sm items-end">
+<div class="md:col-span-8">
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">VIN (Vehicle Identification Number) *</label>
+<div class="relative">
+<input class="w-full uppercase pl-3 pr-20 py-2 bg-surface-container-lowest rounded font-label-numeric-md text-label-numeric-md text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm" id="vinInput" placeholder="Enter 17-digit Chassis No..." required="" type="text" value="WP0AF2A97RS291884"/>
+<button class="absolute right-1 top-1 px-2.5 py-1 rounded bg-surface-container-high hover:bg-secondary-container text-on-secondary-container font-label-numeric-sm text-label-numeric-sm font-bold transition-colors" onclick="decodeVinMock()" type="button">
+                DECODE
+              </button>
+</div>
+</div>
+<div class="md:col-span-4">
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Specification Spec *</label>
+<select class="w-full px-3 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer">
+<option selected="" value="gcc">GCC Official Spec (UAE / Gulf)</option>
+<option value="euro">European Spec (Non-GCC)</option>
+<option value="us">North American Spec (US/Canada)</option>
+<option value="japan">Japanese Spec</option>
+</select>
+</div>
+</div>
+<!-- Vehicle Identity Details -->
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-space-sm">
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Model Year *</label>
+<input class="w-full px-3 py-2 bg-surface-container-lowest rounded font-label-numeric-md text-label-numeric-md text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm" max="2026" min="2000" required="" type="number" value="2024"/>
+</div>
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Make *</label>
+<input class="w-full px-3 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm" required="" type="text" value="Porsche"/>
+</div>
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Model *</label>
+<input class="w-full px-3 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm" required="" type="text" value="911 GT3"/>
+</div>
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Odometer (KM) *</label>
+<input class="w-full px-3 py-2 bg-surface-container-lowest rounded font-label-numeric-md text-label-numeric-md text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm" required="" type="number" value="1240"/>
+</div>
+</div>
+<!-- Financial Parameters (Masked Acquisition vs Target) -->
+<div class="p-space-md rounded-lg bg-surface-container-low grid grid-cols-1 md:grid-cols-2 gap-space-md">
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="font-table-header text-table-header uppercase text-on-surface-variant">Acquisition Cost (AED) *</label>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">lock</span>
+                Role-Gated Mask
+              </span>
+</div>
+<div class="relative flex items-center">
+<span class="absolute left-3 font-label-numeric-md text-label-numeric-md text-on-surface-variant font-bold">AED</span>
+<input class="w-full pl-14 pr-3 py-2 bg-surface-container-lowest rounded font-label-numeric-md text-label-numeric-md text-right text-on-surface font-semibold focus:ring-1 focus:ring-primary outline-none shadow-sm" required="" type="text" value="720,000"/>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Book purchase invoice value before reconditioning overhead.</p>
+</div>
+<div>
+<div class="flex items-center justify-between mb-1">
+<label class="font-table-header text-table-header uppercase text-on-surface-variant">Target List Price (AED) *</label>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-bold">Min Margin: +10%</span>
+</div>
+<div class="relative flex items-center">
+<span class="absolute left-3 font-label-numeric-md text-label-numeric-md text-on-surface-variant font-bold">AED</span>
+<input class="w-full pl-14 pr-3 py-2 bg-surface-container-lowest rounded font-label-numeric-md text-label-numeric-md text-right text-on-surface font-semibold focus:ring-1 focus:ring-primary outline-none shadow-sm" required="" type="text" value="840,000"/>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Published floor sticker &amp; Dubicars/Sayarti syndication price.</p>
+</div>
+</div>
+<!-- Location Allocation & Inspection Sheet Upload -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Showroom Bay Allocation *</label>
+<select class="w-full px-3 py-2 bg-surface-container-lowest rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm">
+<option selected="" value="szr_pod2">Dubai Sheikh Zayed Rd — Main Pod 02</option>
+<option value="szr_vip1">Dubai Sheikh Zayed Rd — VIP Rotunda</option>
+<option value="szr_fl_west">Dubai Sheikh Zayed Rd — Floor West</option>
+<option value="alquoz_prep">Al Quoz — Detailing &amp; PPF Bay</option>
+<option value="customs_bond">Jebel Ali — Customs Bonded Storage</option>
+</select>
+</div>
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1">Upload RTA Pass / 150-Point Inspection</label>
+<div class="flex items-center gap-2">
+<label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-surface-container-lowest hover:bg-surface-container rounded cursor-pointer transition-colors shadow-sm text-on-surface font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[18px] text-primary">cloud_upload</span>
+<span id="fileNameDisplay">Select PDF or Inspection JPEG</span>
+<input class="hidden" onchange="document.getElementById('fileNameDisplay').textContent = this.files[0]?.name || 'Select File'" type="file"/>
+</label>
+<span class="p-2 rounded bg-surface-container text-tertiary-container" title="RTA Approved Format">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+</span>
+</div>
+</div>
+</div>
+<!-- Profit Sentinel Automation Options -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-3">
+<input checked="" class="mt-1 w-4 h-4 text-primary rounded focus:ring-primary" id="autoWatchlist" type="checkbox"/>
+<label class="text-body-sm text-on-surface cursor-pointer" for="autoWatchlist">
+<strong class="font-semibold block">Enable Algorithmic Profit Sentinel Aging Guard</strong>
+            Automatically flag at 30 days (Amber) and trigger reprice notifications at 60 days (Critical) based on Dubai market competitor scrapers.
+          </label>
+</div>
+</form>
+<!-- Modal Footer -->
+<div class="px-space-lg py-space-md bg-surface-container-low flex items-center justify-end gap-space-sm border-t border-surface-container">
+<button class="px-4 py-2 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-md text-body-sm font-medium transition-colors shadow-sm" onclick="closeVehicleModal()" type="button">
+          Cancel
+        </button>
+<button class="px-5 py-2 rounded bg-primary text-on-primary font-body-md text-body-sm font-semibold shadow-md hover:bg-on-primary-fixed-variant transition-all" form="addVehicleForm" type="submit">
+          Save &amp; Initialize Sentinel Tracking
+        </button>
+</div>
+</div>
+</div>
+<!-- Interactive JavaScript Controller -->
+<script>
+    // Cost Mask Toggle Functions
+    let allCostsRevealed = false;
+
+    function toggleAllCostMasks() {
+      allCostsRevealed = !allCostsRevealed;
+      const maskFields = document.querySelectorAll('.cost-field');
+      const maskBtnText = document.getElementById('globalMaskText');
+      const maskBtnIcon = document.getElementById('globalMaskIcon');
+
+      maskFields.forEach(field => {
+        const maskSpan = field.querySelector('.cost-mask');
+        const valSpan = field.querySelector('.cost-value');
+        const icon = field.querySelector('.material-symbols-outlined');
+
+        if (allCostsRevealed) {
+          maskSpan.classList.add('hidden');
+          valSpan.classList.remove('hidden');
+          if (icon) icon.textContent = 'visibility';
+        } else {
+          maskSpan.classList.remove('hidden');
+          valSpan.classList.add('hidden');
+          if (icon) icon.textContent = 'visibility_off';
+        }
+      });
+
+      if (allCostsRevealed) {
+        maskBtnText.textContent = 'Mask Cost Basis';
+        maskBtnIcon.textContent = 'visibility_off';
+      } else {
+        maskBtnText.textContent = 'Reveal Cost Basis';
+        maskBtnIcon.textContent = 'visibility';
+      }
+    }
+
+    function toggleSingleCost(button) {
+      const parent = button.closest('.cost-field');
+      const maskSpan = parent.querySelector('.cost-mask');
+      const valSpan = parent.querySelector('.cost-value');
+      const icon = button.querySelector('.material-symbols-outlined');
+
+      if (valSpan.classList.contains('hidden')) {
+        maskSpan.classList.add('hidden');
+        valSpan.classList.remove('hidden');
+        icon.textContent = 'visibility';
+      } else {
+        maskSpan.classList.remove('hidden');
+        valSpan.classList.add('hidden');
+        icon.textContent = 'visibility_off';
+      }
+    }
+
+    // Modal Controls
+    function openVehicleModal() {
+      const modal = document.getElementById('addVehicleModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeVehicleModal() {
+      const modal = document.getElementById('addVehicleModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleVehicleSubmit(event) {
+      event.preventDefault();
+      alert('Vehicle successfully registered. Profit Sentinel monitoring initialized at 0 Days Aging.');
+      closeVehicleModal();
+    }
+
+    function decodeVinMock() {
+      const vin = document.getElementById('vinInput').value;
+      alert('VIN Decoded successfully via Dubai RTA Registry: 2024 Porsche 911 GT3 (Shark Blue / 4.0L Flat-6 / 502 HP / GCC Verified)');
+    }
+
+    function executeRepriceAction(stockNo, suggestedPrice) {
+      const formatted = new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 }).format(suggestedPrice);
+      if (confirm(`Profit Sentinel Action:\nUpdate ${stockNo} list price to ${formatted}? This will automatically syndicate to showroom digital displays and broadcast to registered buyer alerts.`)) {
+        alert(`${stockNo} repriced. Synced to Floor Displays & Omnibar.`);
+      }
+    }
+
+    function broadcastToLeads(stockNo) {
+      alert(`Automated WhatsApp & Email alert queue generated for 6 qualified buyers looking for ${stockNo}. CRM campaign triggered.`);
+    }
+
+    function selectUnitRow(rowElement, stockNo) {
+      // Highlight active table row
+      const allRows = rowElement.closest('tbody').querySelectorAll('tr');
+      allRows.forEach(r => r.classList.remove('bg-surface-container/60', 'bg-surface-container'));
+      rowElement.classList.add('bg-surface-container/60');
+    }
+  </script>
+</div></main></div></body></html>

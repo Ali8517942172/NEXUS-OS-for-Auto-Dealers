@@ -228,7 +228,7 @@ Each entry is `measured` (I read it today, read-only, on
 | `E21` | repo + measured | Seven refusal shapes probed on the live box, including `403 GOOGLE_KEY_REJECTED` for an unregistered key and `500 ENDPOINT_SECRET_NOT_CONFIGURED` for a registered one — the second reached only by creating, using and deleting a simulation endpoint. Status-code discipline is *proven up to the secret check and asserted beyond it* — the receiver's own words. Measured by me today: endpoint `alba-prod-google-leadform-0001` now exists on production, created `2026-09-08 09:22:36Z`, **`disabled`**, `secret_ref = GOOGLE_LEAD_KEY_ALBA`, which the repo records as unset on the VM |
 | `E22` | measured | `lead_event` where `source_key = 'google_ads_lead_form'`: **0 rows** |
 | `E23` | repo | `nexus_lead_record_manual` (SECURITY DEFINER) plus the entry surface in `apps/executive-dashboard/lib/manual-lead-form.js`. `20260907220000`, `20260907240000` |
-| `E24` | repo | T10 PASS on staging (two events, two sources, two leads, both carrying a real origin). Plus four controls on **production** as a real `authenticated` ALBA member, in a transaction that was rolled back: a phone-only walk-in became lead 125; the same `client_request_id` returned lead 125 with `was_duplicate = true`; exactly one `lead_event` pointed at it; production unchanged afterward at 5 leads. `CLAUDE.md` |
+| `E24` | repo | T10 PASS on staging (two events, two sources, two leads, both carrying a real origin). Plus four controls on **production** as a real `authenticated` Tenant A member, in a transaction that was rolled back: a phone-only walk-in became lead 125; the same `client_request_id` returned lead 125 with `was_duplicate = true`; exactly one `lead_event` pointed at it; production unchanged afterward at 5 leads. `CLAUDE.md` |
 | `E25` | repo + measured | Endpoints `alba-prod-walkin-showroom-floor` and `alba-prod-phonecall-front-desk`, both `production`, both **`active`** (measured). The deployed dashboard bundle carries `rpc/nexus_lead_record_manual` (2 occurrences) and `leads?id=eq` is absent — measured against `/assets/main-BFmkO_-a.js`, `CLAUDE.md` |
 | `E26` | measured | Production holds exactly **one** `lead_event`: `walk_in`, external id `walkin-preflight-2026-09-07-01`, `PROMOTED` to lead 121, whose email is under `@nexus-preflight.invalid`. That is a preflight, not a customer, and the repo says so in terms. **And a second finding: `audit_log` holds 0 rows whose `workflow` begins `ingest:`** — the preflight was promoted on 7 Sep 09:41, before `20260907240000` put the audit write inside `nexus_promote_lead_event`. The audit step of every gate below has therefore **never fired on production**, on any source |
 | `E27` | repo | Covered by T10, which exercised `walk_in` and `phone_call` as two separate events from one person |
@@ -243,7 +243,7 @@ Each entry is `measured` (I read it today, read-only, on
 for all nine sources with `active_endpoints: 0`.** I measured exactly that
 today. It is **not** evidence that nothing is connected: readiness is
 tenant-scoped and `nexus_current_tenant_ids()` is empty for `service_role`, so
-that reading is nobody's dealership. The same function read as a real ALBA
+that reading is nobody's dealership. The same function read as a real Tenant A
 session returned `CONNECTED 2 · NOT_CONNECTABLE 1 · NOT_CONNECTED 6` on
 7 September (`CLAUDE.md`). Any certification run that reads this function
 without impersonating a member has measured nothing.

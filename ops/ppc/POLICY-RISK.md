@@ -107,8 +107,8 @@ back it:**
 - Any testimonial, quote, or "what dealers say"
 - Any logo, name, or photograph of a dealership that is not a paying customer —
   which is currently **every** dealership
-- **The ALBA Cars name, logo or premises.** ALBA is tenant #1 and the pilot,
-  not a customer and not a reference. An ad implying ALBA endorses or
+- **The Tenant A name, logo or premises.** Tenant A is tenant #1 and the pilot,
+  not a customer and not a reference. An ad implying Tenant A endorses or
   purchased NEXUS is a fabricated testimonial under this policy and, separately,
   a commercial disaster with every competing showroom.
 - Countdown timers, "only 3 pilot slots left", or any deadline that is not real
@@ -214,7 +214,7 @@ Business-qualification fields (dealership name, stock size) are fine.
 
 - [ ] No result claim, percentage, or dirham figure attributed to NEXUS
 - [ ] No testimonial, quote or named dealership
-- [ ] **ALBA Cars appears nowhere** — text, image, Page name, link
+- [ ] **Tenant A appears nowhere** — text, image, Page name, link
 - [ ] No manufacturer or marketplace trademark in any creative
 - [ ] Every claim maps to: capability / question / disclosed offer fact
 - [ ] The five-minute statistic is framed as market research, with no number

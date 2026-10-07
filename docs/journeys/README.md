@@ -127,7 +127,7 @@ session can compare journey 3 against journey 8 without the database.
 > no tenant predicate and no project guard, so run against the wrong project they
 > remove another dealership's data. DML like this is *not* stopped by the NX900/NX950
 > delete guards in every path.
-> Production is `dsvuoovivysszdoiorch` (ALBA CARS). Staging is `wwspuxrbiyagnrnzgate`.
+> Production is `dsvuoovivysszdoiorch` (Tenant A). Staging is `wwspuxrbiyagnrnzgate`.
 > They are reproduced here **as historical evidence of the journey-lab teardown**, not
 > as a runbook step. Do not execute.
 

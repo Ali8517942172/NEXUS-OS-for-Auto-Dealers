@@ -986,7 +986,7 @@ body.wallboard .sidebar,body.wallboard .topbar,body.wallboard .context-strip{dis
       <button class="tenant" id="tenantBtn">
         <span class="tenant-avatar">AC</span>
         <span class="tenant-lines">
-          <span class="tenant-name">ALBA CARS</span>
+          <span class="tenant-name">Tenant A</span>
           <span class="tenant-env"><i class="pip"></i> Dubai · Production</span>
         </span>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -1213,7 +1213,7 @@ function renderNav(){
 function renderCrumbs(){
   const t = TITLES[route] || ['NEXUS',route];
   document.getElementById('crumbs').innerHTML =
-    `<span>ALBA CARS</span>${svg(I.arrow,13)}<span>${t[0]}</span>${svg(I.arrow,13)}<b>${t[1]}</b>`;
+    `<span>Tenant A</span>${svg(I.arrow,13)}<span>${t[0]}</span>${svg(I.arrow,13)}<b>${t[1]}</b>`;
 }
 
 /* ---------- SCREEN: COMMAND CENTER ---------- */
@@ -2069,7 +2069,7 @@ function screenWallboard(){
   const now = new Date();
   return `<div class="wall">
     <div class="wall-head">
-      <h1>ALBA CARS · Today</h1>
+      <h1>Tenant A · Today</h1>
       <span class="when">${fmtDate(now)} · ${fmtTime(now)} ${TZ_LABEL} · refreshes every 60s</span>
     </div>
     <div class="wall-grid">

@@ -4,10 +4,10 @@
 // dealership a message belongs to and WHICH channel a reply goes out on.
 //
 // Scenarios (per task spec):
-//   1. WAHA ALBA                  -> resolves via WAHA session, waha door
-//   2. Cloud ALBA                 -> resolves via Cloud receiver, cloud door
+//   1. WAHA Tenant A                  -> resolves via WAHA session, waha door
+//   2. Cloud Tenant A                 -> resolves via Cloud receiver, cloud door
 //   3. Cloud unregistered         -> refuses (no tenant_id from caller)
-//   4. Cloud dealer B             -> resolves B, NOT ALBA; sends from B's number
+//   4. Cloud dealer B             -> resolves B, NOT Tenant A; sends from B's number
 //   5. Outside 24h window         -> refuses the send (window closed)
 "use strict";
 const fs = require("fs");
@@ -76,7 +76,7 @@ function ok(label) {
   console.log("  ok -", label);
 }
 
-const ALBA = "fff6a2b5-cfd5-4460-8383-875bc5826de0";
+const Tenant A = "fff6a2b5-cfd5-4460-8383-875bc5826de0";
 const ALBA_INTEGRATION = "9129126e-da78-4340-a89d-ca703b9fc169";
 const ALBA_PNID = "1306545252542419";
 const DEALER_B = "11111111-2222-3333-4444-555555555555";
@@ -84,69 +84,69 @@ const DEALER_B_INTEGRATION = "66666666-7777-8888-9999-000000000000";
 const DEALER_B_PNID = "999888777000111";
 
 // ---------------------------------------------------------------------
-// Scenario 1: WAHA ALBA -- inbound via the WAHA door, unaffected by this
+// Scenario 1: WAHA Tenant A -- inbound via the WAHA door, unaffected by this
 // patch. Tenant Context must still resolve via
 // 'Resolve Tenant From WAHA Session' and mark inbound_channel whatsapp_waha.
 // ---------------------------------------------------------------------
 {
-  console.log("Scenario 1: WAHA ALBA");
+  console.log("Scenario 1: WAHA Tenant A");
   const tcCode = jsCode("Tenant Context");
   const out = runCodeNode(tcCode, {
     inputItem: { some: "waha-item" },
     named: {
       "Resolve Tenant From WAHA Session": {
-        tenant_id: ALBA, tenant_slug: "alba-cars", integration_id: ALBA_INTEGRATION,
+        tenant_id: Tenant A, tenant_slug: "alba-cars", integration_id: ALBA_INTEGRATION,
         external_identifier: "default", credential_ref: "env:WAHA_API_KEY",
       },
     },
   });
-  assert.strictEqual(out.tenant_id, ALBA);
+  assert.strictEqual(out.tenant_id, Tenant A);
   assert.strictEqual(out.tenant_origin, "waha_session_channel_registry");
   assert.strictEqual(out.inbound_channel, "whatsapp_waha");
   assert.strictEqual(out.cloud_phone_number_id, null);
   assert.strictEqual(out.waha_session, "default");
-  ok("Tenant Context resolves ALBA via WAHA session, inbound_channel=whatsapp_waha, no cloud id leaks in");
+  ok("Tenant Context resolves Tenant A via WAHA session, inbound_channel=whatsapp_waha, no cloud id leaks in");
 }
 
 // ---------------------------------------------------------------------
-// Scenario 2: Cloud ALBA -- inbound via the Cloud receiver's Execute
+// Scenario 2: Cloud Tenant A -- inbound via the Cloud receiver's Execute
 // Workflow handoff. Require Cloud Context From Receiver validates the
 // shape, Tenant Context resolves via the third source, and the reply
 // channel picked is Cloud, on the SAME phone_number_id it arrived on.
 // ---------------------------------------------------------------------
 {
-  console.log("Scenario 2: Cloud ALBA");
+  console.log("Scenario 2: Cloud Tenant A");
   const rcCode = jsCode("Require Cloud Context From Receiver");
   const rc = runCodeNode(rcCode, {
     inputItem: {
-      tenant_id: ALBA, tenant_slug: "alba-cars", integration_id: ALBA_INTEGRATION,
+      tenant_id: Tenant A, tenant_slug: "alba-cars", integration_id: ALBA_INTEGRATION,
       phone_number_id: ALBA_PNID, customer_wa_id: "971501234567",
       message_id: "wamid.ALBA123", occurred_at: "2026-09-21T11:59:00.000Z",
       message_kind: "text", text: "Do you have the Land Cruiser in stock?",
       customer_display_name: "Khalid",
     },
   });
-  assert.strictEqual(rc.tenant_id, ALBA);
+  assert.strictEqual(rc.tenant_id, Tenant A);
   assert.strictEqual(rc.cloud_phone_number_id, ALBA_PNID);
   assert.strictEqual(rc.cloud_customer_wa_id, "971501234567");
   assert.strictEqual(rc.cloud_message_text, "Do you have the Land Cruiser in stock?");
-  ok("Require Cloud Context From Receiver accepts a well-formed handoff for ALBA");
+  ok("Require Cloud Context From Receiver accepts a well-formed handoff for Tenant A");
 
   const tcCode = jsCode("Tenant Context");
   const tc = runCodeNode(tcCode, {
     inputItem: {},
     named: { "Require Cloud Context From Receiver": rc },
   });
-  assert.strictEqual(tc.tenant_id, ALBA);
+  assert.strictEqual(tc.tenant_id, Tenant A);
   assert.strictEqual(tc.tenant_origin, "cloud_receiver_verified");
   assert.strictEqual(tc.inbound_channel, "whatsapp_cloud");
   assert.strictEqual(tc.cloud_phone_number_id, ALBA_PNID, "reply must go out on the SAME number the message arrived on");
-  ok("Tenant Context resolves ALBA via the Cloud receiver, inbound_channel=whatsapp_cloud, same phone_number_id");
+  ok("Tenant Context resolves Tenant A via the Cloud receiver, inbound_channel=whatsapp_cloud, same phone_number_id");
 
   // Reply Channel Is Cloud? (IF node logic, inlined here since it's declarative)
   const replyIsCloud = tc.inbound_channel === "whatsapp_cloud";
   assert.strictEqual(replyIsCloud, true);
-  ok("Reply Channel Is Cloud? routes ALBA's Cloud-origin reply into the Cloud send branch");
+  ok("Reply Channel Is Cloud? routes Tenant A's Cloud-origin reply into the Cloud send branch");
 }
 
 // ---------------------------------------------------------------------
@@ -182,11 +182,11 @@ const DEALER_B_PNID = "999888777000111";
 
 // ---------------------------------------------------------------------
 // Scenario 4: Cloud dealer B -- a SECOND tenant's Cloud channel. Proves
-// tenant resolution is not hardcoded to ALBA and the reply is pinned to
-// dealer B's OWN phone_number_id, never ALBA's.
+// tenant resolution is not hardcoded to Tenant A and the reply is pinned to
+// dealer B's OWN phone_number_id, never Tenant A's.
 // ---------------------------------------------------------------------
 {
-  console.log("Scenario 4: Cloud dealer B (not ALBA)");
+  console.log("Scenario 4: Cloud dealer B (not Tenant A)");
   const rcCode = jsCode("Require Cloud Context From Receiver");
   const rc = runCodeNode(rcCode, {
     inputItem: {
@@ -200,10 +200,10 @@ const DEALER_B_PNID = "999888777000111";
   const tcCode = jsCode("Tenant Context");
   const tc = runCodeNode(tcCode, { inputItem: {}, named: { "Require Cloud Context From Receiver": rc } });
   assert.strictEqual(tc.tenant_id, DEALER_B);
-  assert.notStrictEqual(tc.tenant_id, ALBA);
+  assert.notStrictEqual(tc.tenant_id, Tenant A);
   assert.strictEqual(tc.cloud_phone_number_id, DEALER_B_PNID);
   assert.notStrictEqual(tc.cloud_phone_number_id, ALBA_PNID);
-  ok("Tenant Context resolves dealer B independently of ALBA, and pins the reply to B's own phone_number_id");
+  ok("Tenant Context resolves dealer B independently of Tenant A, and pins the reply to B's own phone_number_id");
 }
 
 // ---------------------------------------------------------------------

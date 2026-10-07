@@ -136,12 +136,16 @@
 import { HOOK, db, n8n, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
+import { ago, clock, esc, n0, num, tone } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { HEALTH_WORDS, healthWords, isQualifying, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { panel, table } from '../lib/ui.js';
+/* The Stitch migration (7 Oct 2026, design/stitch/MAP.md: primary
+   ask-ai-grounded-knowledge-base--bb752c). panel, table, pill and the state
+   panels keep their signatures and answer in the Stitch anatomy —
+   lib/ops-kit.js says why the logic was left where it was. */
+import { actor, panel, pill, stateEmpty, stateError, stateLoading, table } from '../lib/ops-kit.js';
+import { sectionHeader, trustFooter } from '../lib/stitch-ui.js';
 
 /* Long enough that a slow-but-working retrieval is not called a failure — the
    slowest verified end-to-end run was 8.8 s — short enough that a genuinely
@@ -552,56 +556,56 @@ function markInvalid(html, invalid) {
   return html.replace(MARKER_RE, (whole, a, b) => {
     const ref = 'S' + (a || b);
     if (!invalid.has(ref)) return whole;
-    return `<span class="mono t-hot" style="border-bottom:2px dotted currentColor" title="The workflow found no retrieved section with this number. This marker is the model claiming a source that does not exist.">${esc(whole)}</span><span class="t-hot" style="font-size:11px;font-weight:600;white-space:nowrap"> no such source</span>`;
+    return `<span class="font-label-numeric-sm text-red-700" style="border-bottom:2px dotted currentColor" title="The workflow found no retrieved section with this number. This marker is the model claiming a source that does not exist.">${esc(whole)}</span><span class="text-red-700" style="font-size:11px;font-weight:600;white-space:nowrap"> no such source</span>`;
   });
 }
 function inlineMarks(s, invalid) {
   return markInvalid(esc(s)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<span class="mono">$1</span>'), invalid);
+    .replace(/`([^`]+)`/g, '<span class="font-label-numeric-sm">$1</span>'), invalid);
 }
 function answerHtml(text, invalid) {
   const blocks = String(text).replace(/\r/g, '').split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
   return blocks.map(b => {
     const rows = b.split('\n');
     if (rows.length === 1 && /^#{1,6}\s+/.test(rows[0]))
-      return `<div class="label-caps" style="margin:14px 0 6px">${inlineMarks(rows[0].replace(/^#{1,6}\s+/, ''), invalid)}</div>`;
+      return `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin:14px 0 6px">${inlineMarks(rows[0].replace(/^#{1,6}\s+/, ''), invalid)}</div>`;
     const bulleted = rows.every(r => /^\s*([-*•]|\d+[.)])\s+/.test(r));
     if (bulleted) return `<div style="margin:0 0 10px">${rows.map(r => {
       const marker = r.match(/^\s*(\d+[.)])\s+/);
       const body = r.replace(/^\s*([-*•]|\d+[.)])\s+/, '');
-      return `<div style="display:flex;gap:8px;margin-bottom:4px"><span class="t-muted" style="flex-shrink:0">${marker ? esc(marker[1]) : '•'}</span><span>${inlineMarks(body, invalid)}</span></div>`;
+      return `<div style="display:flex;gap:8px;margin-bottom:4px"><span class="text-outline" style="flex-shrink:0">${marker ? esc(marker[1]) : '•'}</span><span>${inlineMarks(body, invalid)}</span></div>`;
     }).join('')}</div>`;
     return `<div style="margin:0 0 10px">${inlineMarks(b, invalid).replace(/\n/g, '<br>')}</div>`;
-  }).join('') || `<div class="t-muted">Empty answer.</div>`;
+  }).join('') || `<div class="text-outline">Empty answer.</div>`;
 }
 
 /* ── One turn ───────────────────────────────────────────────────────────── */
 function entryBody(e) {
-  const head = `<div class="bubble out" style="max-width:100%;margin-bottom:14px">${esc(e.q)}</div>`;
+  const head = `<div class="max-w-[78%] self-end px-3.5 py-2.5 rounded-xl bg-primary-container/10 border border-outline-variant/40 font-body-sm text-body-sm whitespace-pre-wrap break-words" style="max-width:100%;margin-bottom:14px">${esc(e.q)}</div>`;
 
   if (e.status === 'pending') {
     return head + `<div style="display:flex;align-items:center;gap:10px">
         <div class="skeleton" style="width:18px;height:18px;border-radius:50%;flex-shrink:0"></div>
         <div><div>Searching the knowledge base, then asking the model…</div>
-        <div class="ds-cell-sub">Waiting <span id="askT${e.id}" class="num">${esc(secs(Date.now() - e.at))}</span> · this workflow has taken 9 s on a good run · giving up at ${Math.round(DEADLINE_MS / 1000)} s</div></div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">Waiting <span id="askT${e.id}" class="font-label-numeric-sm">${esc(secs(Date.now() - e.at))}</span> · this workflow has taken 9 s on a good run · giving up at ${Math.round(DEADLINE_MS / 1000)} s</div></div>
       </div>
       <div class="skeleton" style="height:14px;margin-top:16px;width:92%"></div>
       <div class="skeleton" style="height:14px;margin-top:10px;width:78%"></div>`;
   }
 
   const foot = raw => `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
-      <button class="btn sm" data-act="again" data-id="${e.id}">Ask again</button>
-      <button class="btn sm ghost" data-act="edit" data-id="${e.id}">Edit question</button>
-      ${raw ? `<button class="btn sm ghost" data-act="raw" data-id="${e.id}" aria-expanded="${e.showRaw ? 'true' : 'false'}">${e.showRaw ? 'Hide' : 'Show'} raw response</button>` : ''}
-      ${e.answer ? `<button class="btn sm ghost" data-act="copy" data-id="${e.id}">Copy answer</button>` : ''}
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-act="again" data-id="${e.id}">Ask again</button>
+      <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-act="edit" data-id="${e.id}">Edit question</button>
+      ${raw ? `<button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-act="raw" data-id="${e.id}" aria-expanded="${e.showRaw ? 'true' : 'false'}">${e.showRaw ? 'Hide' : 'Show'} raw response</button>` : ''}
+      ${e.answer ? `<button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-act="copy" data-id="${e.id}">Copy answer</button>` : ''}
     </div>
-    ${raw && e.showRaw ? `<div class="mono ds-cell-sub" style="margin-top:12px;padding:12px;background:var(--surface-sunken);border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto">${esc(raw)}</div>` : ''}`;
+    ${raw && e.showRaw ? `<div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="margin-top:12px;padding:12px;background:var(--surface-sunken);border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto">${esc(raw)}</div>` : ''}`;
 
   if (e.status === 'error' || e.status === 'timeout') {
     const isTimeout = e.status === 'timeout';
     const hint = isTimeout ? '' : diagnose(e.errTechnical || e.err);
-    return head + `<div class="banner hot" style="margin-bottom:0">
+    return head + `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm" style="margin-bottom:0">
         <span class="material-symbols-outlined" style="font-size:20px">${isTimeout ? 'hourglass_disabled' : 'error'}</span>
         <div><div style="font-weight:500">${isTimeout
             ? `No reply after ${Math.round(DEADLINE_MS / 1000)} seconds`
@@ -611,7 +615,7 @@ function entryBody(e) {
             : esc(e.err || 'Unknown error')}</div>
           ${hint ? `<div style="margin-top:6px">${esc(hint)}</div>` : ''}</div>
       </div>
-      <div class="ds-cell-sub" style="margin-top:10px">Asked at ${esc(clock(e.at))}${e.ms != null ? (isTimeout ? ' · stopped waiting after ' : ' · failed after ') + esc(secs(e.ms)) : ''}</div>`
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:10px">Asked at ${esc(clock(e.at))}${e.ms != null ? (isTimeout ? ' · stopped waiting after ' : ' · failed after ') + esc(secs(e.ms)) : ''}</div>`
       + foot(e.rawText);
   }
 
@@ -645,7 +649,7 @@ function entryBody(e) {
   const retrieved = gr.retrievedCount != null ? gr.retrievedCount : dc;
   const meta = [
     e.ms != null ? `Answered in ${esc(secs(e.ms))}` : null,
-    e.late ? '<span class="t-warm">arrived after the timeout</span>' : null,
+    e.late ? '<span class="text-amber-700">arrived after the timeout</span>' : null,
     `asked at ${esc(clock(e.at))}`,
     retrieved != null
       ? `${esc(num(retrieved))} section${retrieved === 1 ? '' : 's'} retrieved${sent != null ? `, ${esc(num(sent))} sent to the model` : ''}`
@@ -659,7 +663,7 @@ function entryBody(e) {
 
   const body = e.answer
     ? answerHtml(e.answer, invalidSet)
-    : `<div class="banner warm" style="margin-bottom:0">
+    : `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin-bottom:0">
          <span class="material-symbols-outlined" style="font-size:20px">help_center</span>
          <div>The workflow replied, but the reply carried no answer text. The raw response below is exactly what it sent.</div></div>`;
 
@@ -670,12 +674,12 @@ function entryBody(e) {
   const reasonList = list => list.map(r => `<div style="margin-top:8px">
       <div style="font-weight:500">${esc(r.title)}</div>
       <div style="margin-top:2px">${esc(r.detail)}</div>
-      ${r.kind === 'figures' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.figures.map(f => esc(f)).join('   ')}</div>` : ''}
-      ${r.kind === 'invalid' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.invalidRefs.map(f => esc(f)).join('   ')}</div>` : ''}
-      ${r.kind === 'unseen' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${g.unseen.map(u => esc(`${u.ref || '?'} ${u.title || u.file || 'untitled'}`)).join(' · ')}</div>` : ''}
-      ${r.kind === 'dropped' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.dropped.map(f => esc(f)).join('   ')}</div>` : ''}
-      ${r.kind === 'truncated' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${(gr.truncated.length ? gr.truncated : g.citedCut.map(c => c.ref || '?')).map(f => esc(f)).join('   ')}</div>` : ''}
-      ${r.kind === 'model' && g.modelError ? `<div class="mono ds-cell-sub" style="margin-top:6px;white-space:normal;word-break:break-word">${esc(g.modelError.slice(0, 300))}</div>` : ''}
+      ${r.kind === 'figures' ? `<div class="font-label-numeric-sm" style="margin-top:6px;word-break:break-word">${gr.figures.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'invalid' ? `<div class="font-label-numeric-sm" style="margin-top:6px;word-break:break-word">${gr.invalidRefs.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'unseen' ? `<div class="font-label-numeric-sm" style="margin-top:6px;word-break:break-word">${g.unseen.map(u => esc(`${u.ref || '?'} ${u.title || u.file || 'untitled'}`)).join(' · ')}</div>` : ''}
+      ${r.kind === 'dropped' ? `<div class="font-label-numeric-sm" style="margin-top:6px;word-break:break-word">${gr.dropped.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'truncated' ? `<div class="font-label-numeric-sm" style="margin-top:6px;word-break:break-word">${(gr.truncated.length ? gr.truncated : g.citedCut.map(c => c.ref || '?')).map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'model' && g.modelError ? `<div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="margin-top:6px;white-space:normal;word-break:break-word">${esc(g.modelError.slice(0, 300))}</div>` : ''}
     </div>`).join('');
 
   const severeList = g.reasons.filter(r => r.sev === 'severe');
@@ -685,13 +689,13 @@ function entryBody(e) {
      to read before they open WhatsApp; DEGRADED says what the answer is missing
      without pretending it is wrong. Neither relies on its colour: both lead
      with a heading that carries the whole instruction in words. */
-  const severeBanner = severeList.length ? `<div class="banner hot" style="margin:14px 0 0;align-items:flex-start">
+  const severeBanner = severeList.length ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm" style="margin:14px 0 0;align-items:flex-start">
       <span class="material-symbols-outlined" style="font-size:20px">dangerous</span>
       <div><div style="font-weight:600">Do not repeat this answer to a customer</div>
         <div style="margin-top:4px">Something in it is not in the documents it was drawn from. Check every one of these against the source before any part of this leaves the building.</div>
         ${reasonList(severeList)}</div></div>` : '';
 
-  const warnBanner = warnList.length ? `<div class="banner warm" style="margin:14px 0 0;align-items:flex-start">
+  const warnBanner = warnList.length ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin:14px 0 0;align-items:flex-start">
       <span class="material-symbols-outlined" style="font-size:20px">unpublished</span>
       <div><div style="font-weight:500">This answer rests on less than the full evidence</div>
         <div style="margin-top:4px">Nothing here says it is wrong. It says the model did not have, or did not use, everything the search found — so open the documents before quoting it.</div>
@@ -701,7 +705,7 @@ function entryBody(e) {
      to be the one that got the amber "nothing was cited" banner, because its
      `sources` list is correctly empty. Warning an operator off the one honest
      answer is how they learn to ignore every warning on the screen. */
-  const declinedBanner = g.verdict === 'declined' ? `<div class="banner info" style="margin:14px 0 0;align-items:flex-start">
+  const declinedBanner = g.verdict === 'declined' ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm" style="margin:14px 0 0;align-items:flex-start">
       <span class="material-symbols-outlined" style="font-size:20px">rule</span>
       <div><div style="font-weight:500">The model declined to answer, which is the correct outcome here</div>
         <div style="margin-top:4px">It was instructed to refuse rather than answer from its own training data, and it did. Nothing above is a claim about company policy. The sections the search returned are listed below in case one of them should have covered this.</div></div></div>` : '';
@@ -710,43 +714,43 @@ function entryBody(e) {
      from a build of the workflow this screen does not recognise, and the
      evidence that would separate a sourced answer from an invented one is
      simply not in it. */
-  const unknownBanner = g.verdict === 'unknown' ? `<div class="banner warm" style="margin:14px 0 0;align-items:flex-start">
+  const unknownBanner = g.verdict === 'unknown' ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin:14px 0 0;align-items:flex-start">
       <span class="material-symbols-outlined" style="font-size:20px">help</span>
       <div><div style="font-weight:500">${gr.present ? 'The workflow reported a grounding state this screen does not know' : 'This reply carried no grounding information at all'}</div>
         <div style="margin-top:4px">${gr.present
-          ? `Its <span class="mono">grounding.state</span> was <span class="mono">${esc(gr.state || 'empty')}</span>, which is not one of ${esc(KNOWN_STATES.join(', '))}. It is printed as it arrived rather than mapped to a verdict it may not mean.`
-          : 'Since 30 Aug 2026 the Ask-AI workflow sends a <span class="mono">grounding</span> block with every answer — which markers resolved, which named nothing, which numbers appear in no retrieved text. This reply has none, so an older build answered it, or something else did. That is not the same as the answer being fine: the checks that would have found an invented figure did not run, or did not report.'}</div>
+          ? `Its <span class="font-label-numeric-sm">grounding.state</span> was <span class="font-label-numeric-sm">${esc(gr.state || 'empty')}</span>, which is not one of ${esc(KNOWN_STATES.join(', '))}. It is printed as it arrived rather than mapped to a verdict it may not mean.`
+          : 'Since 30 Aug 2026 the Ask-AI workflow sends a <span class="font-label-numeric-sm">grounding</span> block with every answer — which markers resolved, which named nothing, which numbers appear in no retrieved text. This reply has none, so an older build answered it, or something else did. That is not the same as the answer being fine: the checks that would have found an invented figure did not run, or did not report.'}</div>
         <div style="margin-top:4px">Treat it as unverified and open the raw response below to see exactly what was sent.</div></div></div>` : '';
 
   const sources = src.length ? `<div style="margin-top:18px">
-      <div class="label-caps" style="margin-bottom:8px">Sources the model cited</div>
+      <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:8px">Sources the model cited</div>
       ${src.map((s, i) => s.unknown
-        ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="chip">${i + 1}</span>
-             <div class="mono ds-cell-sub" style="flex:1;min-width:0;white-space:normal;word-break:break-word">${esc(s.blob)}</div></div>`
-        : `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="chip">${esc(s.ref || String(i + 1))}</span>
+        ? `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${i + 1}</span>
+             <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="flex:1;min-width:0;white-space:normal;word-break:break-word">${esc(s.blob)}</div></div>`
+        : `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(s.ref || String(i + 1))}</span>
              <div style="flex:1;min-width:0">
                <div style="font-weight:500">${esc(s.title || s.file || 'Untitled document')}</div>
-               <div class="ds-cell-sub">${[
+               <div class="font-body-sm text-body-sm text-on-surface-variant">${[
                   s.section ? esc(s.section) : null,
                   s.page != null ? 'p. ' + esc(s.page) : null,
                   s.file && s.file !== s.title ? esc(s.file) : null,
                 ].filter(Boolean).join(' · ') || 'No section recorded'}</div>
-               ${s.shown === false ? `<div class="t-hot" style="font-size:13px;font-weight:600;margin-top:4px">Never sent to the model — the answer cannot have come from this section</div>` : ''}
-               ${s.cut === true ? `<div class="t-warm" style="font-size:13px;font-weight:600;margin-top:4px">Cut short${s.charsFed != null && s.charsTotal != null ? ` — the model was given ${esc(num(s.charsFed))} of its ${esc(num(s.charsTotal))} characters` : ''}</div>` : ''}
-               ${s.note ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc(s.note)}</div>` : ''}
-               ${s.snippet ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
+               ${s.shown === false ? `<div class="text-red-700" style="font-size:13px;font-weight:600;margin-top:4px">Never sent to the model — the answer cannot have come from this section</div>` : ''}
+               ${s.cut === true ? `<div class="text-amber-700" style="font-size:13px;font-weight:600;margin-top:4px">Cut short${s.charsFed != null && s.charsTotal != null ? ` — the model was given ${esc(num(s.charsFed))} of its ${esc(num(s.charsTotal))} characters` : ''}</div>` : ''}
+               ${s.note ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:4px">${esc(s.note)}</div>` : ''}
+               ${s.snippet ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
              </div></div>`).join('')}
-      <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
-      <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: Your documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: Your documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
     </div>` : '';
 
   /* Printed on every answered turn that carried grounding, whatever the
      verdict. It is the audit trail for the pill: the numbers the verdict was
      computed from, in one place, so a clean turn can be checked as easily as a
      failing one. */
-  const evidence = gr.present ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:10px">${esc([
+  const evidence = gr.present ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:10px">${esc([
       `Grounding state ${gr.state || 'empty'}`,
       `${retrieved == null ? 'unknown' : num(retrieved)} retrieved`,
       `${sent == null ? 'unknown' : num(sent)} sent to the model`,
@@ -763,10 +767,10 @@ function entryBody(e) {
           only part that changes what a reader should do: the answer carries no
           marker saying how it was produced, so nothing here can confirm it came
           from the intended path. */ ''}
-    <div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc('The reply carries no marker saying how it was produced, so this screen cannot confirm the answer came from the intended path. Judge it on the grounding above, which is checked rather than claimed.')}</div>` : '';
+    <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:4px">${esc('The reply carries no marker saying how it was produced, so this screen cannot confirm the answer came from the intended path. Judge it on the grounding above, which is checked rather than claimed.')}</div>` : '';
 
   return head + body + severeBanner + warnBanner + declinedBanner + unknownBanner + sources
-    + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="ds-cell-sub">${meta}</span></div>`
+    + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="font-body-sm text-body-sm text-on-surface-variant">${meta}</span></div>`
     + evidence
     + foot(e.rawText);
 }
@@ -794,41 +798,78 @@ SCREENS.ask = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
      screens/setup.js, screens/inventory.js and screens/conversations.js. */
-  const root = el('div', 'ds-screen');
+  /* Since 7 Oct 2026 the wrapper is the Stitch root (`nx-stitch` turns on the
+     scoped reset), still a wrapper this screen appends for the reason above.
+     ask-ai-grounded-knowledge-base--bb752c lays the screen out as a working
+     column (question box, then the conversation) beside a reference column
+     (alerts, the documents answers can come from, the grounding rule), with
+     the run history underneath. Every id the code below looks up is kept. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  const wrap = el('div');
-  wrap.style.maxWidth = '900px';
-  wrap.style.margin = '0 auto';
+  const wrap = el('div', 'flex flex-col gap-space-md');
   root.appendChild(wrap);
 
   wrap.innerHTML = `
-    <div class="card flush" id="askAlerts" style="margin-bottom:16px">
-      <div class="card-head"><div>
-        <div class="card-title">Alerts</div>
-        <div class="card-sub" id="askAlertSub">Checking the knowledge base, the workflow's health and v_needs_attention…</div>
-      </div></div>
-      <div id="askAlertBody"><div class="ds-cell-sub" style="padding:16px 20px">Reading…</div></div>
-    </div>
-    <div class="card" id="askComposer">
-      <div class="card-title" style="margin-bottom:4px">Ask the knowledge base</div>
-      <div class="card-sub" id="askKb" style="margin-bottom:4px">Counting indexed documents…</div>
-      <div class="card-sub" id="askEndpoint" style="margin-bottom:14px">Reading the workflow's health…</div>
-      <div class="field">
-        <label for="askQ">Your question</label>
-        <textarea id="askQ" rows="3" placeholder="Ask in a full sentence — &quot;what is the trade-in appraisal process?&quot;"></textarea>
-        <div class="hint">Retrieval is full-text search over the indexed sections, so the words the document uses find it fastest. Enter sends, Shift+Enter adds a line. Questions under three characters return nothing by design.</div>
+    ${sectionHeader({
+      eyebrow: 'Intelligence / Ask AI',
+      title: 'Ask AI — grounded answers from your documents',
+      sub: 'Answers come only from the documents indexed for this dealership, and every answer shows the sources it '
+         + 'was drawn from. An answer with no source is marked as such — it is never presented as fact.',
+    })}
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-space-md items-start">
+    <div class="flex flex-col gap-space-md min-w-0">
+    <div class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm overflow-hidden" id="askComposer">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-space-sm">
+        <div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-primary text-xl">psychology</span>
+          <h2 class="font-headline-md text-headline-md text-on-surface">Ask the knowledge base</h2></div>
+        <span class="font-label-numeric-sm text-[11px] text-outline uppercase tracking-wider">Full-text retrieval</span></div>
+      <div class="p-space-md">
+      <div class="font-body-sm text-body-sm text-on-surface-variant" id="askKb" style="margin-bottom:4px">Counting indexed documents…</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" id="askEndpoint" style="margin-bottom:14px">Reading the workflow's health…</div>
+      <div class="flex flex-col gap-1 mb-space-sm">
+        <label for="askQ" class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Your question</label>
+        <textarea id="askQ" rows="3" class="w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Ask in a full sentence — &quot;what is the trade-in appraisal process?&quot;"></textarea>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">Retrieval is full-text search over the indexed sections, so the words the document uses find it fastest. Enter sends, Shift+Enter adds a line. Questions under three characters return nothing by design.</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px">
-        <button class="btn primary" id="askGo"><span class="material-symbols-outlined">send</span>Ask</button>
-        <button class="btn ghost" id="askReset">Clear box</button>
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm whitespace-nowrap disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" id="askGo"><span class="material-symbols-outlined">send</span>Ask</button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="askReset">Clear box</button>
         <div style="flex:1"></div>
-        <button class="btn ghost sm" id="askWipe" title="Discards this session's questions and answers from the screen.">Clear history</button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="askWipe" title="Discards this session's questions and answers from the screen.">Clear history</button>
       </div>
       <div id="askChips" style="margin-top:16px">${stateLoading(1)}</div>
+      </div>
     </div>
-    <div id="askThread" style="margin-top:16px"></div>
-    <div id="askRuns" style="margin-top:16px"></div>`;
+    <div id="askThread"></div>
+    </div>
+    <div class="flex flex-col gap-space-md min-w-0">
+    <div class="rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm" id="askAlerts">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Alerts</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" id="askAlertSub">Checking the knowledge base, the workflow's health and v_needs_attention…</div>
+      </div></div>
+      <div id="askAlertBody"><div class="font-body-sm text-body-sm text-on-surface-variant" style="padding:16px 20px">Reading…</div></div>
+    </div>
+    <div class="rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center gap-2.5">
+        <span class="material-symbols-outlined text-primary text-xl">library_books</span>
+        <h2 class="font-headline-md text-headline-md text-on-surface">Indexed documents</h2></div>
+      <div id="askLibrary" class="p-space-md">${stateLoading(2)}</div>
+    </div>
+    <div class="rounded-xl bg-surface-container-low border border-outline-variant/60 p-space-md flex flex-col gap-2">
+      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">policy</span>
+        <h2 class="font-body-md text-body-md font-semibold text-on-surface">What this cannot answer</h2></div>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">Ask AI answers from the indexed sections and nothing else. It cannot know a price, a discount, a bank's
+        exception or a policy that is not written in one of the documents listed above, and it does not compute finance figures —
+        those come from the Finance Desk calculator. Every answer is checked against the sources it cites; one that cites
+        nothing, or cites a section the model never saw, is flagged on the answer itself.</p>
+      <p class="font-body-sm text-body-sm text-on-surface-variant">Retrieval is full-text search, not vector similarity, so there is no similarity score to show beside a source.</p>
+    </div>
+    </div>
+    </div>
+    <div id="askRuns"></div>
+    <div id="askTrust"></div>`;
 
   /* This invocation's claim on the screen. Anything that outlives it — a
      ticker, an in-flight request, a promise continuation — checks `live()`
@@ -944,7 +985,7 @@ SCREENS.ask = async host => {
              does nothing. The ref is printed instead, which is what an operator
              would need to find the row it names. */
           foot: `${it.at ? `Waiting ${esc(ago(it.at))}` : 'The view recorded no timestamp, so how long this has waited is unknown.'}${
-            str(it.ref) ? ` · ref <span class="mono">${esc(str(it.ref))}</span>` : ''}`,
+            str(it.ref) ? ` · ref <span class="font-label-numeric-sm">${esc(str(it.ref))}</span>` : ''}`,
         });
       }
     } else if (attnState?.err) {
@@ -993,7 +1034,7 @@ SCREENS.ask = async host => {
         out.push({
           id: 'kb-undated', tone: 'cold', icon: 'help', durable: true,
           title: 'We cannot know when this knowledge base was last updated',
-          detail: `<span class="mono">Your documents</span> stores no timestamp of any kind — the table is <span class="mono">id, doc_title, source_file, section, page_number, content, search_vector</span> and none of those records when a section was ingested. So the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} below could have been written last night or two years ago, and this screen will not guess: row order is insertion order at best and arbitrary at worst, so "the newest document" is not a thing that can be computed here. Every answer on this screen is therefore grounded in documents of unknown vintage. Before repeating a finance rate, a warranty term or a policy to a customer, open the cited document and check its own date.`,
+          detail: `<span class="font-label-numeric-sm">Your documents</span> stores no timestamp of any kind — the table is <span class="font-label-numeric-sm">id, doc_title, source_file, section, page_number, content, search_vector</span> and none of those records when a section was ingested. So the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} below could have been written last night or two years ago, and this screen will not guess: row order is insertion order at best and arbitrary at worst, so "the newest document" is not a thing that can be computed here. Every answer on this screen is therefore grounded in documents of unknown vintage. Before repeating a finance rate, a warranty term or a policy to a customer, open the cited document and check its own date.`,
           foot: 'Fixing this needs a timestamp column on your documents and a re-ingest. Nothing in the browser can add one, and no webhook accepts a document.',
           target: 'askComposer', settings: true,
         });
@@ -1021,7 +1062,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'wf-missing', tone: 'warm', icon: 'search_off', durable: true,
         title: 'No registered workflow matches ask-ai',
-        detail: `The automation health figures returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none of them mentions Ask AI in its name or description. Matching on the registered <span class="mono">${esc(HOOK.askAi)}</span> webhook path would settle it, and this dashboard is not permitted to read that column — so this is a name that did not match, not a workflow missing from the register. Nothing here can report this endpoint's health; the Ask button is still the direct test.`,
+        detail: `The automation health figures returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none of them mentions Ask AI in its name or description. Matching on the registered <span class="font-label-numeric-sm">${esc(HOOK.askAi)}</span> webhook path would settle it, and this dashboard is not permitted to read that column — so this is a name that did not match, not a workflow missing from the register. Nothing here can report this endpoint's health; the Ask button is still the direct test.`,
         target: 'askComposer',
       });
     } else if (healthState?.row) {
@@ -1092,8 +1133,8 @@ SCREENS.ask = async host => {
           detail: h
             ? (known
                 ? `${esc(hw.blurb)} An answer that does come back is still worth reading on its own citations — that verdict is computed per turn in the thread below and does not depend on this.`
-                : `The automation health figures returned <span class="mono">${esc(h)}</span> for <span class="mono">${esc(str(w.name) || 'this workflow')}</span>, which is not in the closed set NEXUS defines. It is printed verbatim above rather than mapped to a verdict it may not mean.`)
-            : `The automation health figures matched <span class="mono">${esc(str(w.name) || 'this workflow')}</span> but left its <span class="mono">health</span> column empty, so whether ask-ai is healthy or failing is not known from here. Pressing Ask remains the direct test.`,
+                : `The automation health figures returned <span class="font-label-numeric-sm">${esc(h)}</span> for <span class="font-label-numeric-sm">${esc(str(w.name) || 'this workflow')}</span>, which is not in the closed set NEXUS defines. It is printed verbatim above rather than mapped to a verdict it may not mean.`)
+            : `The automation health figures matched <span class="font-label-numeric-sm">${esc(str(w.name) || 'this workflow')}</span> but left its <span class="font-label-numeric-sm">health</span> column empty, so whether ask-ai is healthy or failing is not known from here. Pressing Ask remains the direct test.`,
           target: 'askComposer',
         });
       }
@@ -1107,7 +1148,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'turn-slow', tone: 'warm', icon: 'hourglass_top', durable: false,
         title: 'A question has been running a long time',
-        detail: `Waiting <span id="askAlertAge" class="num">${esc(secs(Date.now() - slow.at))}</span> for the workflow to answer, against about 9 s on a good run. The tab is not hung — the request is genuinely still open — and this screen stops waiting on it at ${Math.round(DEADLINE_MS / 1000)} s. ${esc(CEILING_LINE)}`,
+        detail: `Waiting <span id="askAlertAge" class="font-label-numeric-sm">${esc(secs(Date.now() - slow.at))}</span> for the workflow to answer, against about 9 s on a good run. The tab is not hung — the request is genuinely still open — and this screen stops waiting on it at ${Math.round(DEADLINE_MS / 1000)} s. ${esc(CEILING_LINE)}`,
         target: `askE${slow.id}`,
       });
     }
@@ -1223,9 +1264,9 @@ SCREENS.ask = async host => {
       'The sidebar badge over Ask AI is not this number and is not written by this screen. Nav badges are painted centrally from the attention list alone, and that view has no branch that files anything against this screen — so the sidebar is silent here even when the list above is not, and this strip is the only place these are reported.',
       waiting ? `${num(waiting)} of the three checks ${plural(waiting, 'has', 'have')} not finished reading, so this list is not final yet.` : '',
     ].filter(Boolean);
-    const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+    const foot = `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+      <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
     /* The all-clear used to be one fixed sentence asserting three things at
        once. It outlived its own conditions more than once — it still claimed the
@@ -1261,31 +1302,31 @@ SCREENS.ask = async host => {
 
     if (!alerts.length) {
       bodyHost.innerHTML = (waiting
-        ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="material-symbols-outlined t-muted" style="font-size:20px">hourglass_top</span>
+        ? `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+             <span class="material-symbols-outlined text-outline" style="font-size:20px">hourglass_top</span>
              <div><div style="font-weight:500">Still checking</div>
-               <div class="ds-cell-sub" style="white-space:normal">Nothing has been found yet, which is not the same as nothing being wrong — ${esc(num(waiting))} of the three checks ${plural(waiting, 'is', 'are')} still reading.</div></div>
+               <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Nothing has been found yet, which is not the same as nothing being wrong — ${esc(num(waiting))} of the three checks ${plural(waiting, 'is', 'are')} still reading.</div></div>
            </div>`
-        : `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="material-symbols-outlined t-ok" style="font-size:20px">task_alt</span>
+        : `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+             <span class="material-symbols-outlined text-emerald-700" style="font-size:20px">task_alt</span>
              <div><div style="font-weight:500">Nothing on this screen needs a human</div>
-               <div class="ds-cell-sub" style="white-space:normal">${cleared.map(esc).join('<br>')}</div></div>
+               <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${cleared.map(esc).join('<br>')}</div></div>
            </div>`) + foot;
       return;
     }
 
     bodyHost.innerHTML = alerts.map(a => `
-      <div class="list-item" style="align-items:flex-start${a.target ? '' : ';cursor:default'}"${a.target ? ` role="button" tabindex="0" data-target="${esc(a.target)}"` : ''}>
+      <div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="align-items:flex-start${a.target ? '' : ';cursor:default'}"${a.target ? ` role="button" tabindex="0" data-target="${esc(a.target)}"` : ''}>
         <span class="material-symbols-outlined t-${esc(a.tone)}" style="font-size:20px">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${esc(a.title)}
-            ${a.badge ? `<span class="chip">${esc(a.badge)}</span>` : ''}
-            ${a.durable ? '' : '<span class="chip" title="Computed from this browser session. It is stored nowhere and disappears when the tab reloads.">this session</span>'}</div>
-          <div class="ds-cell-sub" style="white-space:normal">${a.detail}</div>
-          ${a.foot ? `<div class="ds-cell-sub">${a.foot}</div>` : ''}
+            ${a.badge ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(a.badge)}</span>` : ''}
+            ${a.durable ? '' : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Computed from this browser session. It is stored nowhere and disappears when the tab reloads.">this session</span>'}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${a.detail}</div>
+          ${a.foot ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${a.foot}</div>` : ''}
         </div>
-        ${a.settings ? `<button class="btn sm ghost" data-goto="settings" title="Settings lists every indexed document and the columns your documents actually returned.">Knowledge base</button>` : ''}
-        ${a.target ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
+        ${a.settings ? `<button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-goto="settings" title="Settings lists every indexed document and the columns your documents actually returned.">Knowledge base</button>` : ''}
+        ${a.target ? '<span class="material-symbols-outlined text-outline" style="font-size:18px">chevron_right</span>' : ''}
       </div>`).join('') + foot;
 
     /* An alert nobody can act on is a decoration. Every row jumps to the thing
@@ -1364,12 +1405,12 @@ SCREENS.ask = async host => {
     const threadNode = $('askThread');
     if (!threadNode) return;
     if (!HISTORY.length) {
-      threadNode.innerHTML = `<div class="card">${stateEmpty('Nothing asked yet',
+      threadNode.innerHTML = `<div>${stateEmpty('Nothing asked yet',
         'Answers appear here newest first and stay for as long as this tab is open. They are not saved anywhere.',
         'auto_awesome')}</div>`;
       return;
     }
-    threadNode.innerHTML = HISTORY.map(e => `<div class="card" id="askE${e.id}" style="margin-bottom:14px"></div>`).join('');
+    threadNode.innerHTML = HISTORY.map(e => `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md" id="askE${e.id}" style="margin-bottom:14px"></div>`).join('');
     HISTORY.forEach(paint);
   }
 
@@ -1485,7 +1526,10 @@ SCREENS.ask = async host => {
     const rows = await db(`rag_documents?select=${KB_COLS}&limit=${KB_LIMIT}`);
     const titles = [...new Set(rows.map(r => str(r.doc_title)).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b));
-    return { count: rows.length, capped: rows.length >= KB_LIMIT, titles };
+    /* Sections per document, from the same rows — for the library list only. */
+    const perTitle = new Map();
+    rows.forEach(r => { const t = str(r.doc_title); if (t) perTitle.set(t, (perTitle.get(t) || 0) + 1); });
+    return { count: rows.length, capped: rows.length >= KB_LIMIT, titles, perTitle };
   })());
 
   /* ── What the knowledge base actually contains ──────────────────────────
@@ -1494,11 +1538,20 @@ SCREENS.ask = async host => {
      retrieval cannot find. */
   kbP.then(res => {
     if (!$('askKb')) return;
+    if ($('askTrust')) {
+      $('askTrust').innerHTML = trustFooter({
+        source: 'Indexed documents · Ask AI run history',
+        asOf: clock(Date.now()),
+        evidence: res.ok ? `${num(res.v.count)} indexed sections across ${num(res.v.titles.length)} documents` : 'Document index unread',
+        actor: actor(),
+      });
+    }
     if (!res.ok) {
       kbState = { err: res.err };
       /* A failed read here says nothing about whether the workflow works, so
          the Ask button is deliberately left enabled. */
       $('askKb').textContent = 'Could not read the knowledge base index';
+      if ($('askLibrary')) $('askLibrary').innerHTML = stateError('the document index', res.err);
       $('askChips').innerHTML = stateError('the knowledge base index', res.err);
       renderAlerts();
       syncControls();
@@ -1506,13 +1559,27 @@ SCREENS.ask = async host => {
     }
     const kb = res.v;
     kbState = kb;
+    /* The library list (bb752c "Mounted knowledge vaults"): each indexed
+       document and how many of its sections this read returned. No sync time
+       and no "mounted" state are shown — the index records neither. */
+    if ($('askLibrary')) {
+      $('askLibrary').innerHTML = kb.titles.length
+        ? `<ul class="flex flex-col divide-y divide-outline-variant/30">${kb.titles.map(t => `<li class="py-2 flex items-start justify-between gap-2">
+            <span class="flex items-start gap-2 min-w-0"><span class="material-symbols-outlined text-[18px] text-outline">description</span>
+              <span class="font-body-sm text-body-sm text-on-surface break-words">${esc(t)}</span></span>
+            <span class="font-label-numeric-sm text-[11px] text-outline whitespace-nowrap">${esc(num(kb.perTitle.get(t) || 0))} §</span></li>`).join('')}</ul>
+           <p class="font-body-sm text-body-sm text-on-surface-variant mt-2">${kb.capped ? `At least ${esc(num(kb.count))} sections — the read stopped at its limit. ` : `${esc(num(kb.count))} sections in all. `}No ingest date is recorded, so how current each document is cannot be said.</p>`
+        : kb.count
+          ? `<p class="font-body-sm text-body-sm text-on-surface-variant">${esc(num(kb.count))} indexed sections, none of them titled.</p>`
+          : stateEmpty('Nothing is indexed', 'Ask AI has no document to answer from yet.', 'description');
+    }
     /* The freshness clause is not conditional and never will be: rag_documents
        has no timestamp, so this line can only ever say that it does not know.
        It is said next to the count rather than only in the alert strip, because
        the count is the number an operator reads just before deciding to trust
        an answer. */
     $('askKb').innerHTML = kb.count
-      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')} · answers are drawn only from these · <span class="t-muted">Your documents records no ingest date, so how current they are cannot be known from here</span>`
+      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')} · answers are drawn only from these · <span class="text-outline">Your documents records no ingest date, so how current they are cannot be known from here</span>`
       : 'No documents are indexed';
 
     if (!kb.count) {
@@ -1520,9 +1587,9 @@ SCREENS.ask = async host => {
       $('askChips').innerHTML = stateEmpty('The knowledge base is empty',
         'Ask AI answers only from indexed documents, and there are none. Settings lists what is indexed.', 'description');
     } else if (kb.titles.length) {
-      $('askChips').innerHTML = `<div class="label-caps" style="margin-bottom:8px">Start from an indexed document</div>
+      $('askChips').innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:8px">Start from an indexed document</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${kb.titles.slice(0, 8).map(t =>
-          `<button class="btn sm" data-chip="${esc(t)}" title="Ask about ${esc(t)}">${esc(t)}</button>`).join('')}
+          `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-chip="${esc(t)}" title="Ask about ${esc(t)}">${esc(t)}</button>`).join('')}
         </div>`;
       $('askChips').querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => {
         const q = qBox();
@@ -1532,7 +1599,7 @@ SCREENS.ask = async host => {
         syncControls();
       }));
     } else {
-      $('askChips').innerHTML = `<div class="ds-cell-sub">${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')}, none of them titled, so there is nothing to offer as a starting point.</div>`;
+      $('askChips').innerHTML = `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')}, none of them titled, so there is nothing to offer as a starting point.</div>`;
     }
     renderAlerts();
     syncControls();
@@ -1563,7 +1630,7 @@ SCREENS.ask = async host => {
     const line = $('askEndpoint');
     if (!res.ok) {
       healthState = { err: res.err };
-      if (line) line.innerHTML = `<span class="t-warm">${esc('Workflow health unknown — The automation health figures did not load')}</span>`;
+      if (line) line.innerHTML = `<span class="text-amber-700">${esc('Workflow health unknown — The automation health figures did not load')}</span>`;
       renderAlerts();
       return;
     }
@@ -1572,7 +1639,7 @@ SCREENS.ask = async host => {
     healthState = { row: m.row, how: m.how, rows };
     if (line) {
       if (!m.row) {
-        line.innerHTML = `<span class="t-warm">${esc("No registered workflow's name or description mentions Ask AI, so this endpoint's health is unknown")}</span>`;
+        line.innerHTML = `<span class="text-amber-700">${esc("No registered workflow's name or description mentions Ask AI, so this endpoint's health is unknown")}</span>`;
       } else {
         const w = m.row;
         const h = str(w.health).toUpperCase();
@@ -1597,9 +1664,9 @@ SCREENS.ask = async host => {
         const rej = n0(w.rejected_30d) || 0;
         const hw = healthWords(h);
         const bits = [
-          `<span class="mono">${esc(HOOK.askAi)}</span>`,
+          `<span class="font-label-numeric-sm">${esc(HOOK.askAi)}</span>`,
           h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h), { verbatim: true }) : pill('UNREPORTED', tone(''), { verbatim: false }),
-          w.is_active === false ? '<span class="t-hot">registered inactive</span>' : '',
+          w.is_active === false ? '<span class="text-red-700">registered inactive</span>' : '',
           eff != null && succ != null
             ? `${esc(num(succ))} of ${esc(num(eff))} rated run${plural(eff, '', 's')} succeeded in 30 d`
             : n0(w.runs_30d) != null
@@ -1608,7 +1675,7 @@ SCREENS.ask = async host => {
           rej ? `${esc(num(rej))} refused by design, not rated` : '',
           w.last_run ? `last run ${esc(ago(w.last_run))}` : 'no run ever recorded',
         ].filter(Boolean);
-        line.innerHTML = `<span style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">${bits.join('<span class="t-muted">·</span>')}</span>`;
+        line.innerHTML = `<span style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">${bits.join('<span class="text-outline">·</span>')}</span>`;
         line.title = [m.how, h ? `${h}: ${hw.blurb}` : ''].filter(Boolean).join(' ');
       }
     }
@@ -1637,7 +1704,7 @@ SCREENS.ask = async host => {
      ones. */
   let runsAttempt = 0;
   panel($('askRuns'), {
-    title: 'Ask-AI run history',
+    title: 'Ask-AI run history', icon: 'history',
     sub: 'Rows the workflow itself wrote to the activity log — no screen in this dashboard writes an Ask-AI row',
     load: async () => {
       const first = runsAttempt++ === 0;
@@ -1713,9 +1780,9 @@ SCREENS.ask = async host => {
           ? `Phone numbers were looked up for the first ${num(PHONE_LOOKUPS)} leads only; ${num(skipped)} further lead${plural(skipped, '', 's')} ${plural(skipped, 'shows', 'show')} no number for that reason alone.`
           : '',
       ].filter(Boolean);
-      const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${provenance.map(esc).join('<br>')}</div></div>`;
+      const foot = `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${provenance.map(esc).join('<br>')}</div></div>`;
 
       if (!rows.length) {
         return stateEmpty('No Ask-AI runs recorded',
@@ -1736,7 +1803,7 @@ SCREENS.ask = async host => {
       const rated = rows.filter(isQualifying);
       const ok = rated.filter(isSuccess).length;
       const refused = rows.filter(isRefusal).length;
-      const head = `<div class="ds-cell-sub" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rated.length))} rated run${plural(rated.length, '', 's')} succeeded${
+      const head = `<div class="font-body-sm text-body-sm text-on-surface-variant" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rated.length))} rated run${plural(rated.length, '', 's')} succeeded${
         refused ? ` · ${esc(num(refused))} further request${plural(refused, '', 's')} refused by design and not rated` : ''}${
         rows.length !== rated.length + refused ? ` · ${esc(num(rows.length - rated.length - refused))} handed to a person on purpose` : ''}${
         rows[0]?.logged_at ? ' · most recent ' + esc(ago(rows[0].logged_at)) : ''}</div>`;
@@ -1748,24 +1815,24 @@ SCREENS.ask = async host => {
       const who = r => {
         const nm = str(r.lead_name);
         const em = low(r.lead_email);
-        if (!nm && !em) return '<span class="t-muted">—</span>';
+        if (!nm && !em) return '<span class="text-outline">—</span>';
         const rec = em ? phones.get(em) : null;
         const nameHtml = !nm
-          ? '<span class="t-muted">No name recorded</span>'
+          ? '<span class="text-outline">No name recorded</span>'
           : isHandle(nm)
-            ? `<span class="mono" title="A WhatsApp chat handle, not a name. A LID contains no phone digits and identifies nobody on its own.">${esc(nm)}</span> <span class="chip">chat handle</span>`
+            ? `<span class="font-label-numeric-sm" title="A WhatsApp chat handle, not a name. A LID contains no phone digits and identifies nobody on its own.">${esc(nm)}</span> <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">chat handle</span>`
             : esc(nm);
         let phoneHtml;
-        if (rec && rec.found) phoneHtml = rec.phone ? `<span class="mono">${esc(maskText(rec.phone))}</span>` : '— no phone on the lead';
+        if (rec && rec.found) phoneHtml = rec.phone ? `<span class="font-label-numeric-sm">${esc(maskText(rec.phone))}</span>` : '— no phone on the lead';
         else if (rec) phoneHtml = '— no lead row matches this email';
         else if (!em) phoneHtml = '— no email to look a number up by';
-        else if (phoneErr) phoneHtml = '<span class="t-warm">phone lookup failed</span>';
+        else if (phoneErr) phoneHtml = '<span class="text-amber-700">phone lookup failed</span>';
         else phoneHtml = '— not looked up';
-        return `<div>${nameHtml}</div><div class="ds-cell-sub">${phoneHtml}${em ? ` · ${esc(em)}` : ''}</div>`;
+        return `<div>${nameHtml}</div><div class="font-body-sm text-body-sm text-on-surface-variant">${phoneHtml}${em ? ` · ${esc(em)}` : ''}</div>`;
       };
 
       return head + table([
-        { label: 'When', render: r => `<span class="t-muted">${esc(ago(r.logged_at))}</span>` },
+        { label: 'When', render: r => `<span class="text-outline">${esc(ago(r.logged_at))}</span>` },
         /* The raw status is not the outcome. Finance Calc and Master Router
            both write FAILED on rows whose own summary says some claimed step did
            not land, and that correction lives in lib/health.js beside the SQL it
@@ -1777,7 +1844,7 @@ SCREENS.ask = async host => {
           } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },
-        { label: 'Summary', render: r => `${esc(str(r.summary) || '—')}${r.intent ? `<div class="ds-cell-sub">${esc(r.intent)}</div>` : ''}` },
+        { label: 'Summary', render: r => `${esc(str(r.summary) || '—')}${r.intent ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(r.intent)}</div>` : ''}` },
       ], rows) + foot;
     },
   });

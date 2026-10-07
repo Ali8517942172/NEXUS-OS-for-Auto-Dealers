@@ -793,7 +793,7 @@ Stated exactly, and deliberately not inflated.
 |---|---|
 | messages lost | **6** |
 | conversations affected | **4** |
-| dealerships affected | **1** — ALBA CARS, `fff6a2b5-cfd5-4460-8383-875bc5826de0`; the only tenant with traffic |
+| dealerships affected | **1** — Tenant A, `fff6a2b5-cfd5-4460-8383-875bc5826de0`; the only tenant with traffic |
 | period | **2026-09-01 10:26:44 UTC → 2026-09-04 06:21:37 UTC**, 2 days 20 hours |
 | claims in that period | 15 of 41 lifetime. 6 of those 15 lost |
 | loss rate, whole history | **6 of 41 = 14.6%** |

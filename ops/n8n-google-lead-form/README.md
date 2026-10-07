@@ -4,7 +4,7 @@ n8n workflow `EYva4c2bMV5MGq0o`, published 7 September 2026.
 `POST https://35.224.126.225.nip.io/webhook/google-ads-lead?k=<endpoint public key>`
 
 **No lead has ever arrived here.** No Google Ads account is connected, no
-endpoint is registered to ALBA, and no per-endpoint secret is set on the VM.
+endpoint is registered to Tenant A, and no per-endpoint secret is set on the VM.
 
 ## Measured on the live box, 7 September 2026
 
@@ -20,7 +20,7 @@ endpoint is registered to ALBA, and no per-endpoint secret is set on the VM.
 
 The last two rows are the ones worth reading twice, and they needed a registered
 endpoint to reach. A `simulation` endpoint was created on production for the
-probe, used, and deleted; `nexus_lead_source_readiness()` computed for ALBA's
+probe, used, and deleted; `nexus_lead_source_readiness()` computed for Tenant A's
 tenant while it existed returned **`SIMULATION_ONLY`**, never `CONNECTED`, which
 is the whole reason a simulation endpoint was safe to use for this. Nothing was
 written: `lead_event` still holds exactly one row and `leads` four.
@@ -219,10 +219,10 @@ back before trusting this file.**
 insert into public.lead_ingest_endpoint
   (tenant_id, source_key, required_provenance_for_source, declared_provenance,
    provenance_counts_as_real, environment, public_key, secret_ref, label)
-values ('<ALBA tenant id>', 'google_ads_lead_form', 'shared_secret_in_body',
+values ('<Tenant A tenant id>', 'google_ads_lead_form', 'shared_secret_in_body',
         'shared_secret_in_body', true, 'production',
         '<24-128 chars of [A-Za-z0-9_-], unguessable>',
-        'GOOGLE_LEAD_KEY_ALBA', 'ALBA CARS Google Ads lead form');
+        'GOOGLE_LEAD_KEY_ALBA', 'Tenant A Google Ads lead form');
 ```
 
 3. On the VM: `GOOGLE_LEAD_KEY_ALBA=<a long random string>`, then restart n8n.

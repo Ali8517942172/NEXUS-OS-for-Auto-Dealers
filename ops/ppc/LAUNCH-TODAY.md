@@ -378,9 +378,9 @@ What lands in the database for a click on the first ad from Instagram:
 Run `POLICY-RISK.md` §7 against the three ads you just built. The two lines most
 likely to catch you out:
 
-- **ALBA Cars appears nowhere** — not in text, not in an image, not in a Page
-  name, not in a link. ALBA is tenant #1 and the pilot, not a customer and not a
-  reference. An ad implying ALBA bought or endorses NEXUS is a fabricated
+- **Tenant A appears nowhere** — not in text, not in an image, not in a Page
+  name, not in a link. Tenant A is tenant #1 and the pilot, not a customer and not a
+  reference. An ad implying Tenant A bought or endorses NEXUS is a fabricated
   testimonial under Meta's rules and, separately, tells every competing showroom
   in Dubai that a rival is selling them software.
 - **No scarcity of any kind.** No "only 10 places", no deadline, no countdown, no
@@ -429,7 +429,7 @@ whole headline in the image.**
 **Three things that must never be in any image:** any car manufacturer's badge or
 logo (Toyota, Nissan, Lexus, anything — a trademark complaint disables the ad),
 any marketplace name or screenshot (Dubizzle, YallaMotor, dubicars), and anything
-identifying ALBA Cars or its premises.
+identifying Tenant A or its premises.
 
 **Two things worth avoiding on craft grounds:** a stock-photo handshake, and a
 stock-photo salesman handing over keys. Every agency ad in the UAE Feed uses

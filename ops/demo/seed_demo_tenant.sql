@@ -6,7 +6,7 @@
 --   say something true and interesting about it.
 --
 --   IT MUST NEVER RUN AGAINST PRODUCTION (dsvuoovivysszdoiorch). Production
---   holds the one real dealership, ALBA CARS. Synthetic rows filed beside real
+--   holds the one real dealership, Tenant A. Synthetic rows filed beside real
 --   ones poison every count on every screen, and that is exactly what this
 --   project's tenancy work exists to prevent. The guard at the top refuses on
 --   two independent tests and neither can be satisfied by production.
@@ -56,7 +56,7 @@ begin
               where lower(slug) like '%alba%' or lower(name) like '%alba%') then
     raise exception using
       errcode = 'NX999',
-      message = 'REFUSED: this database contains the ALBA CARS tenant, which identifies it as NEXUS PRODUCTION.',
+      message = 'REFUSED: this database contains the Tenant A tenant, which identifies it as NEXUS PRODUCTION.',
       detail  = 'The demo dataset is synthetic. Writing it beside the one real dealership would poison every '
              || 'count on every screen and is the precise failure this product''s tenancy work exists to prevent.',
       hint    = 'Run this against the staging project (wwspuxrbiyagnrnzgate) only. Nothing in this file may be '

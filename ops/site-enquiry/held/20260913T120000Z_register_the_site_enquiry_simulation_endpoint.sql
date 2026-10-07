@@ -13,14 +13,14 @@
 --
 -- MEASURED, 13 Sep 2026, production:
 --   select id, name, slug, status from public.tenants;
---     fff6a2b5-cfd5-4460-8383-875bc5826de0  ALBA CARS                                  alba-cars        active
+--     fff6a2b5-cfd5-4460-8383-875bc5826de0  Tenant A                                  alba-cars        active
 --     02c86264-6653-4522-b055-1c3f359a82fe  UNATTRIBUTED - QUARANTINE (not a dealership) __unattributed__ quarantine
 --   lead_ingest_endpoint: 5 rows, every one environment='production'.
 --   There is no simulation endpoint and no website endpoint of any kind.
 --
 -- So there is NO suitable tenant and this file has to create one. The two that
 -- exist are both wrong, for different reasons:
---   - ALBA CARS is a real dealership. Filing NEXUS's own sales prospects into it
+--   - Tenant A is a real dealership. Filing NEXUS's own sales prospects into it
 --     would put the vendor's pipeline inside a customer's data, which is the
 --     exact boundary this product exists to hold.
 --   - The quarantine tenant is status='quarantine', and

@@ -165,7 +165,7 @@ scope `[]`, `v_inventory_sales` **0**, `v_customer_directory` **0**,
 | `nexus_comm_keys_for_lead` key count | 4 | **4** |
 | `search_rag_documents` rows | 1 | **1** |
 
-Identical. ALBA sees no behaviour change from this migration.
+Identical. Tenant A sees no behaviour change from this migration.
 
 `nexus_fuse_dependent_objects()` on staging after NX991: **0 rows.**
 

@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/stitch-theme.mjs --check && vite build && node scripts/stitch-classes.mjs",
     "preview": "vite preview",
-    "gate": "vite build && node QUALITY_GATE.mjs",
+    "gate": "npm run build && node QUALITY_GATE.mjs",
     "probe": "node SCHEMA_PROBE.mjs",
     "check": "npm run gate && npm run probe"
   },

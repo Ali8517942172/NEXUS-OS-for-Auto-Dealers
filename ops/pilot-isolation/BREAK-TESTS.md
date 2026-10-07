@@ -573,7 +573,7 @@ rows land in quarantine on the 16 defaulted tables and fail with `23502` on the 
 **Known instance to look for first:** the `Audit Log` node in
 `ask_ai_rag_query_agent.json` posts `{workflow, status, summary}` with no tenant. And
 the **silence detector has two write paths that disagree** — four `[SILENCE-…]` rows
-landed on ALBA, one landed in quarantine five minutes earlier on 8 Sep
+landed on Tenant A, one landed in quarantine five minutes earlier on 8 Sep
 (`ISOLATION-MODEL.md` H12). Find that second path.
 **Status: NOT RUN. Do not run against production n8n.**
 

@@ -86,9 +86,9 @@ select tenant_id, count(*), max(created_at) from communication_logs
 **Threshold:** 0 rows written to the quarantine tenant in the trailing 7 days by any
 workflow.
 **Today:** `audit_log` — 20 rows, 9 named n8n workflows, all in a 43-minute window on
-**6 Sep**, none since (last 3 days: 122 audit rows, all ALBA). That one is
+**6 Sep**, none since (last 3 days: 122 audit rows, all Tenant A). That one is
 **identified and dormant**. `communication_logs` — the **silence detector wrote a
-marker into quarantine on 8 Sep at 02:59:50** and another onto ALBA at 03:04:36. Two
+marker into quarantine on 8 Sep at 02:59:50** and another onto Tenant A at 03:04:36. Two
 write paths, one of which omits the tenant, **live yesterday**. **FAIL.**
 
 ### E6 · The inbound webhook authenticates the caller before an execution starts
@@ -173,7 +173,7 @@ pilot rather than being logged.
 | # | check | threshold | today |
 |---|---|---|---|
 | **R1** | `select * from public.nexus_quarantine_census();` | 0 rows, and no growth vs yesterday | 2 tables non-empty — **FAIL** |
-| **R2** | `select tenant_id, count(*) from audit_log where logged_at > now()-interval '1 day' group by 1;` | every row on an **active dealership**, none on quarantine | last 24h all ALBA — PASS |
+| **R2** | `select tenant_id, count(*) from audit_log where logged_at > now()-interval '1 day' group by 1;` | every row on an **active dealership**, none on quarantine | last 24h all Tenant A — PASS |
 | **R3** | `select tenant_id, actions_whose_lead_is_another_tenants from v_lead_recovery_coverage;` | 0 for every dealership | 0 (one dealership) — PASS, **untested at two** |
 | **R4** | `select * from public.nexus_tenancy_readiness();` | zero `BLOCKER` rows | zero BLOCKERs at one dealership; F2 (6 Sep) shows it stays green at two while `nexus_scoped_tenant_id()` is NULL — **the gate is known not to measure the thing it is named for** |
 | **R5** | as **each** dealership's owner: `select count(*) from nexus_workflow_catalogue();` | only that dealership's workflows | predicted 18 for both — **H1, NOT RUN** |

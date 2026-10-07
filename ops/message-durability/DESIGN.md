@@ -208,7 +208,7 @@ constraint says content is not its job.
 credential, mirroring `csd_credential_ref_is_not_a_secret` — provider error bodies
 echo request headers more often than anyone expects.
 
-**`NOT_ATTEMPTED` is the row this system most needs and least has.** ALBA's
+**`NOT_ATTEMPTED` is the row this system most needs and least has.** Tenant A's
 salespeople currently cannot distinguish "the AI decided not to message this
 customer" from "nobody got round to it". `channel_send_directive` was built for
 that decision and holds 0 rows; this event references it rather than restating it.

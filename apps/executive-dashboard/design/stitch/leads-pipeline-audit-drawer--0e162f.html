@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed-variant":"#34466e","on-secondary":"#ffffff","error":"#ba1a1a","on-error":"#ffffff","surface-container-highest":"#dbe2fb","secondary-fixed":"#d9e2ff","on-secondary-fixed":"#041a40","secondary-fixed-dim":"#b4c6f5","background":"#faf8ff","primary":"#004ba8","on-primary-container":"#dee6ff","tertiary-fixed":"#a0efff","surface-dim":"#d2d9f3","on-primary":"#ffffff","on-secondary-container":"#465780","on-background":"#131b2d","on-tertiary-fixed-variant":"#004e59","inverse-primary":"#afc6ff","primary-fixed-dim":"#afc6ff","on-tertiary":"#ffffff","surface-tint":"#155ac0","on-tertiary-container":"#b1f1ff","on-primary-fixed":"#001a43","inverse-surface":"#283043","surface-container":"#e9edff","surface-container-low":"#f2f3ff","on-surface":"#131b2d","primary-container":"#2563c9","tertiary-fixed-dim":"#44d8f0","outline-variant":"#c2c6d5","secondary-container":"#bccefe","secondary":"#4c5e87","tertiary-container":"#007281","on-error-container":"#93000a","inverse-on-surface":"#edf0ff","surface-bright":"#faf8ff","surface":"#faf8ff","on-tertiary-fixed":"#001f25","on-surface-variant":"#424753","on-primary-fixed-variant":"#004398","tertiary":"#005864","surface-container-high":"#e1e8ff","surface-variant":"#dbe2fb","outline":"#737784","error-container":"#ffdad6","surface-container-lowest":"#ffffff","primary-fixed":"#d9e2ff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-xl":"2rem","space-lg":"1.5rem","space-sm":"0.5rem","space-xs":"0.25rem","margin":"1.5rem","space-md":"1rem","gutter":"1rem"},"fontFamily":{"label-numeric-sm":["JetBrains Mono"],"headline-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"table-header":["Inter"],"headline-lg":["Inter"],"label-numeric-md":["JetBrains Mono"],"body-md":["Inter"],"body-sm":["Inter"],"body-lg":["Inter"],"headline-xl":["Inter"]},"fontSize":{"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}]}}}}</script></head><body class="bg-[#F7F8FA] font-body-md text-on-surface min-h-screen antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-[#16294F] text-[#C7D3EA] z-50 flex flex-col font-body-md select-none border-r border-[#1E3566]"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="font-headline-md text-white font-bold tracking-tight text-[15px]">NEXUS OS</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#0A3D4D] text-[#38D0E8] border border-[#13667E]">PRO</span></div><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#38D0E8] animate-pulse"></span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Work</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="todays-money-leaks" href="#">Today's Money Leaks</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#">Overview</a><a aria-current="page" class="flex items-center px-[14px] py-1.5 rounded-[6px] transition-colors bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]" data-path="leads" href="#">Leads</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="record-a-lead" href="#">Record a Lead</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-sources" href="#">Lead Sources</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="channels" href="#">Channels</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="integrations" href="#">Integrations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#">Conversations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#">Appointments</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance" href="#">Compliance</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Revenue Recovery</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="revenue-recovery" href="#">Revenue Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-recovery" href="#">Lead Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deal-rescue" href="#">Deal Rescue</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="attribution" href="#">Attribution</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="policy" href="#">Policy</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Assets</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#">Inventory</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#">Competitors</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Intelligence</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="ask-ai" href="#">Ask AI</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#">Finance Desk</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#">Customer 360</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Operations</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#">Action Center</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#">Campaigns</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#">Deals</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="automation" href="#">Automation</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="team" href="#">Team</a></nav><nav class="space-y-1 pt-2 border-t border-[#1E3566]" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="setup" href="#">Setup</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="subscription" href="#">Subscription</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#">Settings</a></nav></div><div class="p-3 border-t border-[#1E3566] shrink-0"><div class="flex items-center justify-between gap-2 p-1.5 rounded-[6px] bg-[#11203E] border border-[#1E3566]"><div class="flex items-center gap-2.5 min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-white text-[16px]">person</span></div><div class="min-w-0 text-left leading-tight"><div class="text-[12px] font-semibold text-white truncate">Faris M.</div><div class="text-[10px] text-[#8598BA] truncate">GM / Sales Director</div></div></div><button class="p-1 text-[#8598BA] hover:text-[#38D0E8] hover:bg-[#1E3566] rounded transition-colors shrink-0" title="Sign out"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 flex items-center justify-between px-5 font-body-md"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2.5 shrink-0 pr-4 border-r border-[#E8EAEF]"><span class="font-headline-md font-bold text-[#0F1729] text-[14px] tracking-tight">Demo Motors</span><span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] uppercase font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>Dubai Showroom</span></div><div class="relative max-w-md w-full"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span><input class="w-full h-8 pl-8 pr-12 text-[13px] bg-surface-container-lowest border border-[#E8EAEF] rounded-[6px] text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Search leads, chassis / VIN, stock #..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm text-outline border border-[#E8EAEF] rounded bg-[#F7F8FA]">⌘K</kbd></div></div><div class="flex items-center gap-4 shrink-0"><div class="flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF]"><span class="text-[11px] font-label-numeric-sm font-semibold text-secondary">AED</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="text-[11px] font-label-numeric-sm text-on-surface">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-1 text-[11px] font-label-numeric-sm text-secondary"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="">LIVE SYNC</span></div><button class="relative p-1 text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error"></span></button><div class="h-6 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right leading-none"><div class="text-[13px] font-semibold text-[#0F1729]">Faris M.</div><div class="text-[11px] text-secondary mt-0.5">GM / Sales Director</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen"><div class="flex flex-col w-full">
+<!-- Dynamic Lead Navigation State Script -->
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // Highlight "Leads" in sidebar persistent shell
+      const leadsLink = document.querySelector('aside a[data-path="leads"]');
+      if (leadsLink) {
+        leadsLink.className = "flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-semibold bg-[#24428A] text-white border-l-[3px] border-[#38D0E8] pl-[11px] transition-colors";
+      }
+    });
+
+    function switchDrawerTab(tabId) {
+      const tabs = ['tab-details', 'tab-timeline', 'tab-owner-history', 'tab-assign-owner'];
+      const btns = ['btn-details', 'btn-timeline', 'btn-owner-history', 'btn-assign-owner'];
+      tabs.forEach((t) => {
+        const el = document.getElementById(t);
+        if (el) el.classList.add('hidden');
+      });
+      btns.forEach((b) => {
+        const el = document.getElementById(b);
+        if (el) {
+          el.classList.remove('text-primary-container', 'border-b-2', 'border-primary-container', 'font-semibold');
+          el.classList.add('text-secondary', 'font-medium');
+        }
+      });
+      const activeTab = document.getElementById('tab-' + tabId);
+      const activeBtn = document.getElementById('btn-' + tabId);
+      if (activeTab) activeTab.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.remove('text-secondary', 'font-medium');
+        activeBtn.classList.add('text-primary-container', 'border-b-2', 'border-primary-container', 'font-semibold');
+      }
+    }
+
+    function toggleDrawer() {
+      const drawer = document.getElementById('lead-drawer');
+      if (drawer) {
+        drawer.classList.toggle('translate-x-full');
+      }
+    }
+
+    function toggleRowActions(id) {
+      const menu = document.getElementById('actions-menu-' + id);
+      if (menu) {
+        menu.classList.toggle('hidden');
+      }
+    }
+
+    function applyQuickFilter(type) {
+      const searchInput = document.getElementById('lead-omnibar');
+      if (searchInput) {
+        searchInput.value = type;
+      }
+    }
+  </script>
+<!-- Main View Container with Right-Rail Allocation -->
+<div class="relative flex w-full min-h-[calc(100vh-3.5rem)] overflow-hidden">
+<!-- Center Work Canvas (Adapts dynamically when Drawer is visible) -->
+<div class="flex-1 min-w-0 p-6 xl:pr-[460px] 2xl:pr-[500px] flex flex-col gap-6">
+<!-- Breadcrumbs & Tactical Command Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Floor Intake &amp; Active Leads</span>
+<span class="bg-surface-container text-secondary font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded-[4px] font-semibold">142 TOTAL</span>
+</div>
+<span class="text-outline-variant">•</span>
+<div class="flex items-center gap-1.5 text-secondary font-body-sm text-body-sm">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+<span>Live Floor Sync Active (Dubai Mall Galleria)</span>
+</div>
+</div>
+<div class="flex items-center gap-2.5">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-surface-container-lowest text-on-surface text-body-md font-medium shadow-sm hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-[18px] text-secondary">file_download</span>
+<span>Export CSV</span>
+</button>
+<button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-primary-container text-on-primary font-headline-md text-body-md font-semibold shadow-sm hover:bg-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span>+ Add a lead</span>
+</button>
+</div>
+</div>
+<!-- SECTION 1: 'Needs Attention' Top Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<!-- Urgent Counter Card 1 -->
+<div class="cursor-pointer group bg-surface-container-lowest p-4 rounded-xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all" onclick="applyQuickFilter('status:unassigned')">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase tracking-wider bg-[#FDECEA] text-[#C8321F]">HOT ALERT</span>
+<span class="font-body-sm text-body-sm text-secondary font-medium">Wait Time &gt; 15m</span>
+</div>
+<span class="material-symbols-outlined text-[#C8321F] text-[20px] group-hover:translate-x-0.5 transition-transform">priority_high</span>
+</div>
+<div class="flex items-baseline justify-between mt-3">
+<div>
+<div class="font-headline-xl text-headline-xl text-[#C8321F] font-bold">4 <span class="font-body-md text-body-md text-secondary font-normal">leads</span></div>
+<div class="font-headline-md text-body-md font-semibold text-on-surface mt-0.5">HOT Leads with no rep</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm font-medium text-secondary bg-surface-container-low px-2 py-1 rounded">Floor Queue</span>
+</div>
+<div class="mt-3 pt-3 flex items-center justify-between text-secondary font-body-sm text-body-sm">
+<span class="text-[#C8321F] font-medium flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-[#C8321F]"></span> Immediate allocation required
+            </span>
+<span class="text-primary-container font-semibold group-hover:underline flex items-center gap-0.5">Filter <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+</div>
+</div>
+<!-- Urgent Counter Card 2 -->
+<div class="cursor-pointer group bg-surface-container-lowest p-4 rounded-xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all" onclick="applyQuickFilter('sla:breached')">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase tracking-wider bg-[#FDECEA] text-[#C8321F]">SLA BREACH</span>
+<span class="font-body-sm text-body-sm text-secondary font-medium">Threshold &gt; 30m</span>
+</div>
+<span class="material-symbols-outlined text-[#C8321F] text-[20px] group-hover:translate-x-0.5 transition-transform">schedule</span>
+</div>
+<div class="flex items-baseline justify-between mt-3">
+<div>
+<div class="font-headline-xl text-headline-xl text-[#C8321F] font-bold">6 <span class="font-body-md text-body-md text-secondary font-normal">leads</span></div>
+<div class="font-headline-md text-body-md font-semibold text-on-surface mt-0.5">Leads never contacted</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm font-medium text-error bg-error-container px-2 py-1 rounded">High Attrition</span>
+</div>
+<div class="mt-3 pt-3 flex items-center justify-between text-secondary font-body-sm text-body-sm">
+<span class="text-secondary">Average idle age: 41.5m</span>
+<span class="text-primary-container font-semibold group-hover:underline flex items-center gap-0.5">Filter <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+</div>
+</div>
+<!-- Urgent Counter Card 3 -->
+<div class="cursor-pointer group bg-surface-container-lowest p-4 rounded-xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all" onclick="applyQuickFilter('ai:high-new')">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-semibold uppercase tracking-wider bg-[#FEF3E2] text-[#96570A]">STAGE STALLED</span>
+<span class="font-body-sm text-body-sm text-secondary font-medium">Score &gt; 85</span>
+</div>
+<span class="material-symbols-outlined text-[#96570A] text-[20px] group-hover:translate-x-0.5 transition-transform">bolt</span>
+</div>
+<div class="flex items-baseline justify-between mt-3">
+<div>
+<div class="font-headline-xl text-headline-xl text-[#96570A] font-bold">9 <span class="font-body-md text-body-md text-secondary font-normal">leads</span></div>
+<div class="font-headline-md text-body-md font-semibold text-on-surface mt-0.5">High scorers still NEW</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm font-medium text-secondary bg-surface-container-low px-2 py-1 rounded">Untouched &gt; 2h</span>
+</div>
+<div class="mt-3 pt-3 flex items-center justify-between text-secondary font-body-sm text-body-sm">
+<span class="text-secondary">AED 5.2M estimated pipeline</span>
+<span class="text-primary-container font-semibold group-hover:underline flex items-center gap-0.5">Filter <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+</div>
+</div>
+</div>
+<!-- SECTION 2: Filter Omnibar Strip -->
+<div class="bg-surface-container-lowest p-3 rounded-xl shadow-sm flex flex-wrap items-center justify-between gap-3">
+<div class="relative flex-1 min-w-[280px]">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">search</span>
+<input class="w-full h-10 pl-10 pr-10 bg-surface-container-low rounded-[6px] text-on-surface font-body-md text-body-md placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest" id="lead-omnibar" placeholder="Omnibar: Search by name, phone (+971), VIN/chassis, stock #, or #L-ID..." type="text"/>
+<button class="absolute right-2.5 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+<!-- Filter Dropdowns Cluster -->
+<div class="flex items-center flex-wrap gap-2">
+<!-- Source Dropdown -->
+<div class="relative">
+<select class="appearance-none bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-3 pr-8 py-2 rounded-[6px] shadow-sm cursor-pointer hover:bg-surface-container-low focus:outline-none">
+<option value="all">Source: All</option>
+<option value="walkin">Walk-in Showroom</option>
+<option value="whatsapp">WhatsApp Direct</option>
+<option value="phone">Phone Inquiry</option>
+<option value="meta">Meta Ads</option>
+<option value="google">Google Search</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-secondary text-[18px]">keyboard_arrow_down</span>
+</div>
+<!-- AI Score Range -->
+<div class="relative">
+<select class="appearance-none bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-3 pr-8 py-2 rounded-[6px] shadow-sm cursor-pointer hover:bg-surface-container-low focus:outline-none">
+<option value="all">AI Score: Any</option>
+<option value="high">High (85 - 100)</option>
+<option value="med">Medium (60 - 84)</option>
+<option value="low">Low (&lt; 60)</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-secondary text-[18px]">keyboard_arrow_down</span>
+</div>
+<!-- Status Dropdown -->
+<div class="relative">
+<select class="appearance-none bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-3 pr-8 py-2 rounded-[6px] shadow-sm cursor-pointer hover:bg-surface-container-low focus:outline-none">
+<option value="all">Status: All</option>
+<option value="hot">HOT Status</option>
+<option value="warm">WARM Status</option>
+<option value="cold">COLD Status</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-secondary text-[18px]">keyboard_arrow_down</span>
+</div>
+<!-- Owner Dropdown -->
+<div class="relative">
+<select class="appearance-none bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-3 pr-8 py-2 rounded-[6px] shadow-sm cursor-pointer hover:bg-surface-container-low focus:outline-none">
+<option value="all">Owner: All Reps</option>
+<option value="unassigned">Unassigned Floor Queue</option>
+<option value="faris">Faris M. (Sales Dir)</option>
+<option value="karim">Karim A.</option>
+<option value="tariq">Tariq K.</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-secondary text-[18px]">keyboard_arrow_down</span>
+</div>
+<button class="p-2 rounded-[6px] bg-surface-container-lowest text-secondary hover:text-on-surface hover:bg-surface-container-low shadow-sm" title="Clear Filters">
+<span class="material-symbols-outlined text-[20px]">filter_alt_off</span>
+</button>
+</div>
+</div>
+<!-- SECTION 3: Leads Table -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-secondary font-table-header text-table-header uppercase tracking-wider">
+<th class="py-3 px-4">Lead</th>
+<th class="py-3 px-3">Came From</th>
+<th class="py-3 px-3 text-right">AI Score</th>
+<th class="py-3 px-3">Status</th>
+<th class="py-3 px-3">Assigned</th>
+<th class="py-3 px-3 text-right">Budget</th>
+<th class="py-3 px-3 text-right">Age</th>
+<th class="py-3 px-3 text-right">First Reply</th>
+<th class="py-3 px-4 text-center">Actions</th>
+</tr>
+</thead>
+<tbody class="font-body-md text-body-md divide-y divide-[#E8EAEF]/60">
+<!-- Lead Row 1 (ACTIVE / Selected Lead in Drawer) -->
+<tr class="bg-[#EEF3FD] hover:bg-[#E3ECFD] cursor-pointer transition-colors group" onclick="toggleDrawer()">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-primary-container text-white font-headline-md text-[13px] font-bold flex items-center justify-center shrink-0">
+                      TA
+                    </div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-semibold text-on-surface flex items-center gap-1.5">
+<span class="truncate">Dr. Tariq Al-Nuaimi</span>
+<span class="w-2 h-2 rounded-full bg-primary-container" title="Selected Profile"></span>
+</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">#L-9941</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-surface-container font-label-numeric-sm text-[11px] font-medium text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-tertiary">storefront</span>
+                    Walk-in
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-label-numeric-sm font-bold">
+<span class="material-symbols-outlined text-[13px]">trending_up</span> 96 High
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#FDECEA] text-[#C8321F]">
+                    HOT
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center font-label-numeric-sm text-[10px] font-bold">FM</div>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Faris M.</span>
+</div>
+</td>
+<td class="py-3.5 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                  AED 850,000
+                </td>
+<td class="py-3.5 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-secondary">
+                  2h 14m
+                </td>
+<td class="py-3.5 px-3 text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-emerald-600 font-semibold">4.2m</span>
+</td>
+<td class="py-3.5 px-4 text-center relative" onclick="event.stopPropagation()">
+<button class="p-1 rounded text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleRowActions('9941')">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+<!-- Row Actions Dropdown Menu -->
+<div class="hidden absolute right-4 top-10 w-48 bg-surface-container-lowest rounded-lg shadow-xl py-1 z-30 text-left" id="actions-menu-9941">
+<button class="w-full px-3 py-2 text-body-sm font-medium text-error hover:bg-error-container/40 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">campaign</span> Escalate
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-on-surface hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">all_inclusive</span> Enrol in 7-day drip
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-secondary hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">refresh</span> Retry AI scoring
+                    </button>
+</div>
+</td>
+</tr>
+<!-- Lead Row 2 (Unassigned SLA Breach) -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed font-headline-md text-[13px] font-bold flex items-center justify-center shrink-0">
+                      MK
+                    </div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-semibold text-on-surface truncate">Mansoor Al-Khater</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">#L-9938</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#E6F4EF] font-label-numeric-sm text-[11px] font-medium text-[#157A5B]">
+<span class="material-symbols-outlined text-[14px]">chat</span>
+                    WhatsApp
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-label-numeric-sm font-bold">
+                    88 High
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#FDECEA] text-[#C8321F]">
+                    HOT
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1 text-[#C8321F] font-headline-md text-body-sm font-bold bg-[#FDECEA] px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">warning</span> Unassigned
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                  AED 1,250,000
+                </td>
+<td class="py-3.5 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-secondary">
+                  18m
+                </td>
+<td class="py-3.5 px-3 text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-[#C8321F] bg-[#FDECEA] px-1.5 py-0.5 rounded">Never</span>
+</td>
+<td class="py-3.5 px-4 text-center relative" onclick="event.stopPropagation()">
+<button class="p-1 rounded text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleRowActions('9938')">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+<div class="hidden absolute right-4 top-10 w-48 bg-surface-container-lowest rounded-lg shadow-xl py-1 z-30 text-left" id="actions-menu-9938">
+<button class="w-full px-3 py-2 text-body-sm font-medium text-error hover:bg-error-container/40 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">campaign</span> Escalate
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-on-surface hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">all_inclusive</span> Enrol in 7-day drip
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-secondary hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">refresh</span> Retry AI scoring
+                    </button>
+</div>
+</td>
+</tr>
+<!-- Lead Row 3 (Phone Lead - WARM) -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-secondary text-white font-headline-md text-[13px] font-bold flex items-center justify-center shrink-0">
+                      SA
+                    </div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-semibold text-on-surface truncate">Sarah Jenkins</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">#L-9935</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-surface-container font-label-numeric-sm text-[11px] font-medium text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-primary">call</span>
+                    Phone Inquiry
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FEF3E2] text-[#96570A] font-label-numeric-sm text-label-numeric-sm font-bold">
+                    74 Med
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#FEF3E2] text-[#96570A]">
+                    WARM
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-tertiary-container text-white flex items-center justify-center font-label-numeric-sm text-[10px] font-bold">KA</div>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Karim A.</span>
+</div>
+</td>
+<td class="py-3.5 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                  AED 420,000
+                </td>
+<td class="py-3.5 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-secondary">
+                  54m
+                </td>
+<td class="py-3.5 px-3 text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-[#C8321F] bg-[#FDECEA] px-1.5 py-0.5 rounded">28m SLA BREACH</span>
+</td>
+<td class="py-3.5 px-4 text-center relative" onclick="event.stopPropagation()">
+<button class="p-1 rounded text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleRowActions('9935')">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+<div class="hidden absolute right-4 top-10 w-48 bg-surface-container-lowest rounded-lg shadow-xl py-1 z-30 text-left" id="actions-menu-9935">
+<button class="w-full px-3 py-2 text-body-sm font-medium text-error hover:bg-error-container/40 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">campaign</span> Escalate
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-on-surface hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">all_inclusive</span> Enrol in 7-day drip
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-secondary hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">refresh</span> Retry AI scoring
+                    </button>
+</div>
+</td>
+</tr>
+<!-- Lead Row 4 (Meta Ads - High Scorer New) -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest text-primary font-headline-md text-[13px] font-bold flex items-center justify-center shrink-0">
+                      RB
+                    </div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-semibold text-on-surface truncate">Rashid Bin-Ghurair</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">#L-9931</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-surface-container font-label-numeric-sm text-[11px] font-medium text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-primary">public</span>
+                    Meta Ads
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-label-numeric-sm font-bold">
+                    91 High
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#FEF3E2] text-[#96570A]">
+                    WARM
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-[#16294F] text-[#38D0E8] flex items-center justify-center font-label-numeric-sm text-[10px] font-bold">TK</div>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Tariq K.</span>
+</div>
+</td>
+<td class="py-3.5 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                  AED 610,000
+                </td>
+<td class="py-3.5 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-secondary">
+                  2h 45m
+                </td>
+<td class="py-3.5 px-3 text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">6.5m</span>
+</td>
+<td class="py-3.5 px-4 text-center relative" onclick="event.stopPropagation()">
+<button class="p-1 rounded text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleRowActions('9931')">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+<div class="hidden absolute right-4 top-10 w-48 bg-surface-container-lowest rounded-lg shadow-xl py-1 z-30 text-left" id="actions-menu-9931">
+<button class="w-full px-3 py-2 text-body-sm font-medium text-error hover:bg-error-container/40 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">campaign</span> Escalate
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-on-surface hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">all_inclusive</span> Enrol in 7-day drip
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-secondary hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">refresh</span> Retry AI scoring
+                    </button>
+</div>
+</td>
+</tr>
+<!-- Lead Row 5 (Google Search - COLD) -->
+<tr class="hover:bg-surface-container-low cursor-pointer transition-colors group">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-surface-container text-secondary font-headline-md text-[13px] font-bold flex items-center justify-center shrink-0">
+                      EY
+                    </div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-semibold text-on-surface truncate">Elena Yakovleva</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">#L-9920</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-surface-container font-label-numeric-sm text-[11px] font-medium text-on-surface">
+<span class="material-symbols-outlined text-[14px] text-secondary">travel_explore</span>
+                    Google Search
+                  </span>
+</td>
+<td class="py-3.5 px-3 text-right">
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#E8F1FB] text-[#2563A8] font-label-numeric-sm text-label-numeric-sm font-bold">
+                    42 Low
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<span class="inline-flex px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#E8F1FB] text-[#2563A8]">
+                    COLD
+                  </span>
+</td>
+<td class="py-3.5 px-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-tertiary-container text-white flex items-center justify-center font-label-numeric-sm text-[10px] font-bold">KA</div>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Karim A.</span>
+</div>
+</td>
+<td class="py-3.5 px-3 text-right font-label-numeric-md text-label-numeric-md font-bold text-on-surface">
+                  AED 310,000
+                </td>
+<td class="py-3.5 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-secondary">
+                  1d 4h
+                </td>
+<td class="py-3.5 px-3 text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">14.1m</span>
+</td>
+<td class="py-3.5 px-4 text-center relative" onclick="event.stopPropagation()">
+<button class="p-1 rounded text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleRowActions('9920')">
+<span class="material-symbols-outlined text-[20px]">more_vert</span>
+</button>
+<div class="hidden absolute right-4 top-10 w-48 bg-surface-container-lowest rounded-lg shadow-xl py-1 z-30 text-left" id="actions-menu-9920">
+<button class="w-full px-3 py-2 text-body-sm font-medium text-error hover:bg-error-container/40 flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">campaign</span> Escalate
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-on-surface hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">all_inclusive</span> Enrol in 7-day drip
+                    </button>
+<button class="w-full px-3 py-2 text-body-sm font-medium text-secondary hover:bg-surface-container flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">refresh</span> Retry AI scoring
+                    </button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination & Inventory Floor Status Footer -->
+<div class="px-4 py-3 bg-surface-container-low flex items-center justify-between text-secondary font-body-sm text-body-sm">
+<div class="flex items-center gap-2">
+<span>Showing 1 to 5 of 142 leads</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-medium">Dubai Central Floor Active</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1 rounded bg-surface-container-lowest text-secondary hover:text-on-surface shadow-sm disabled:opacity-40" disabled="">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<span class="px-2 font-label-numeric-sm font-bold text-on-surface">1</span>
+<button class="p-1 rounded bg-surface-container-lowest text-secondary hover:text-on-surface shadow-sm">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- SECTION 4: Lead Drawer (Persistent Right-Rail Inspector for #L-9941) -->
+<div class="fixed top-14 right-0 bottom-0 w-full sm:w-[440px] xl:w-[460px] 2xl:w-[500px] bg-surface-container-lowest shadow-2xl z-40 flex flex-col transition-transform duration-300 ease-in-out" id="lead-drawer">
+<!-- Drawer Header -->
+<div class="p-4 bg-surface-container-lowest flex flex-col gap-3 shrink-0">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-headline-md text-headline-md font-bold text-on-surface truncate">Lead Profile • #L-9941</span>
+<span class="px-2 py-0.5 rounded-[4px] font-label-numeric-sm text-label-numeric-sm font-bold uppercase tracking-wider bg-[#FDECEA] text-[#C8321F] shrink-0">
+              HOT
+            </span>
+</div>
+<button class="p-1.5 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container transition-colors" onclick="toggleDrawer()" title="Close drawer">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Quick Interaction CTA Strip -->
+<div class="flex items-center gap-2">
+<button class="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] bg-[#E6F4EF] text-[#157A5B] font-body-md text-body-sm font-semibold hover:bg-emerald-100 transition-colors">
+<span class="material-symbols-outlined text-[16px]">chat</span>
+<span>WhatsApp Client</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] bg-primary text-white font-body-md text-body-sm font-semibold hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-[16px]">call</span>
+<span>Direct Call</span>
+</button>
+<button class="p-2 rounded-[6px] bg-surface-container-low text-secondary hover:text-on-surface" title="Add Private Note">
+<span class="material-symbols-outlined text-[18px]">edit_note</span>
+</button>
+</div>
+<!-- Four Tab Navigation Controls -->
+<div class="flex items-center justify-between text-body-sm pt-1">
+<button class="flex-1 pb-2 text-center text-secondary font-medium hover:text-on-surface transition-colors" id="btn-details" onclick="switchDrawerTab('details')">
+            Details
+          </button>
+<button class="flex-1 pb-2 text-center text-primary-container border-b-2 border-primary-container font-semibold transition-colors" id="btn-timeline" onclick="switchDrawerTab('timeline')">
+            Timeline
+          </button>
+<button class="flex-1 pb-2 text-center text-secondary font-medium hover:text-on-surface transition-colors" id="btn-owner-history" onclick="switchDrawerTab('owner-history')">
+            Owner History
+          </button>
+<button class="flex-1 pb-2 text-center text-secondary font-medium hover:text-on-surface transition-colors" id="btn-assign-owner" onclick="switchDrawerTab('assign-owner')">
+            Assign Owner
+          </button>
+</div>
+</div>
+<!-- Drawer Content Panels -->
+<div class="flex-1 overflow-y-auto p-4 space-y-4">
+<!-- TAB 1: DETAILS -->
+<div class="hidden space-y-4" id="tab-details">
+<div class="bg-surface-container-low p-4 rounded-xl space-y-3">
+<div class="flex items-center justify-between">
+<div>
+<div class="font-headline-md text-headline-md font-bold text-on-surface">Dr. Tariq Al-Nuaimi</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">+971 50 892 4411</div>
+</div>
+<span class="px-2.5 py-1 rounded-[4px] bg-[#16294F] text-[#38D0E8] font-label-numeric-sm text-label-numeric-sm font-bold tracking-wide">
+                VIP TIER 1
+              </span>
+</div>
+<div class="text-body-sm text-secondary">
+              Managing Director, Al-Nuaimi Petroleum Advisory. Showroom walk-in accompanied by personal driver.
+            </div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm space-y-3">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider">Vehicle of Interest</span>
+<div class="flex items-start gap-3">
+<div class="w-16 h-12 rounded-lg bg-surface-container flex items-center justify-center shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A clean front-three-quarter studio photograph of a 2023 Mercedes-AMG G63 in matte Obsidian Black, framed tightly in crisp neutral showroom light with metallic rim highlights and carbon fiber accents matching high-end automotive luxury." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOcyPhpZK0ut8sYFcD6JOIWJI-To_N76qy0NLzX7EAM0GwNYZdlzVgcyXPVjV7KgX3Qb-UJPnvFYBeyfuhQ6HEMCrC1SgGN4XznsN2-GGg4YWsTYccZxMQA-B9AZAAludIfolVlplRlvarGJzefLdMrwbSxTp9sewBYqrvlmADoNFeHDvxsHJoytc76rwazlPaiowu8eaGcbgCueWsTCTt8_exlUZv1dKAR7mEfA"/>
+</div>
+<div class="min-w-0">
+<div class="font-headline-md text-body-md font-bold text-on-surface truncate">2023 AMG G63 Night Edition</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">VIN: WDB-463-882109</div>
+<div class="font-label-numeric-md text-label-numeric-md font-bold text-primary mt-1">AED 850,000</div>
+</div>
+</div>
+<div class="p-2.5 rounded-lg bg-surface-container-low flex items-center justify-between font-body-sm">
+<span class="text-secondary font-medium">Trade-in Interest:</span>
+<span class="font-semibold text-on-surface">2021 Porsche Cayenne GTS (Inspection Pending)</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm space-y-2">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider">Executive Signals</span>
+<div class="grid grid-cols-2 gap-2 text-body-sm">
+<div class="p-2 bg-surface-container-low rounded">
+<span class="text-secondary text-body-sm block">Payment Preference</span>
+<span class="font-semibold text-on-surface">100% Cash Settlement</span>
+</div>
+<div class="p-2 bg-surface-container-low rounded">
+<span class="text-secondary text-body-sm block">Purchase Urgency</span>
+<span class="font-semibold text-[#C8321F]">Within 48 Hours</span>
+</div>
+</div>
+</div>
+</div>
+<!-- TAB 2: TIMELINE (ACTIVE TAB AS REQUESTED) -->
+<div class="space-y-4" id="tab-timeline">
+<div class="flex items-center justify-between pb-1">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider">Comprehensive Audit Trace</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-emerald-600 font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 5 Events Logged
+            </span>
+</div>
+<!-- Vertical Timeline Ledger -->
+<div class="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-[2px] before:bg-surface-container">
+<!-- Hop 1 -->
+<div class="relative group">
+<div class="absolute -left-6 top-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-tertiary"></div>
+</div>
+<div class="bg-surface-container-low p-3 rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">09:20 AM</span>
+<span class="px-2 py-0.5 rounded-[3px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    [LINKED: Badge #042]
+                  </span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                  Lead created via Walk-in reception
+                </div>
+<div class="text-body-sm text-secondary">
+                  Logged by Front Desk scanner. Client arrived via Gate 1 valet.
+                </div>
+</div>
+</div>
+<!-- Hop 2 -->
+<div class="relative group">
+<div class="absolute -left-6 top-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-primary-container"></div>
+</div>
+<div class="bg-surface-container-low p-3 rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">09:30 AM</span>
+<span class="px-2 py-0.5 rounded-[3px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    [LINKED: Fleet GPS #DXB-8812]
+                  </span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                  Accompanied VIP Test Drive
+                </div>
+<div class="text-body-sm text-secondary">
+                  Sheikh Zayed Rd fast loop test drive completed with Omar K. (14.2 km recorded).
+                </div>
+</div>
+</div>
+<!-- Hop 3 -->
+<div class="relative group">
+<div class="absolute -left-6 top-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-secondary"></div>
+</div>
+<div class="bg-surface-container-low p-3 rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">10:14 AM</span>
+<span class="px-2 py-0.5 rounded-[3px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    [LINKED: Beacon Gate 2]
+                  </span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                  Showroom checkout recorded
+                </div>
+<div class="text-body-sm text-secondary">
+                  Floor visit finished. Physical brochure handed over with personal vehicle spec sheet.
+                </div>
+</div>
+</div>
+<!-- Hop 4 -->
+<div class="relative group">
+<div class="absolute -left-6 top-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-[#C8321F]"></div>
+</div>
+<div class="bg-surface-container-low p-3 rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">10:35 AM</span>
+<span class="px-2 py-0.5 rounded-[3px] bg-[#FDECEA] text-[#C8321F] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    [NOT LINKABLE: Caller ID blocked / Private number]
+                  </span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                  Inbound phone call inquiry
+                </div>
+<div class="text-body-sm text-secondary">
+                  Client contacted main switchboard asking for luxury director Faris M. directly.
+                </div>
+</div>
+</div>
+<!-- Hop 5 -->
+<div class="relative group">
+<div class="absolute -left-6 top-1 w-5 h-5 rounded-full bg-surface-container-lowest flex items-center justify-center">
+<div class="w-2.5 h-2.5 rounded-full bg-emerald-600"></div>
+</div>
+<div class="bg-surface-container-low p-3 rounded-lg flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">11:42 AM</span>
+<span class="px-2 py-0.5 rounded-[3px] bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">
+                    [LINKED: WhatsApp Webhook #WH-8812]
+                  </span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                  Quotation spec PDF opened on mobile
+                </div>
+<div class="text-body-sm text-secondary">
+                  Document AMG-G63-FinalQuote.pdf viewed for 4m 12s on iOS device (IP Dubai Marina).
+                </div>
+</div>
+</div>
+</div>
+</div>
+<!-- TAB 3: OWNER HISTORY -->
+<div class="hidden space-y-4" id="tab-owner-history">
+<div class="flex items-center justify-between pb-1">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider">Re-assignment Ledger</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-medium">3 Recorded Shifts</span>
+</div>
+<div class="space-y-3">
+<!-- Shift 1 -->
+<div class="p-3 bg-surface-container-low rounded-lg space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">09:20 AM</span>
+<span class="font-label-numeric-sm text-[11px] font-semibold text-secondary">Intake Round-Robin</span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                System Assigned to Floor Queue
+              </div>
+<div class="text-body-sm text-secondary">
+                Auto-assigned based on front desk entrance beacon algorithm.
+              </div>
+</div>
+<!-- Shift 2 -->
+<div class="p-3 bg-surface-container-low rounded-lg space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">09:45 AM</span>
+<span class="font-label-numeric-sm text-[11px] font-semibold text-primary">Floor Management Action</span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                Floor Manager assigned to Omar K.
+              </div>
+<div class="p-2 bg-surface-container-lowest rounded text-body-sm text-on-surface font-medium">
+                Reason: "Arabic speaker available on floor"
+              </div>
+</div>
+<!-- Shift 3 -->
+<div class="p-3 bg-surface-container-low rounded-lg space-y-1.5">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">10:30 AM</span>
+<span class="font-label-numeric-sm text-[11px] font-semibold text-[#C8321F]">Executive Escalation</span>
+</div>
+<div class="font-headline-md text-body-sm font-semibold text-on-surface">
+                Reassigned to Faris M. (Sales Director)
+              </div>
+<div class="p-2 bg-surface-container-lowest rounded text-body-sm text-on-surface font-medium">
+                Reason: "VIP client requested luxury director directly"
+              </div>
+</div>
+</div>
+</div>
+<!-- TAB 4: ASSIGN OWNER -->
+<div class="hidden space-y-4" id="tab-assign-owner">
+<div class="p-3 bg-surface-container-low rounded-lg">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider block mb-1">Current Active Owner</span>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center font-label-numeric-sm text-label-numeric-sm font-bold">FM</div>
+<div>
+<div class="font-headline-md text-body-md font-bold text-on-surface">Faris M.</div>
+<div class="font-label-numeric-sm text-label-numeric-sm text-secondary">Sales Director • 3 active leads</div>
+</div>
+</div>
+</div>
+<form class="space-y-4" onsubmit="event.preventDefault(); alert('Lead reassignment dispatched to CRM floor sync.');">
+<!-- Consultant Dropdown -->
+<div>
+<label class="font-table-header text-table-header uppercase text-secondary tracking-wider block mb-1.5">
+                Transfer Lead to Consultant
+              </label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-lowest text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-[6px] shadow-sm cursor-pointer hover:bg-surface-container-low focus:outline-none">
+<option value="faris">Faris M. (Sales Director) [3 active leads]</option>
+<option value="tariq">Tariq K. (Luxury Specialist) [5 active leads]</option>
+<option value="karim">Karim A. (Fleet Lead) [Standby]</option>
+<option value="queue">Showroom Floor Unassigned Queue</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-secondary text-[20px]">keyboard_arrow_down</span>
+</div>
+</div>
+<!-- Mandatory Reason -->
+<div>
+<div class="flex items-center justify-between mb-1.5">
+<label class="font-table-header text-table-header uppercase text-secondary tracking-wider">
+                  Mandatory Reassignment Reason *
+                </label>
+<span class="font-label-numeric-sm text-[11px] text-[#C8321F] font-bold">REQUIRED</span>
+</div>
+<textarea class="w-full bg-surface-container-lowest text-on-surface font-body-md text-body-md p-3 rounded-[6px] shadow-sm placeholder:text-outline focus:outline-none" id="reassign-reason" placeholder="Why are you reassigning this lead? (e.g. VIP client escalations, language preference, floor load balancing)" required="" rows="3"></textarea>
+<!-- Quick Prompt Suggestions Chips -->
+<div class="flex flex-wrap gap-1.5 mt-2">
+<button class="px-2 py-1 rounded bg-surface-container font-label-numeric-sm text-[11px] text-secondary hover:text-on-surface hover:bg-surface-container-highest transition-colors" onclick="document.getElementById('reassign-reason').value = 'Arabic speaker required on floor';" type="button">
+                  + Arabic speaker required
+                </button>
+<button class="px-2 py-1 rounded bg-surface-container font-label-numeric-sm text-[11px] text-secondary hover:text-on-surface hover:bg-surface-container-highest transition-colors" onclick="document.getElementById('reassign-reason').value = 'SLA breach escalation to senior director';" type="button">
+                  + SLA breach escalation
+                </button>
+<button class="px-2 py-1 rounded bg-surface-container font-label-numeric-sm text-[11px] text-secondary hover:text-on-surface hover:bg-surface-container-highest transition-colors" onclick="document.getElementById('reassign-reason').value = 'Floor capacity balancing &amp; workload redistribution';" type="button">
+                  + Floor capacity balancing
+                </button>
+</div>
+</div>
+<!-- Action Button -->
+<button class="w-full py-2.5 rounded-[6px] bg-primary-container text-white font-headline-md text-body-md font-semibold shadow-md hover:bg-primary transition-all flex items-center justify-center gap-2" type="submit">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+<span>Confirm Reassignment</span>
+</button>
+</form>
+</div>
+</div>
+<!-- Drawer Footer Metric Stamp -->
+<div class="p-3 bg-surface-container-low flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-secondary shrink-0">
+<span class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span>Lead SLA Valid</span>
+</span>
+<span>Last Audit: 11:42 AM GST</span>
+</div>
+</div>
+</div>
+</div></main></div>
+</body></html>

@@ -149,7 +149,7 @@ Only when all six sites are repointed and each verified.
   to close.
 - Set each tenant's `whatsapp_waha_session` `channel_registry` row to
   `status <> 'active'`. **Do not delete it** — `ON DELETE RESTRICT`, and the
-  history is the point. ALBA's row is
+  history is the point. Tenant A's row is
   `75d67b05-1cd4-4f81-8afd-3c2186f25590` (tenant
   `fff6a2b5-cfd5-4460-8383-875bc5826de0`).
 - Remove the `waha` service from **whichever compose file the box actually

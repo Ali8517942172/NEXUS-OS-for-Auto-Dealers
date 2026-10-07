@@ -25,7 +25,7 @@ The three columns are separate on purpose, because they keep getting collapsed:
 | workflow imported into the n8n box | — | **NOT RUN** — this file's author did not touch the box | **NO** |
 | workflow active on the box | — | **NOT RUN** | **NO** |
 | `GOOGLE_LEAD_KEY_ALBA` set on the box | — | **NOT SET** (as of the last recorded check) | — |
-| ALBA endpoint row enabled | row exists | **`status = 'disabled'`** — measured 16 Sep 2026 | — |
+| Tenant A endpoint row enabled | row exists | **`status = 'disabled'`** — measured 16 Sep 2026 | — |
 | Google Ads lead form pointed at this URL | — | **NOT RUN** | **NO** |
 
 ## The count, which is the only number that settles it

@@ -75,7 +75,7 @@ select id::text, name, created_at from tenants order by created_at;
 
 | id | name | created |
 |---|---|---|
-| `fff6a2b5-cfd5-4460-8383-875bc5826de0` | ALBA CARS | 2026-09-02 08:45:04+00 |
+| `fff6a2b5-cfd5-4460-8383-875bc5826de0` | Tenant A | 2026-09-02 08:45:04+00 |
 | `02c86264-6653-4522-b055-1c3f359a82fe` | UNATTRIBUTED - QUARANTINE (not a dealership) | 2026-09-05 20:12:06+00 |
 
 **The demo tenant `dddddddd-dddd-4ddd-8ddd-dddddddddddd` does NOT exist on
@@ -86,7 +86,7 @@ to solve today. That is a fact about today and not a control: nothing in the
 schema prevents a third tenant id from appearing.
 
 Quarantine holds 21 rows in total — 20 `audit_log`, 1 `communication_logs`.
-Everything else on production is ALBA's.
+Everything else on production is Tenant A's.
 
 ---
 
@@ -97,7 +97,7 @@ select 'leads' t, count(*) n from leads union all select 'inventory', count(*) f
 select 'leads', coalesce(tenant_id::text,'(null)'), count(*) from leads group by 2 union all ... ;
 ```
 
-| table | rows | ALBA | quarantine | carries money |
+| table | rows | Tenant A | quarantine | carries money |
 |---|---|---|---|---|
 | `audit_log` | 898 | 878 | 20 | no |
 | `communication_logs` | 142 | 141 | 1 | no |
@@ -273,7 +273,7 @@ They are not in `ops/journey-lab/DO-NOT-RUN-IN-PRODUCTION/setup_real_data.sql` (
 (`grep -c "NX-10" ops/journey-lab/DO-NOT-RUN-IN-PRODUCTION/setup_real_data.sql` →
 `0`), and `grep -rln NX-1001` finds them only in evidence docs, one tenancy
 migration, and the dashboard unit-form fixtures — **never in an insert script in
-this repo.** Whether ALBA's real stock was entered under NEXUS ids or a fixture
+this repo.** Whether Tenant A's real stock was entered under NEXUS ids or a fixture
 was, is **NOT MEASURABLE from here**. It is UNKNOWN, and UNKNOWN is not ZERO.
 
 These twelve are the entire basis of the Profit Sentinel's twelve scored units.
@@ -297,7 +297,7 @@ Two further facts I measured that it does not state: the `deal_id` names
 `shabbir53ujjainwala@gmail.com` while `customer_name` is `Ali` and `leads.id=38`
 is `Ali` at a different gmail address; and `created_at` is the same day as the
 tenant row itself was created (2026-09-02 08:45 vs 09:59). **Whether this is
-ALBA's real sale or a row entered during setup is UNKNOWN and cannot be settled
+Tenant A's real sale or a row entered during setup is UNKNOWN and cannot be settled
 by any query.** It is the single row behind every "confirmed revenue AED 585,000"
 tile in the product. It is the strongest argument for this contract and it is
 the open question the contract cannot close by itself — only a person can.
@@ -378,8 +378,8 @@ absent afterwards. See `MIGRATION-PATTERN.md` §5.
 
 ## 7. Not measured
 
-- Whether ALBA's twelve `NX-*` units are the dealership's real stock. UNKNOWN.
-- Whether the AED 585,000 `purchase_history` row is a real ALBA sale. UNKNOWN.
+- Whether Tenant A's twelve `NX-*` units are the dealership's real stock. UNKNOWN.
+- Whether the AED 585,000 `purchase_history` row is a real Tenant A sale. UNKNOWN.
 - Staging (`wwspuxrbiyagnrnzgate`) row counts and ACLs. Read-only to me as well,
   and I did not query it. Everything said about staging here is quoted from a
   repo file.

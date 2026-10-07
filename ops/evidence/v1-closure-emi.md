@@ -24,7 +24,7 @@ Continues `/home/claude/out/v1-closure-n8n-2.md`, whose open item 6 this closes.
 ## 1. The defect, measured before anything was changed
 
 `audit_log` row `1d996dec-4efd-48f5-9d2c-ed8cc6c6f4b8`, written 6 Sep 14:55:37,
-tenant ALBA CARS, from Phase 6 execution `10516` → sub-execution `10517`:
+tenant Tenant A, from Phase 6 execution `10516` → sub-execution `10517`:
 
 ```
 *1. What they want*

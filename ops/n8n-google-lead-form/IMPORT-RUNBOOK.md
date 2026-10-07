@@ -24,7 +24,7 @@ the five steps is not a preference, it is the whole safety property:
 
 Measured on production Supabase on 16 September 2026:
 `nexus_lead_endpoint_for_public_key` filters on `e.status = 'active'` **and**
-`tenants.status = 'active'`. ALBA's tenant is already `active`; the endpoint row
+`tenants.status = 'active'`. Tenant A's tenant is already `active`; the endpoint row
 `31d6ff9c-a44a-4046-b75f-7d14baac70fb` is **`disabled`**. A disabled endpoint
 resolves to zero rows, which is answered `403` — the discard direction. So the
 database is enabled **first**, not last.

@@ -21,7 +21,7 @@ combination of them. Most of the disappointment in this project has come from a
 | **Implemented** | The code, schema or workflow exists and is applied or deployed | A migration in `supabase/migrations/`, a file in the shipped bundle, a published workflow on the box |
 | **Tested** | Somebody deliberately tried to break it and recorded the result | An adversarial probe in a rolled-back transaction, a gate check that ran, a harness with named inputs. **A build that compiles is not a test** |
 | **Production-proven** | It has done its job on real production data at least once and left a record | A row, an audit entry, an execution — with the outcome checked, not the count |
-| **Commercially validated** | A dealership that is not ALBA CARS has used it, and ideally paid for it | Nothing in this repository can currently supply this |
+| **Commercially validated** | A dealership that is not Tenant A has used it, and ideally paid for it | Nothing in this repository can currently supply this |
 
 **And as of 8 September 2026 these four columns are reported on a five-level
 ladder.** The owner's reporting rule is
@@ -35,12 +35,12 @@ but a status quoted from here should name the ladder level as well. The full
 applied ladder is at `ops/evidence-standard/STATUS-LADDER.md` and is
 deliberately not reproduced here.
 
-**Why that fourth column names ALBA CARS.** NEXUS is a multi-tenant product
+**Why that fourth column names Tenant A.** NEXUS is a multi-tenant product
 sold to auto dealerships on a subscription — the UAE market first, then
-worldwide — and **ALBA CARS is tenant #1 and the pilot**, not the dealership the
-product was built for. So a capability proving itself on ALBA proves it on the
+worldwide — and **Tenant A is tenant #1 and the pilot**, not the dealership the
+product was built for. So a capability proving itself on Tenant A proves it on the
 proving ground; it does not prove it on the market. Everything measured
-"as the ALBA owner" or "on production" below is a **one-tenant** measurement:
+"as the Tenant A owner" or "on production" below is a **one-tenant** measurement:
 production runs one active dealership plus a quarantine tenant, and two-dealership
 behaviour is exercised on staging deliberately, because activating a second
 dealership on production silences five consumers of `nexus_scoped_tenant_id()`.
@@ -114,7 +114,7 @@ order.
 
 | Capability | Implemented | Tested | Production-proven | Notes |
 |---|---|---|---|---|
-| **Today's Money Leaks** (the screen `LAUNCH.md` calls the product) | **YES — this row was NO yesterday** | **YES** — gate `R2`/`R3` render it, `S6` confirms every `holding_cost_state` value is named, and it was walked adversarially against a demo dealership's data on the day it shipped | **YES** — it renders ALBA's real data and its header states its own derivation on the screen: measured at build time, **2 leaks · AED 66,000 gross margin exposed · 8 checks clear · 9 checks that could not run** | The default landing screen (`lib/nav.js`: `let current = 'moneyleaks'`). **Its live counterparts `L6`, `L7` and `L10` have not been run against it**, and the five header figures have not been re-measured since the engine-defect migrations |
+| **Today's Money Leaks** (the screen `LAUNCH.md` calls the product) | **YES — this row was NO yesterday** | **YES** — gate `R2`/`R3` render it, `S6` confirms every `holding_cost_state` value is named, and it was walked adversarially against a demo dealership's data on the day it shipped | **YES** — it renders Tenant A's real data and its header states its own derivation on the screen: measured at build time, **2 leaks · AED 66,000 gross margin exposed · 8 checks clear · 9 checks that could not run** | The default landing screen (`lib/nav.js`: `let current = 'moneyleaks'`). **Its live counterparts `L6`, `L7` and `L10` have not been run against it**, and the five header figures have not been re-measured since the engine-defect migrations |
 | **Inventory Profit Sentinel** | YES | YES — gate `L6`, `R4`, `S5` pass; renders `NOT_COMPUTABLE` rather than zero with no holding rate | **YES** — 12 of 12 units carry real cost and days in stock; re-measured today, **12 of 12 `gross_margin_state = COMPUTED`**; 3 real `inventory_actions` rows have moved through propose/decide/execute | **A defect in its nightly recompute was closed on 6 Sep**: a unit with no cost on file was given a margin equal to its whole asking price. **0 of 12 net margins are computable** because no holding rate is on record — one number from Ali closes that |
 | **Lead Recovery** | YES | YES — screen renders live; the SLA verdict is now decided by complement over a named vocabulary rather than by string equality | PARTLY — the mechanics render against 3 real leads and the queue is **0**. Its dependency, the 12-Hour Silence Detector, **has never been published** (`activeVersionId: null`) and last succeeded 26 August | The false-CLEAR defect in the SLA branch (`STATUS-2026-09-06.md` §3.1) was in the Money Leaks screen, not in this engine — but it was a claim about this engine's data |
 | **Action Center** (propose / decide / execute) | YES | **YES — this row was PARTLY yesterday.** `B1` (a non-approver's refusal) and `B2` (decision idempotency) **ran and passed**, through GoTrue sign-in and PostgREST, against real staging sessions | PARTLY — 3 real action rows | B1's second door refuses **by GRANT (42501), not by row filter**, which is the distinction that matters. `B2`'s repeat wrote **+0 audit, +0 events** |

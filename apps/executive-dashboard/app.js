@@ -41,6 +41,12 @@ import './lib/theme-auth.css';
 import './lib/theme-modal.css';
 import './lib/theme-table.css';
 import './lib/theme-forms.css';
+/* The Google Stitch layer (7 Oct 2026): Tailwind, compiled at build time from
+   the theme the Stitch exports carry, plus a reset scoped to `.nx-stitch`.
+   LAST, so that on a specificity tie the Stitch rule wins; every utility is
+   scoped under `.nx-tw` (on <html>) and out-ranks the legacy element rules.
+   lib/stitch.css says why preflight is off and what replaced it. */
+import './lib/stitch.css';
 
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
@@ -52,6 +58,7 @@ import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
 import { installPrivacyGuard, onPrivacyChange, privacyOn, setPrivacy } from './lib/privacy.js';
 import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
+import { initShell } from './lib/shell.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
    one of these lines silently removes that screen from the app. */
@@ -89,6 +96,15 @@ import './screens/settings.js';
 import './screens/subscription.js';
 import './screens/setup.js';
 import './screens/team.js';
+/* Added with the Stitch shell, 7 Oct 2026. My Queue, Owner Brief, Exceptions
+   and Vehicle 360 are marked ◐ PARTIAL in the navigation; What's Coming and the
+   fifteen roadmap routes (screens/roadmap.js) render no live data at all. */
+import './screens/my-queue.js';
+import './screens/owner-brief.js';
+import './screens/exceptions.js';
+import './screens/whats-coming.js';
+import './screens/vehicle-360.js';
+import './screens/roadmap.js';
 
 /* ── The Revenue Recovery engine screens ────────────────────────────────────
    Lead Recovery, Deal Rescue, Attribution and Policy are being built as four
@@ -131,30 +147,123 @@ import.meta.glob([
    an account is the reader's half. The note is a JS comment rather than an
    HTML one on purpose: an HTML comment inside this template is shipped into
    the page and readable with View Source, which is not a smaller audience. */
+/* The sign-in card is design/stitch/sign-in-nexus-os-dealership-authentication
+   --60425b.html, with three things deliberately not carried over:
+
+   1. Its claims. The export's left column says the product is "TDRA Registered",
+      "Trusted by premier UAE dealerships", that MFA is active and that latency
+      is 38 ms; its form pre-fills a tenant code and a "Remember this terminal"
+      box. None of that is true of this build, and a sign-in page is the first
+      thing a prospective customer reads. The three pillars describe what NEXUS
+      does, in words this repository can back.
+   2. Its width. The export wraps a two-column card in `max-w-md`, which crushes
+      both columns into 448px (rendered side by side with the export, 7 Oct).
+      The card is the design; `max-w-5xl` is the container that lets it render.
+   3. Its auth. The logic below is the original: the same fields (#li, #lp,
+      #lgo — QUALITY_GATE.mjs signs in through them), the same call, the same
+      error path. The error text is still Supabase's own sentence, escaped.
+
+   The sub-line under the form names who to ask, never the identity supplier
+   (5 Sep 2026): which supplier holds the password is NEXUS's implementation. */
+const SIGNIN_FRAME = (rightHtml) => `
+  <div class="min-h-screen flex items-center justify-center p-space-lg bg-background text-on-surface font-body-md text-body-md">
+  <main class="w-full max-w-5xl">
+  <div class="w-full bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden flex flex-col lg:flex-row min-h-[640px]">
+    <div class="w-full lg:w-[45%] bg-on-surface text-surface flex flex-col justify-between p-space-lg lg:p-space-xl relative overflow-hidden">
+      <div class="absolute inset-0 opacity-10 pointer-events-none">
+        <svg class="w-full h-full" height="100%" width="100%" xmlns="http://www.w3.org/2000/svg"><defs>
+          <pattern height="36" id="tech-grid" patternUnits="userSpaceOnUse" width="36"><path d="M 36 0 L 0 0 0 36" fill="none" stroke="#afc6ff" stroke-width="0.75"></path></pattern>
+        </defs><rect fill="url(#tech-grid)" height="100%" width="100%"></rect></svg>
+      </div>
+      <div class="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-primary-container/20 blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-tertiary-container/30 blur-3xl pointer-events-none"></div>
+      <div class="relative z-10 flex flex-col gap-space-lg">
+        <div class="flex items-center gap-space-sm">
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-tertiary-fixed"></span>
+          <span class="font-headline-md text-headline-md tracking-wider text-surface-container-lowest">NEXUS OS</span>
+        </div>
+        <div class="flex flex-col gap-space-sm mt-space-sm">
+          <span class="font-label-numeric-sm text-label-numeric-sm text-tertiary-fixed uppercase tracking-wider">Revenue recovery for dealerships</span>
+          <h1 class="font-headline-lg text-headline-lg text-surface-container-lowest leading-snug">Find the money your dealership is leaking — and recover it.</h1>
+        </div>
+        <div class="flex flex-col gap-space-md mt-space-xs">
+          <div class="flex items-start gap-space-sm bg-surface-container-high/5 p-space-sm rounded-lg">
+            <span class="material-symbols-outlined text-tertiary-fixed text-[20px] mt-0.5">radar</span>
+            <div class="flex flex-col"><span class="font-body-md text-body-md text-surface-container-lowest font-medium">Where money is leaking</span>
+              <span class="font-body-sm text-body-sm text-outline-variant">Enquiries waiting for a reply, deals that stalled and stock that is ageing, in one place.</span></div>
+          </div>
+          <div class="flex items-start gap-space-sm bg-surface-container-high/5 p-space-sm rounded-lg">
+            <span class="material-symbols-outlined text-tertiary-fixed text-[20px] mt-0.5">auto_mode</span>
+            <div class="flex flex-col"><span class="font-body-md text-body-md text-surface-container-lowest font-medium">The next best action</span>
+              <span class="font-body-sm text-body-sm text-outline-variant">Each leak comes with a step your team can take — and your team decides.</span></div>
+          </div>
+          <div class="flex items-start gap-space-sm bg-surface-container-high/5 p-space-sm rounded-lg">
+            <span class="material-symbols-outlined text-tertiary-fixed text-[20px] mt-0.5">hub</span>
+            <div class="flex flex-col"><span class="font-body-md text-body-md text-surface-container-lowest font-medium">Above your existing systems</span>
+              <span class="font-body-sm text-body-sm text-outline-variant">NEXUS sits on top of the tools your dealership already uses and replaces none of them.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="w-full lg:w-[55%] bg-surface-bright flex flex-col justify-center p-space-lg lg:p-space-xl">
+      <div class="w-full max-w-lg mx-auto flex flex-col gap-space-md">${rightHtml}</div>
+    </div>
+  </div>
+  </main></div>`;
+
 function renderLogin(msg) {
   $('boot').classList.remove('hide');
   $('app').classList.add('hide');
-  $('boot').innerHTML = `
-    <div class="card login-card">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-        <div class="brand-mark">N</div><div class="brand-name">NEXUS OS</div>
+  $('boot').innerHTML = SIGNIN_FRAME(`
+      <div class="flex flex-col gap-space-xs">
+        <span class="font-label-numeric-sm text-label-numeric-sm uppercase tracking-wider text-secondary">Sign in</span>
+        <h2 class="font-headline-lg text-headline-lg text-on-surface">Dealership Sign In</h2>
+        <p class="font-body-md text-body-md text-on-surface-variant">Sign in with the account NEXUS created for you.</p>
       </div>
-      ${msg ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span><div>${esc(msg)}</div></div>` : ''}
-      <div class="grid" style="gap:14px">
-        <div class="field"><label for="li">Email</label><input type="email" id="li" autocomplete="username" /></div>
-        <div class="field"><label for="lp">Password</label><input type="password" id="lp" autocomplete="current-password" /></div>
-        <button class="btn primary" id="lgo">Sign in</button>
-      </div>
-      <div class="cell-sub" style="margin-top:14px">Accounts are created by NEXUS. Ask NEXUS support to add one, or to reset a password.</div>
-    </div>`;
+      ${msg ? `<div class="bg-error-container text-on-error-container p-space-sm rounded-lg flex items-start gap-space-sm" role="alert">
+        <span class="material-symbols-outlined text-error text-[20px] mt-0.5 shrink-0">error</span>
+        <div class="flex-1 flex flex-col"><span class="font-body-md text-body-md font-semibold text-error">Couldn't sign you in</span>
+          <span class="font-body-sm text-body-sm text-on-error-container leading-tight mt-0.5">${esc(msg)}</span></div>
+      </div>` : ''}
+      <form class="flex flex-col gap-space-md" id="loginForm" novalidate>
+        <div class="flex flex-col gap-1.5">
+          <label class="font-body-sm text-body-sm font-semibold text-on-surface" for="li">Work email address</label>
+          <div class="relative flex items-center">
+            <span class="material-symbols-outlined text-outline absolute left-3 pointer-events-none text-[20px]">alternate_email</span>
+            <input class="w-full bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-10 pr-3 py-2.5 rounded-lg shadow-sm border border-outline-variant/60 focus:outline-none focus:ring-2 focus:ring-primary-container" id="li" type="email" autocomplete="username" placeholder="name@dealership.ae" />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="font-body-sm text-body-sm font-semibold text-on-surface" for="lp">Password</label>
+          <div class="relative flex items-center">
+            <span class="material-symbols-outlined text-outline absolute left-3 pointer-events-none text-[20px]">lock</span>
+            <input class="w-full bg-surface-container-lowest text-on-surface font-label-numeric-md text-label-numeric-md tracking-widest pl-10 pr-10 py-2.5 rounded-lg shadow-sm border border-outline-variant/60 focus:outline-none focus:ring-2 focus:ring-primary-container" id="lp" type="password" autocomplete="current-password" placeholder="Enter password" />
+            <button class="absolute right-3 text-outline hover:text-on-surface focus:outline-none p-0.5" id="lpShow" type="button" aria-label="Show password" aria-pressed="false">
+              <span class="material-symbols-outlined text-[20px]">visibility</span></button>
+          </div>
+        </div>
+        <button class="w-full bg-primary-container hover:bg-primary text-on-primary py-3 rounded-lg font-body-md text-body-md font-semibold flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-primary-container focus:ring-offset-2 disabled:opacity-70" id="lgo" type="submit">
+          <span>Sign in to NEXUS OS</span><span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </button>
+      </form>
+      <div class="bg-surface-container-low p-space-sm rounded-lg flex items-start gap-space-sm mt-space-xs">
+        <span class="material-symbols-outlined text-secondary text-[20px] shrink-0 mt-0.5">vpn_key_alert</span>
+        <p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+          <span class="font-semibold text-on-surface">Accounts are created by NEXUS.</span> Ask NEXUS support to add one, or to reset a password.</p>
+      </div>`);
   const go2 = async () => {
-    const btn = $('lgo'); btn.disabled = true; btn.textContent = 'Signing in…';
+    const btn = $('lgo'); btn.disabled = true; btn.querySelector('span').textContent = 'Signing in…';
     const { error } = await supabase.auth.signInWithPassword({ email: $('li').value.trim(), password: $('lp').value });
     if (error) { renderLogin(error.message); return; }
     boot();
   };
-  $('lgo').addEventListener('click', go2);
-  $('lp').addEventListener('keydown', e => { if (e.key === 'Enter') go2(); });
+  $('loginForm').addEventListener('submit', e => { e.preventDefault(); go2(); });
+  $('lpShow').addEventListener('click', () => {
+    const p = $('lp'); const show = p.type === 'password';
+    p.type = show ? 'text' : 'password';
+    $('lpShow').setAttribute('aria-pressed', show ? 'true' : 'false');
+    $('lpShow').querySelector('span').textContent = show ? 'visibility_off' : 'visibility';
+  });
 }
 
 /* lib/data.js drops the session and needs the login screen back, but it must
@@ -187,18 +296,17 @@ async function boot() {
        and the fix is a phone call. What is ours goes to the console, where a
        support call can retrieve it, and is not painted. */
     console.error('[NEXUS] This deployment is missing configuration it needs:', envErrors.join(' | '));
-    $('boot').innerHTML = `<div class="card login-card">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-        <div class="brand-mark">N</div><div class="brand-name">NEXUS OS</div>
+    $('boot').innerHTML = SIGNIN_FRAME(`
+      <div class="bg-error-container text-on-error-container p-space-sm rounded-lg flex items-start gap-space-sm" role="alert">
+        <span class="material-symbols-outlined text-error text-[20px] mt-0.5 shrink-0">error</span>
+        <span class="font-body-md text-body-md font-semibold text-error">NEXUS cannot start on this installation.</span>
       </div>
-      <div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
-        <div>NEXUS cannot start on this installation.</div></div>
-      <div class="cell-sub" style="margin-top:14px">A setting NEXUS needs in order to reach your data was not
+      <p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">A setting NEXUS needs in order to reach your data was not
         supplied when this dashboard was installed, so no screen would be able to load anything and none is
-        offered. Nothing has happened to your data, and nothing has been lost.</div>
-      <div class="cell-sub" style="margin-top:10px">This is not something that can be corrected from this screen,
+        offered. Nothing has happened to your data, and nothing has been lost.</p>
+      <p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">This is not something that can be corrected from this screen,
         from this browser, or by signing in. Contact NEXUS support &mdash; the details they need are already
-        recorded.</div></div>`;
+        recorded.</p>`);
     return;
   }
 
@@ -252,12 +360,18 @@ async function boot() {
   $('app').classList.remove('hide');
   $('userInitials').textContent = initials(ME?.name || SESSION.user.email);
   $('userName').textContent = ME?.name || SESSION.user.email;
+  $('sideUserName').textContent = ME?.name || SESSION.user.email;
   /* Two different facts, and the header used to show only the first. The job
      title says what this person does; the account role says what the product
      will let them do, and it is the one that explains a refused action. */
   $('userRole').textContent = [ME?.role, myRole()].filter(Boolean).join(' · ') || 'signed in';
 
   buildNav();
+  /* The live parts of the Stitch topbar: freshness, health, scope menu, bell,
+     search and shortcuts (lib/shell.js). After buildNav(), whose scope chip and
+     breadcrumb it shares; the health check it starts replaces the connection
+     pill that used to be painted further down this function. */
+  initShell();
   applyDensity();
 
   /* Privacy mode (lib/privacy.js): the top-bar toggle, and the guard that masks
@@ -266,8 +380,15 @@ async function boot() {
      (displayName and friends) repaint too. */
   installPrivacyGuard(document.body);
   const pBtn = $('privacyBtn');
+  /* Two complete class strings, swapped whole (the Stitch rule — see
+     scripts/stitch-classes.mjs). The legacy `#privacyBtn.on` rule in styles.css
+     is no longer triggered: the pressed state is the Stitch active style. */
+  const PRIVACY_BTN = {
+    off: 'p-1.5 rounded-lg hover:bg-surface-container-low hover:text-on-surface transition-colors',
+    on:  'p-1.5 rounded-lg bg-primary-container text-on-primary transition-colors',
+  };
   const paintPrivacy = on => {
-    pBtn.classList.toggle('on', on);
+    pBtn.className = on ? PRIVACY_BTN.on : PRIVACY_BTN.off;
     pBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     pBtn.querySelector('.material-symbols-outlined').textContent = on ? 'visibility_off' : 'visibility';
   };
@@ -283,23 +404,11 @@ async function boot() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });
 
-  const conn = $('connState');
-  /* The failure branch used to paint the first 40 characters of the error into
-     the header pill, on every screen, permanently. Those 40 characters are
-     whatever the data layer said — a PostgREST code, a relation name, a
-     permission-denied naming a table — and a truncated one at that, so the
-     reader got a fragment of our schema and no idea what to do. The pill has
-     room for the state; the tooltip carries the dealership's half, and the
-     diagnostic goes to the console for NEXUS. */
-  db('leads?select=id&limit=1')
-    .then(() => { conn.className = 'pill ok'; conn.title = 'The dashboard is reading your live data.'; conn.innerHTML = '<span class="dot"></span>Live'; })
-    .catch(e => {
-      console.error('[NEXUS] connection check failed:', e && e.message);
-      conn.className = 'pill hot';
-      conn.title = 'The dashboard cannot reach your data right now, so any screen that loads may be incomplete or empty. '
-        + 'Refresh once; if it stays this way, contact NEXUS support.';
-      conn.innerHTML = '<span class="dot"></span>No connection';
-    });
+  /* The connection pill that used to be painted here is now the health chip in
+     the Stitch topbar (lib/shell.js): the same one indexed read of `leads`, run
+     through lib/integrations.js's 'NEXUS data' check so Settings and the topbar
+     cannot disagree, with the same rule — the state on the chip, the
+     dealership's half in its tooltip, the diagnostic in the console. */
 
   /* Started after the nav exists — the badges write into spans lib/nav.js
      creates — and before the first screen renders, so the sidebar is already

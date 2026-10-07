@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"on-tertiary-fixed":"#001f25","surface-bright":"#faf8ff","on-background":"#131b2d","surface-container":"#e9edff","secondary":"#4c5e87","on-primary-fixed":"#001a43","surface":"#faf8ff","primary-fixed-dim":"#afc6ff","primary-fixed":"#d9e2ff","on-secondary-fixed-variant":"#34466e","outline-variant":"#c2c6d5","on-secondary-container":"#465780","on-tertiary":"#ffffff","secondary-fixed-dim":"#b4c6f5","on-secondary":"#ffffff","error-container":"#ffdad6","inverse-surface":"#283043","tertiary-fixed":"#a0efff","on-tertiary-container":"#b1f1ff","tertiary-container":"#007281","on-primary":"#ffffff","primary":"#004ba8","inverse-on-surface":"#edf0ff","on-primary-fixed-variant":"#004398","surface-container-lowest":"#ffffff","on-error":"#ffffff","surface-dim":"#d2d9f3","outline":"#737784","error":"#ba1a1a","background":"#faf8ff","surface-container-highest":"#dbe2fb","tertiary-fixed-dim":"#44d8f0","secondary-container":"#bccefe","on-surface-variant":"#424753","secondary-fixed":"#d9e2ff","primary-container":"#2563c9","surface-variant":"#dbe2fb","on-surface":"#131b2d","on-tertiary-fixed-variant":"#004e59","tertiary":"#005864","on-secondary-fixed":"#041a40","on-error-container":"#93000a","surface-container-high":"#e1e8ff","inverse-primary":"#afc6ff","surface-container-low":"#f2f3ff","surface-tint":"#155ac0","on-primary-container":"#dee6ff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"margin":"1.5rem","space-xl":"2rem","space-xs":"0.25rem","space-sm":"0.5rem","gutter":"1rem","space-md":"1rem","space-lg":"1.5rem"},"fontFamily":{"label-numeric-md":["JetBrains Mono"],"headline-lg":["Inter"],"body-md":["Inter"],"headline-md":["Inter"],"body-lg":["Inter"],"label-numeric-lg":["JetBrains Mono"],"body-sm":["Inter"],"headline-xl":["Inter"],"label-numeric-sm":["JetBrains Mono"],"table-header":["Inter"]},"fontSize":{"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}]}}}};</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-on-surface text-surface-container-highest z-50 flex flex-col justify-between select-none shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col h-full overflow-hidden"><div class="h-14 px-space-md flex items-center justify-between border-b border-surface-variant/10 shrink-0"><div class="flex items-center gap-space-sm"><div class="w-7 h-7 rounded bg-primary-container flex items-center justify-center text-on-primary font-headline-md text-headline-md tracking-wider font-semibold">N</div><div><div class="font-headline-md text-body-md text-surface tracking-tight font-semibold">NEXUS OS</div><div class="font-label-numeric-sm text-body-sm text-surface-variant/60">REV COCKPIT v4.2</div></div></div><span class="material-symbols-outlined text-surface-variant/40 text-[18px]">terminal</span></div><div class="flex-1 overflow-y-auto px-space-xs py-space-sm space-y-space-md"><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">PRIMARY NAVIGATION</div><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="owner-brief" href="#"><span>Executive Daily Briefing</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="todays-money-leaks" href="#"><span>Today's Money Leaks</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="overview" href="#"><span>Overview</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="leads" href="#"><span>Leads Pipeline</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="record-a-lead" href="#"><span>Record a Lead</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="deals" href="#"><span>Deals &amp; Closing Desk</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">INTELLIGENCE &amp; ASSETS</div><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="inventory" href="#"><span>Inventory &amp; Profit Sentinel</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="recon-tracker" href="#"><span>Reconditioning Tracker</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="revenue-recovery" href="#"><span>Revenue Recovery Desk</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="ask-ai" href="#"><span>Ask AI Intelligence</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="competitors" href="#"><span>Competitor Matrix</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">INFRASTRUCTURE &amp; COMPLIANCE</div><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="channels" href="#"><span>Channels &amp; Telephony</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="integrations" href="#"><span>Integrations &amp; Webhooks</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="compliance" href="#"><span>RTA &amp; UAE Compliance</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="automation" href="#"><span>Automation Triggers</span></a></nav><nav class="space-y-space-xs" data-active-classes="bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim"><div class="px-space-sm py-space-xs font-table-header text-table-header uppercase text-surface-variant/50 tracking-wider">SETTINGS</div><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="settings" href="#"><span>Workspace &amp; System Configuration</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="settings-group-branches" href="#"><span>Group &amp; Branches</span></a><a aria-current="page" class="flex items-center px-space-sm py-1.5 rounded-r transition-colors bg-primary text-surface font-semibold border-l-[3px] border-tertiary-fixed-dim" data-path="settings-localization" href="#"><span>Markets &amp; Localization</span></a><a class="flex items-center px-space-sm py-1.5 rounded-r text-surface-variant hover:bg-surface-variant/10 hover:text-surface transition-colors font-body-md text-body-md" data-path="subscription" href="#"><span>Subscription &amp; Tier</span></a></nav></div><div class="border-t border-surface-variant/10 p-space-sm bg-on-surface/90 space-y-space-xs shrink-0"><div class="flex items-center justify-between pt-space-xs"><div class="flex items-center gap-space-sm min-w-0"><div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0 font-label-numeric-sm text-label-numeric-sm text-on-primary font-bold">RA</div><div class="min-w-0 flex-1"><div class="font-headline-md text-body-sm text-surface truncate font-semibold">Rashid Al-Maktoum</div><div class="font-body-sm text-body-sm text-surface-variant/60 truncate">Dealer Principal</div></div></div><button class="p-1 text-surface-variant hover:text-error transition-colors rounded" title="Sign out" type="button"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest z-40 flex items-center justify-between px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[20px]">directions_car</span><span class="font-headline-md text-body-md text-on-surface font-semibold">Demo Motors | Dubai, UAE</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-low border border-outline-variant/30"><div class="w-1.5 h-1.5 rounded-full bg-tertiary-container animate-pulse"></div><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold tracking-wider">PRODUCTION</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container"><span class="material-symbols-outlined text-[14px] text-outline">schedule</span><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">14:42:09 GST</span></div></div><div class="flex-1 max-w-md mx-space-lg"><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-outline text-[18px]">search</span><input class="w-full pl-9 pr-8 py-1.5 bg-surface-container-low rounded font-body-sm text-body-sm text-on-surface placeholder:text-outline outline-none focus:bg-surface-container-lowest focus:ring-1 focus:ring-primary transition-all" placeholder="Omnibar: Search VIN, Deal ID, Client, Stock # (Press /)" type="text"/><span class="absolute right-2 font-label-numeric-sm text-label-numeric-sm text-outline px-1 rounded bg-surface-container">/</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center p-0.5 rounded bg-surface-container-low font-label-numeric-sm text-label-numeric-sm"><button class="px-2 py-1 rounded bg-surface-container-lowest text-primary font-semibold shadow-[0_1px_8px_rgba(0,0,0,0.04)]" type="button">AED</button><button class="px-2 py-1 text-on-surface-variant hover:text-on-surface transition-colors" type="button">USD</button></div><button class="relative p-1.5 text-on-surface-variant hover:text-on-surface transition-colors rounded" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-error"></span></button><div class="flex items-center gap-space-sm pl-space-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="hidden xl:block text-left"><div class="font-headline-md text-body-sm text-on-surface font-semibold leading-tight">Rashid Al-Maktoum</div><div class="font-body-sm text-body-sm text-on-surface-variant leading-tight">Dealer Principal</div></div></div></div></header><main class="relative pt-14 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<div class="px-space-lg py-space-md bg-surface space-y-space-lg">
+<!-- Top Header Area -->
+<div class="flex flex-col gap-space-sm pb-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-table-header text-table-header uppercase tracking-wider text-secondary">SETTINGS &amp; LOCALIZATION</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-label-numeric-sm font-label-numeric-sm font-semibold tracking-wider bg-surface-container text-primary">PLANNED</span>
+</div>
+<div class="flex flex-wrap items-center gap-space-sm">
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container text-body-md font-body-md shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px] text-primary">notifications</span>
+<span>Notify me on release</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-container text-on-primary hover:bg-primary text-body-md font-body-md shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">translate</span>
+<span>Preview Arabic RTL Engine</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest text-secondary hover:bg-surface-container text-body-md font-body-md shadow-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">info</span>
+<span>Learn more</span>
+</button>
+</div>
+</div>
+<div class="space-y-1">
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Markets &amp; Localization</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-4xl">
+          Manage regional country packs, multi-currency display standards, bilingual English/Arabic interfaces, and localized commercial compliance rules.
+        </p>
+</div>
+<div class="flex items-center gap-2 pt-1 text-on-surface-variant">
+<span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+<span class="font-body-sm text-body-sm text-secondary">
+          Prerequisite: Requires jurisdictional territory activation and NEXUS Policy Engine integration.
+        </span>
+</div>
+</div>
+<!-- Territory Configuration Selector Bar -->
+<div class="bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex flex-wrap items-center gap-1.5">
+<span class="font-table-header text-table-header uppercase px-space-xs text-secondary">Territory Switcher</span>
+<button class="px-3 py-1 rounded bg-surface-container-high text-primary font-headline-md text-body-sm font-semibold flex items-center gap-1.5" type="button">
+<span class="w-2 h-2 rounded-full bg-tertiary-container"></span>
+<span>UAE (Active Base)</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-md text-body-sm transition-colors flex items-center gap-1.5" type="button">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span>Saudi Arabia (SAR)</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-md text-body-sm transition-colors flex items-center gap-1.5" type="button">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span>Qatar (QAR)</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-md text-body-sm transition-colors flex items-center gap-1.5" type="button">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span>Oman (OMR)</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-md text-body-sm transition-colors flex items-center gap-1.5" type="button">
+<span class="w-1.5 h-1.5 rounded-full bg-outline-variant"></span>
+<span>International (USD)</span>
+</button>
+</div>
+<div class="flex items-center gap-space-sm px-space-xs">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">SCHEMA REV:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold bg-surface-container px-2 py-0.5 rounded">LOC-GCC-v2.9-STAGING</span>
+</div>
+</div>
+<!-- Regional Country Packs Grid -->
+<div class="space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[20px]">public</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Regional Country Packs</h2>
+</div>
+<span class="font-body-sm text-body-sm text-secondary">4 GCC Jurisdictions Modeled</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">
+<!-- Card 1: UAE -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-lg font-semibold text-on-surface">UAE Pack</span>
+<span class="font-body-sm text-body-sm text-secondary">(Base)</span>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-label-numeric-sm font-label-numeric-sm font-semibold tracking-wider bg-surface-container text-tertiary-container">ACTIVE CORE</span>
+</div>
+<div class="space-y-2 pt-2 text-body-sm font-body-sm">
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Base Currency:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">AED</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">Language Topology:</span>
+<span class="text-on-surface font-medium">Dual EN / AR</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">VAT Standard:</span>
+<span class="text-on-surface font-medium">5% FTA Standard</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">TDRA Messaging Window:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">07:00–21:00 GST</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Identity Linkage:</span>
+<span class="text-on-surface font-medium">UAE PASS Ready</span>
+</div>
+</div>
+</div>
+<div class="pt-2">
+<button class="w-full py-1.5 px-3 rounded-lg bg-surface-container text-primary font-headline-md text-body-sm hover:bg-surface-container-high transition-colors" type="button">
+              Manage UAE Core
+            </button>
+</div>
+</div>
+<!-- Card 2: KSA -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-lg font-semibold text-on-surface">Saudi Arabia</span>
+<span class="font-body-sm text-body-sm text-secondary">(KSA)</span>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-label-numeric-sm font-label-numeric-sm font-semibold tracking-wider bg-surface-container text-primary">PLANNED</span>
+</div>
+<div class="space-y-2 pt-2 text-body-sm font-body-sm">
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Base Currency:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">SAR</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">Language Topology:</span>
+<span class="text-on-surface font-medium">Arabic Primary / EN</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Tax Engine:</span>
+<span class="text-on-surface font-medium">15% ZATCA Phase 2</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">CITC Messaging Window:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">09:00–22:00 AST</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Identity Linkage:</span>
+<span class="text-on-surface font-medium">Nafath SSO Gateway</span>
+</div>
+</div>
+</div>
+<div class="pt-2 flex gap-2">
+<button class="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-sm font-body-md transition-colors text-center" type="button">
+              Notify me
+            </button>
+<button class="py-1.5 px-3 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary text-body-sm font-body-md transition-colors" type="button">
+              Preview
+            </button>
+</div>
+</div>
+<!-- Card 3: Qatar -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-lg font-semibold text-on-surface">State of Qatar</span>
+<span class="font-body-sm text-body-sm text-secondary">(QAR)</span>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-label-numeric-sm font-label-numeric-sm font-semibold tracking-wider bg-surface-container text-primary">PLANNED</span>
+</div>
+<div class="space-y-2 pt-2 text-body-sm font-body-sm">
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Base Currency:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">QAR</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">Language Topology:</span>
+<span class="text-on-surface font-medium">Dual EN / AR</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Tax Engine:</span>
+<span class="text-on-surface font-medium">Customs &amp; MoCI Rules</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">CRA Messaging Window:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">08:00–21:00 AST</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Identity Linkage:</span>
+<span class="text-on-surface font-medium">National ID Verification</span>
+</div>
+</div>
+</div>
+<div class="pt-2 flex gap-2">
+<button class="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-sm font-body-md transition-colors text-center" type="button">
+              Notify me
+            </button>
+<button class="py-1.5 px-3 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary text-body-sm font-body-md transition-colors" type="button">
+              Preview
+            </button>
+</div>
+</div>
+<!-- Card 4: Oman -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-lg font-semibold text-on-surface">Sultanate of Oman</span>
+<span class="font-body-sm text-body-sm text-secondary">(OMR)</span>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-label-numeric-sm font-label-numeric-sm font-semibold tracking-wider bg-surface-container text-primary">PLANNED</span>
+</div>
+<div class="space-y-2 pt-2 text-body-sm font-body-sm">
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Base Currency:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">OMR</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">Language Topology:</span>
+<span class="text-on-surface font-medium">Dual EN / AR</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Tax Engine:</span>
+<span class="text-on-surface font-medium">5% OTA VAT Framework</span>
+</div>
+<div class="flex items-center justify-between py-1 px-2">
+<span class="text-secondary">TRA Messaging Window:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">08:00–20:00 GST</span>
+</div>
+<div class="flex items-center justify-between py-1 bg-surface-container-low px-2 rounded">
+<span class="text-secondary">Identity Linkage:</span>
+<span class="text-on-surface font-medium">ROP PKI Integration</span>
+</div>
+</div>
+</div>
+<div class="pt-2 flex gap-2">
+<button class="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-sm font-body-md transition-colors text-center" type="button">
+              Notify me
+            </button>
+<button class="py-1.5 px-3 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary text-body-sm font-body-md transition-colors" type="button">
+              Preview
+            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive Right-to-Left (RTL) Bilingual Interface Preview -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-md">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<div class="space-y-1">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[20px]">sync_alt</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Bilingual Mirroring Engine (LTR ↔ RTL)</h2>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Side-by-side rendering benchmark comparing typography density, optical alignment, and monospaced financial currency locks.
+          </p>
+</div>
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-primary hover:bg-surface-container-high font-headline-md text-body-sm transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+<span>Preview full RTL workspace</span>
+</button>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-lg pt-space-xs">
+<!-- LTR (English) Preview -->
+<div class="bg-surface-container-low rounded-xl p-space-md space-y-space-md">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md font-semibold text-on-surface">English Workspace (LTR)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary bg-surface-container px-2 py-0.5 rounded">Inter Typography</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">DIRECTION: LTR</span>
+</div>
+<!-- Mock Dealership Inventory Card in English -->
+<div class="bg-surface-container-lowest rounded-lg p-space-md shadow-sm space-y-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">STOCK #—</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-tertiary-container font-semibold">Ready</span>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface">
+              2024 Mercedes-Maybach GLS 600
+            </div>
+<div class="grid grid-cols-2 gap-space-sm pt-2 bg-surface-container-low p-space-sm rounded">
+<div>
+<div class="font-table-header text-table-header uppercase text-secondary">List Price</div>
+<div class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">AED —</div>
+</div>
+<div class="text-right">
+<div class="font-table-header text-table-header uppercase text-secondary">Status Flag</div>
+<div class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">—</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 text-body-sm font-body-sm text-secondary">
+<span>VIN: —</span>
+<span>Recon Cycle: —</span>
+</div>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded-lg flex items-center justify-between text-body-sm font-body-sm">
+<span class="text-secondary">Font Engine Fallback:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Inter • JetBrains Mono</span>
+</div>
+</div>
+<!-- RTL (Arabic) Preview -->
+<div class="bg-surface-container-low rounded-xl p-space-md space-y-space-md" dir="rtl">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md font-semibold text-on-surface">مساحة العمل العربية (RTL)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary bg-surface-container px-2 py-0.5 rounded">IBM Plex Sans Arabic</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">الاتجاه: RTL</span>
+</div>
+<!-- Mock Dealership Inventory Card in Arabic -->
+<div class="bg-surface-container-lowest rounded-lg p-space-md shadow-sm space-y-space-sm text-right">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">رقم المخزون #—</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-tertiary-container font-semibold">جاهز</span>
+</div>
+<div class="font-headline-md text-headline-md text-on-surface">
+              ٢٠٢٤ مرسيدس-مايباخ GLS 600
+            </div>
+<div class="grid grid-cols-2 gap-space-sm pt-2 bg-surface-container-low p-space-sm rounded">
+<div>
+<div class="font-table-header text-table-header uppercase text-secondary">سعر العرض</div>
+<div class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">د.إ —</div>
+</div>
+<div class="text-left">
+<div class="font-table-header text-table-header uppercase text-secondary">الحالة التشغيلية</div>
+<div class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold">—</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2 text-body-sm font-body-sm text-secondary">
+<span>رقم الهيكل VIN: —</span>
+<span>دورة التجهيز: —</span>
+</div>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded-lg flex items-center justify-between text-body-sm font-body-sm">
+<span class="text-secondary">محرك الخطوط العربي:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Cairo • IBM Plex Sans Arabic</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Policy Engine & Commercial Law Pack Association -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-md">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<div class="space-y-1">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[20px]">policy</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Policy Engine &amp; Commercial Law Pack Association</h2>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Deterministic rule assignment for cross-border taxation, quiet hours telephony, currency pegs, and national digital ID APIs.
+          </p>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-table-header text-table-header uppercase text-secondary">STATUS:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm bg-surface-container px-2 py-0.5 rounded text-on-surface font-semibold">SLOTS LOCKED (STAGING)</span>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md pt-space-xs">
+<!-- Slot 1 -->
+<div class="bg-surface-container-low rounded-lg p-space-md space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">receipt_long</span>
+<span class="font-headline-md text-body-md font-semibold text-on-surface">Tax Calculation &amp; Invoicing Format</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary uppercase">SLOT 01</span>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">—</span>
+<span class="font-body-sm text-body-sm text-secondary">Awaiting ZATCA / FTA schema verification</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm text-secondary px-1">
+<span>Cryptographic Stamp Validation</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">—</span>
+</div>
+</div>
+<!-- Slot 2 -->
+<div class="bg-surface-container-low rounded-lg p-space-md space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">chat_bubble_outline</span>
+<span class="font-headline-md text-body-md font-semibold text-on-surface">WhatsApp / SMS Outbound Quiet Hours</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary uppercase">SLOT 02</span>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">—</span>
+<span class="font-body-sm text-body-sm text-secondary">Local telecom regulatory compliance</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm text-secondary px-1">
+<span>Blackout Window Enforcement</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">—</span>
+</div>
+</div>
+<!-- Slot 3 -->
+<div class="bg-surface-container-low rounded-lg p-space-md space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">currency_exchange</span>
+<span class="font-headline-md text-body-md font-semibold text-on-surface">Cross-Currency FX Exchange Reference Feed</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary uppercase">SLOT 03</span>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">—</span>
+<span class="font-body-sm text-body-sm text-secondary">Central Bank live rates API</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm text-secondary px-1">
+<span>Automatic Desk Margin Recalibration</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">—</span>
+</div>
+</div>
+<!-- Slot 4 -->
+<div class="bg-surface-container-low rounded-lg p-space-md space-y-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">badge</span>
+<span class="font-headline-md text-body-md font-semibold text-on-surface">Identity Verification Gateways</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary uppercase">SLOT 04</span>
+</div>
+<div class="p-space-sm bg-surface-container-lowest rounded flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">—</span>
+<span class="font-body-sm text-body-sm text-secondary">UAE PASS vs KSA Nafath integration</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm text-secondary px-1">
+<span>Biometric Signature Handshake</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">—</span>
+</div>
+</div>
+</div>
+<!-- Bottom Controls Area -->
+<div class="flex flex-wrap items-center justify-between gap-space-md pt-space-md border-t border-surface-container">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline text-[18px]">lock</span>
+<span class="font-body-sm text-body-sm text-secondary">Configuration changes require Dealer Principal security authentication</span>
+</div>
+<div class="flex items-center gap-space-sm">
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-md font-body-md transition-colors" type="button">
+            Notify me
+          </button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container text-primary font-headline-md text-body-md transition-colors" type="button">
+            Preview localization manifest
+          </button>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary text-body-md font-body-md transition-colors" type="button">
+            Learn more
+          </button>
+</div>
+</div>
+</div>
+</div>
+</div></main></div></body></html>

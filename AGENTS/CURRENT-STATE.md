@@ -62,7 +62,7 @@ Read `FACTS.md` for the evidence behind every line.
 Path chosen: **dealer brings their own Meta app** (ADR-004). Needs no NEXUS trade licence and no Meta verification of NEXUS — the dealer verifies their own business, which they can, having a licence.
 - Per-dealer encrypted credentials: **BUILT** (NX930, Vault, round-trip proven).
 - Receiver using them: **WRITTEN AND TESTED, NOT DEPLOYED** — 37 assertions pass including "B's delivery signed with A's secret is refused". **The box still runs the single-secret version (FACT-177), so the live limit is still one dealership.**
-- Owner step to lift it: import workflow `J8MXprxVw1yhjBpp`, then set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` on **both** `n8n` and `n8n-worker`. Flip `NEXUS_REQUIRE_PER_DEALER_SECRETS=true` once ALBA's credentials are in the vault.
+- Owner step to lift it: import workflow `J8MXprxVw1yhjBpp`, then set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` on **both** `n8n` and `n8n-worker`. Flip `NEXUS_REQUIRE_PER_DEALER_SECRETS=true` once Tenant A's credentials are in the vault.
 - Unverified dealer ceiling is 250 unique customers / 24h. Not a pilot constraint.
 
 ## Scoring

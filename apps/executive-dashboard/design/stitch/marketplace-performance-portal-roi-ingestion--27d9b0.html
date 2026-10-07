@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"on-primary-fixed":"#001a43","on-secondary-fixed":"#041a40","on-tertiary":"#ffffff","inverse-on-surface":"#edf0ff","on-primary":"#ffffff","on-surface":"#131b2d","surface-container-lowest":"#ffffff","secondary-fixed-dim":"#b4c6f5","on-surface-variant":"#424753","surface-container-low":"#f2f3ff","surface-dim":"#d2d9f3","surface":"#faf8ff","secondary-container":"#bccefe","secondary-fixed":"#d9e2ff","primary-fixed":"#d9e2ff","outline":"#737784","primary-container":"#2563c9","primary":"#004ba8","on-background":"#131b2d","on-secondary":"#ffffff","tertiary-fixed":"#a0efff","secondary":"#4c5e87","error-container":"#ffdad6","on-error-container":"#93000a","tertiary":"#005864","background":"#faf8ff","surface-bright":"#faf8ff","error":"#ba1a1a","on-tertiary-fixed-variant":"#004e59","tertiary-fixed-dim":"#44d8f0","on-primary-container":"#dee6ff","surface-container-high":"#e1e8ff","on-tertiary-fixed":"#001f25","primary-fixed-dim":"#afc6ff","outline-variant":"#c2c6d5","on-secondary-container":"#465780","inverse-surface":"#283043","on-secondary-fixed-variant":"#34466e","on-error":"#ffffff","on-tertiary-container":"#b1f1ff","surface-container-highest":"#dbe2fb","surface-tint":"#155ac0","surface-variant":"#dbe2fb","on-primary-fixed-variant":"#004398","tertiary-container":"#007281","surface-container":"#e9edff","inverse-primary":"#afc6ff"},borderRadius:{DEFAULT:"0.25rem",lg:"0.5rem",xl:"0.75rem",full:"9999px"},spacing:{"gutter":"1rem","space-md":"1rem","space-xs":"0.25rem","space-lg":"1.5rem","space-sm":"0.5rem","space-xl":"2rem","margin":"1.5rem"},fontFamily:{"body-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"headline-lg":["Inter"],"headline-md":["Inter"],"table-header":["Inter"],"label-numeric-md":["JetBrains Mono"],"label-numeric-sm":["JetBrains Mono"],"body-lg":["Inter"],"headline-xl":["Inter"],"body-sm":["Inter"]},fontSize:{"body-md":["0.875rem",{lineHeight:"1.25rem",fontWeight:"400"}],"label-numeric-lg":["1.25rem",{lineHeight:"1.5rem",letterSpacing:"-0.02em",fontWeight:"600"}],"headline-lg":["1.5rem",{lineHeight:"2rem",letterSpacing:"-0.015em",fontWeight:"600"}],"headline-md":["1.125rem",{lineHeight:"1.5rem",letterSpacing:"-0.01em",fontWeight:"600"}],"table-header":["0.6875rem",{lineHeight:"0.875rem",letterSpacing:"0.05em",fontWeight:"600"}],"label-numeric-md":["0.875rem",{lineHeight:"1.25rem",letterSpacing:"-0.01em",fontWeight:"500"}],"label-numeric-sm":["0.75rem",{lineHeight:"1rem",fontWeight:"500"}],"body-lg":["1rem",{lineHeight:"1.5rem",fontWeight:"400"}],"headline-xl":["2rem",{lineHeight:"2.5rem",letterSpacing:"-0.02em",fontWeight:"700"}],"body-sm":["0.75rem",{lineHeight:"1rem",fontWeight:"400"}]}}}};</script></head><body class="bg-background font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 bottom-0 w-72 bg-surface-container-lowest border-r border-outline-variant/30 z-50 flex flex-col"><div class="h-16 px-space-lg flex items-center justify-between border-b border-outline-variant/30 shrink-0"><div class="flex items-center gap-space-sm"><div class="w-7 h-7 rounded bg-primary-container flex items-center justify-center text-on-primary font-headline-md text-headline-md tracking-tight">N</div><div class="flex flex-col"><span class="font-headline-md text-headline-md text-on-surface tracking-tight leading-none">NEXUS OS</span><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant uppercase tracking-wider text-[10px]">Automotive Intelligence</span></div></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-surface-container text-secondary text-[10px]">v3.4</span></div><div class="flex-1 overflow-y-auto px-space-md py-space-md"><nav class="space-y-6" data-active-classes="bg-primary-container text-on-primary font-medium rounded"><div class="space-y-1"><div class="px-space-sm pb-1 font-table-header text-table-header uppercase tracking-wider text-outline">Primary Navigation</div><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="overview" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">grid_view</span><span>Overview</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="owner-brief" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">analytics</span><span>Owner Brief</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="todays-money-leaks" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px] text-error">trending_down</span><span>Today's Money Leaks</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-error-container text-on-error-container text-[11px]">14 AED</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="leads" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">person_search</span><span>Leads</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="record-a-lead" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">add_circle</span><span>Record a Lead</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="action-center" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">bolt</span><span>Action Center</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container text-[11px]">8</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="deals" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">handshake</span><span>Deals</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="appointments" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">calendar_today</span><span>Appointments</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="conversations" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">forum</span><span>Conversations</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="campaigns" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">campaign</span><span>Campaigns</span></div></a></div><div class="space-y-1"><div class="px-space-sm pb-1 font-table-header text-table-header uppercase tracking-wider text-outline">Intelligence &amp; Assets</div><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="inventory" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">directions_car</span><span>Inventory</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-primary-fixed text-on-primary-fixed text-[10px] uppercase">Sentinel</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="competitors" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">monitoring</span><span>Competitors</span></div></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-2 transition-colors bg-primary-container text-on-primary font-medium rounded" data-path="marketplace-performance" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">storefront</span><span>Marketplace Performance</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-surface-container text-outline text-[10px] uppercase">PLANNED</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="finance-desk" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">account_balance</span><span>Finance Desk</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="customer-360" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">badge</span><span>Customer 360</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-outline hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="ownership-360" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">verified_user</span><span>Ownership 360</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-surface-container text-outline text-[10px] uppercase">PLANNED</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="ask-ai" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px] text-tertiary">smart_toy</span><span>Ask AI</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed text-[10px] uppercase">AGENT</span></a></div><div class="space-y-1"><div class="px-space-sm pb-1 font-table-header text-table-header uppercase tracking-wider text-outline">Revenue Recovery &amp; Workshop</div><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="revenue-recovery" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">price_check</span><span>Revenue Recovery</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-outline hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="service-revenue-recovery" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">build_circle</span><span>Service Revenue Recovery</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.5 rounded bg-surface-container text-outline text-[10px] uppercase">PLANNED</span></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="lead-recovery" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">replay</span><span>Lead Recovery</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="deal-rescue" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">emergency_home</span><span>Deal Rescue</span></div></a></div><div class="space-y-1"><div class="px-space-sm pb-1 font-table-header text-table-header uppercase tracking-wider text-outline">Infrastructure &amp; Compliance</div><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="lead-sources" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">hub</span><span>Lead Sources</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="channels" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">alt_route</span><span>Channels</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="integrations" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">integration_instructions</span><span>Integrations</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="policy-and-house-rules" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">gavel</span><span>Policy &amp; House Rules</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="compliance-and-kyc" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">verified</span><span>Compliance &amp; KYC</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="automation" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">precision_manufacturing</span><span>Automation</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="settings" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">settings</span><span>Settings</span></div></a><a class="flex items-center justify-between px-space-sm py-2 rounded text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors font-body-sm text-body-sm" data-path="subscription" href="#"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[18px]">credit_card</span><span>Subscription</span></div></a></div></nav></div><div class="p-space-md border-t border-outline-variant/30 shrink-0 bg-surface-container-low/50"><div class="flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-on-surface-variant"><span>AED FX INDEX</span><span class="font-semibold text-on-surface">3.6725 USD</span></div></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-16 bg-surface-container-lowest border-b border-outline-variant/30 z-40 flex items-center justify-between px-space-lg"><div class="flex items-center gap-space-md"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">business</span><span class="font-headline-md text-headline-md text-on-surface">Demo Motors</span><span class="text-outline text-body-sm">|</span><span class="font-body-sm text-body-sm text-on-surface-variant">Dubai, UAE</span></div><span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary tracking-wider font-semibold text-[10px]">PRODUCTION</span></div><div class="flex items-center gap-space-lg"><div class="flex items-center gap-2 px-space-sm py-1 rounded bg-surface-container-low text-on-surface-variant font-label-numeric-sm text-label-numeric-sm"><span class="material-symbols-outlined text-[16px]">schedule</span><span>GST (UTC+4)</span></div><button class="relative p-1 text-on-surface-variant hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-error"></span></button><div class="h-6 w-px bg-outline-variant/40"></div><div class="flex items-center gap-space-sm"><div class="text-right leading-tight"><div class="font-body-sm text-body-sm font-semibold text-on-surface">Rashid Al-Maktoum</div><div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant text-[11px]">Dealer Principal</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-16 bg-background min-h-screen"><div class="flex flex-col w-full">
+<div class="px-space-lg py-space-md bg-surface-container-low/60 flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex flex-col gap-1 min-w-0">
+<div class="flex items-center gap-space-sm flex-wrap">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Marketplace Performance</h1>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-numeric-sm text-label-numeric-sm tracking-wider uppercase">
+<span>ASSETS</span>
+<span>•</span>
+<span class="material-symbols-outlined text-[13px]">schedule</span>
+<span>PLANNED</span>
+</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-4xl">
+        Evaluates listing velocity, cost per lead, and portal ROI across UAE automotive marketplaces from exported seller reports.
+      </p>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label-numeric-sm text-label-numeric-sm mt-0.5">
+<span class="material-symbols-outlined text-[15px] text-tertiary">info</span>
+<span>Prerequisite: Reads your exported Dubizzle / YallaMotor / CarSwitch reports — does not publish listings.</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm self-end">
+<button class="inline-flex items-center gap-2 px-space-md py-1.5 rounded bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-body-sm text-body-sm font-medium" type="button">
+<span class="material-symbols-outlined text-[16px]">notifications</span>
+<span>Notify me</span>
+</button>
+<button class="inline-flex items-center gap-2 px-space-md py-1.5 rounded bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-body-sm text-body-sm font-medium" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+<span>Preview Sample Report</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded bg-primary-container text-on-primary hover:bg-primary transition-colors font-body-sm text-body-sm font-medium" type="button">
+<span class="material-symbols-outlined text-[16px]">help_outline</span>
+<span>Learn more</span>
+</button>
+</div>
+</div>
+<div class="px-space-lg py-2.5 bg-surface-container-lowest flex flex-wrap items-center justify-between gap-space-md">
+<div class="flex flex-wrap items-center gap-space-sm text-on-surface">
+<div class="flex items-center gap-1.5 px-space-sm py-1 rounded bg-surface-container-low font-body-sm text-body-sm">
+<span class="text-on-surface-variant font-label-numeric-sm text-label-numeric-sm uppercase">Portal:</span>
+<span class="font-medium">All Portals</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_drop_down</span>
+</div>
+<div class="flex items-center gap-1.5 px-space-sm py-1 rounded bg-surface-container-low font-body-sm text-body-sm">
+<span class="text-on-surface-variant font-label-numeric-sm text-label-numeric-sm uppercase">Date Range:</span>
+<span class="font-medium">Last 30 Days</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_drop_down</span>
+</div>
+<div class="flex items-center gap-1.5 px-space-sm py-1 rounded bg-surface-container-low font-body-sm text-body-sm">
+<span class="text-on-surface-variant font-label-numeric-sm text-label-numeric-sm uppercase">Category:</span>
+<span class="font-medium">All Listings</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_drop_down</span>
+</div>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span>INGESTION STATUS: STANDBY</span>
+</div>
+</div>
+<div class="p-space-lg flex flex-col gap-space-xl">
+<section class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-sm mb-space-md">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">cloud_upload</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Marketplace Report Ingestion Gateway</h2>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Upload or schedule automated export ingestion from supported UAE portals.
+          </p>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container-low text-on-surface-variant">
+          SECURE FILE INGESTION
+        </span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+<div class="bg-surface-container-low/40 rounded-lg p-space-md flex flex-col justify-between gap-space-md hover:bg-surface-container-low transition-colors">
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold uppercase">PORTAL 01</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                .CSV / .XLSX
+              </span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">
+              Dubizzle Motors Seller Report
+            </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Listing telemetry, live impressions, phone reveal analytics, and seller subscription leads.
+            </p>
+</div>
+<div class="flex flex-col gap-2 pt-2">
+<div class="flex items-center justify-between text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span>— Waiting for report</span>
+</span>
+<span>SLOT A</span>
+</div>
+<button class="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded bg-surface-container-highest/60 hover:bg-surface-container-highest text-on-surface font-body-sm text-body-sm font-medium transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span>Preview format</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container-low/40 rounded-lg p-space-md flex flex-col justify-between gap-space-md hover:bg-surface-container-low transition-colors">
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold uppercase">PORTAL 02</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                .CSV
+              </span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">
+              YallaMotor Commercial Export
+            </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Regional vehicle views, lead allocation records, campaign spends, and direct inquiry logs.
+            </p>
+</div>
+<div class="flex flex-col gap-2 pt-2">
+<div class="flex items-center justify-between text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span>— Waiting for report</span>
+</span>
+<span>SLOT B</span>
+</div>
+<button class="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded bg-surface-container-highest/60 hover:bg-surface-container-highest text-on-surface font-body-sm text-body-sm font-medium transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span>Preview format</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container-low/40 rounded-lg p-space-md flex flex-col justify-between gap-space-md hover:bg-surface-container-low transition-colors">
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary font-semibold uppercase">PORTAL 03</span>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                .XLSX
+              </span>
+</div>
+<div class="font-body-md text-body-md font-semibold text-on-surface">
+              CarSwitch Pro Dealer Telemetry
+            </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Certified listing interactions, test-drive requests, pricing benchmark index, and engagement.
+            </p>
+</div>
+<div class="flex flex-col gap-2 pt-2">
+<div class="flex items-center justify-between text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span>— Waiting for report</span>
+</span>
+<span>SLOT C</span>
+</div>
+<button class="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded bg-surface-container-highest/60 hover:bg-surface-container-highest text-on-surface font-body-sm text-body-sm font-medium transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">description</span>
+<span>Preview format</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-body-sm text-body-sm font-medium">Total Marketplace Views</span>
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</div>
+<div class="mt-space-sm font-label-numeric-lg text-[2.25rem] text-on-surface leading-tight font-bold">
+            —
+          </div>
+<div class="mt-1 font-body-sm text-body-sm text-on-surface-variant">
+            Across — active portal listings
+          </div>
+</div>
+<div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container-low/30 rounded p-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">AGGREGATE IMPRESSIONS</span>
+<button class="text-primary hover:text-on-primary-fixed-variant font-body-sm text-body-sm font-medium inline-flex items-center gap-0.5" type="button">
+<span>Learn more</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-body-sm text-body-sm font-medium">Attributed Portal Inquiries</span>
+<span class="material-symbols-outlined text-[18px]">contact_phone</span>
+</div>
+<div class="mt-space-sm font-label-numeric-lg text-[2.25rem] text-on-surface leading-tight font-bold">
+            —
+          </div>
+<div class="mt-1 font-body-sm text-body-sm text-on-surface-variant">
+            Awaiting report sync
+          </div>
+</div>
+<div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container-low/30 rounded p-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">CONVERSION CHANNEL</span>
+<button class="text-primary hover:text-on-primary-fixed-variant font-body-sm text-body-sm font-medium inline-flex items-center gap-0.5" type="button">
+<span>Learn more</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-body-sm text-body-sm font-medium">Average Cost Per Lead</span>
+<span class="material-symbols-outlined text-[18px]">payments</span>
+</div>
+<div class="mt-space-sm font-label-numeric-lg text-[2.25rem] text-on-surface leading-tight font-bold">
+            —
+          </div>
+<div class="mt-1 font-body-sm text-body-sm text-on-surface-variant">
+            Ad spend / qualified leads
+          </div>
+</div>
+<div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container-low/30 rounded p-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">AED UNIT EFFICIENCY</span>
+<button class="text-primary hover:text-on-primary-fixed-variant font-body-sm text-body-sm font-medium inline-flex items-center gap-0.5" type="button">
+<span>Learn more</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-body-sm text-body-sm font-medium">Zero-Inquiry Listings</span>
+<span class="material-symbols-outlined text-[18px]">warning</span>
+</div>
+<div class="mt-space-sm font-label-numeric-lg text-[2.25rem] text-on-surface leading-tight font-bold">
+            —
+          </div>
+<div class="mt-1 font-body-sm text-body-sm text-on-surface-variant">
+            Units live &gt;14d with 0 leads
+          </div>
+</div>
+<div class="mt-space-md pt-space-sm flex items-center justify-between bg-surface-container-low/30 rounded p-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">CAPITAL ALERT</span>
+<button class="text-primary hover:text-on-primary-fixed-variant font-body-sm text-body-sm font-medium inline-flex items-center gap-0.5" type="button">
+<span>Learn more</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+</div>
+</section>
+<section class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="p-space-lg flex flex-wrap items-center justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Per-Listing Velocity &amp; Unit ROI</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Direct correlation matrix connecting ad expenditure across external aggregators with floor engagement.
+          </p>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface-variant">
+            4 SLOTS PENDING SYNC
+          </span>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/70 font-table-header text-table-header text-on-surface-variant uppercase tracking-wider">
+<th class="py-2.5 px-space-md">Listing Ref / Stock ID</th>
+<th class="py-2.5 px-space-md">Unit Details</th>
+<th class="py-2.5 px-space-md">Active Portals</th>
+<th class="py-2.5 px-space-md text-right">Days Live</th>
+<th class="py-2.5 px-space-md text-right">Total Views</th>
+<th class="py-2.5 px-space-md text-right">Inquiries / Leads</th>
+<th class="py-2.5 px-space-md text-right">Cost Per Lead (AED)</th>
+<th class="py-2.5 px-space-md text-right">Inquiry Rate %</th>
+<th class="py-2.5 px-space-md text-center">Status / Action</th>
+</tr>
+</thead>
+<tbody class="divide-y-0 text-on-surface font-body-sm text-body-sm">
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-outline">— [Stock ID]</td>
+<td class="py-3 px-space-md text-on-surface-variant">— [Make / Model / Year]</td>
+<td class="py-3 px-space-md text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-center">
+<span class="inline-flex px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                  Awaiting report
+                </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-outline">— [Stock ID]</td>
+<td class="py-3 px-space-md text-on-surface-variant">— [Make / Model / Year]</td>
+<td class="py-3 px-space-md text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-center">
+<span class="inline-flex px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                  Awaiting report
+                </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-outline">— [Stock ID]</td>
+<td class="py-3 px-space-md text-on-surface-variant">— [Make / Model / Year]</td>
+<td class="py-3 px-space-md text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-center">
+<span class="inline-flex px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                  Awaiting report
+                </span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-3 px-space-md font-label-numeric-sm text-label-numeric-sm text-outline">— [Stock ID]</td>
+<td class="py-3 px-space-md text-on-surface-variant">— [Make / Model / Year]</td>
+<td class="py-3 px-space-md text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-right text-outline font-label-numeric-sm text-label-numeric-sm">—</td>
+<td class="py-3 px-space-md text-center">
+<span class="inline-flex px-2 py-0.5 rounded text-[11px] font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant">
+                  Awaiting report
+                </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-space-md bg-surface-container-low/20 flex flex-wrap items-center justify-between text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span>SHOWING 4 UNPOPULATED REPORT SLOTS</span>
+<span>NO DIRECT AUTOMATED PUBLISHING • READ-ONLY TELEMETRY</span>
+</div>
+</section>
+<section class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+<div class="flex flex-wrap items-start justify-between gap-space-md mb-space-md">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">hourglass_empty</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Zero-Enquiry Flagged Units (Stalled Capital Sentinel)</h2>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Vehicles with active portal spend that generated 0 buyer inquiries in the last 14 days.
+          </p>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container-low text-on-surface-variant">
+          DORMANT INVENTORY AUDIT
+        </span>
+</div>
+<div class="bg-surface-container-low/50 rounded-lg p-space-lg flex flex-col items-center justify-center text-center gap-space-md my-space-sm">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">folder_off</span>
+</div>
+<div class="max-w-md">
+<div class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+            — No report data imported to identify unengaged inventory.
+          </div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+            Once monthly reports are provided, this engine flags stock numbers consuming advertising budget without generating phone dials or lead submissions.
+          </p>
+</div>
+<div class="flex flex-wrap items-center justify-center gap-space-sm pt-space-xs">
+<button class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded bg-primary-container text-on-primary hover:bg-primary transition-colors font-body-sm text-body-sm font-medium" type="button">
+<span class="material-symbols-outlined text-[16px]">notifications</span>
+<span>Notify me when available</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-space-md py-1.5 rounded bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-body-sm text-body-sm font-medium" type="button">
+<span class="material-symbols-outlined text-[16px]">rule</span>
+<span>Preview remediation actions</span>
+</button>
+</div>
+</div>
+</section>
+</div>
+</div></main></div></body></html>

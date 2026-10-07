@@ -7,8 +7,8 @@ in order, with the check for each step. Nothing below is code to write.
 `ops/n8n-meta-lead-ads/README.md` is the design and the reasoning. This file is
 the sequence. Where the two disagree, the measurement in this file is newer.
 
-ALBA CARS is dealership number one, not the only one. Every statement is written
-so a second dealership can follow it: the ALBA-specific values are given, and
+Tenant A is dealership number one, not the only one. Every statement is written
+so a second dealership can follow it: the Tenant-A-specific values are given, and
 each is also given as a lookup that resolves for any tenant.
 
 ---
@@ -59,7 +59,7 @@ makes it safe to route on is that it arrived inside a body whose HMAC verified
 
 ### The exact INSERT
 
-For ALBA, with the endpoint id written out:
+For Tenant A, with the endpoint id written out:
 
 ```sql
 insert into public.lead_ingest_provider_identity
@@ -69,7 +69,7 @@ values ('4d4f5cf2-f966-4d4e-9d9e-605757c615b7',
         'meta',
         'facebook_page_id',
         '<the Page id, digits only>',
-        'ALBA CARS Facebook Page');
+        'Tenant A Facebook Page');
 ```
 
 For any dealership, resolving the endpoint rather than pasting a uuid — use this
@@ -107,7 +107,7 @@ Constraint definitions read from `pg_constraint` on production today.
 | candidate | accepted |
 |---|---|
 | `102938475610293` | yes |
-| `ALBA CARS` | **no** — a Page *name* pasted where an id belongs |
+| `Tenant A` | **no** — a Page *name* pasted where an id belongs |
 | `1234` | **no** — under five digits |
 | `fb_102938475610293` | **no** — a prefix is not a Meta id |
 | `102938475610293 ` (one trailing space) | **no** |
@@ -338,7 +338,7 @@ update public.lead_ingest_endpoint e
 > whether the Graph hop works, or whether one lead has ever arrived.
 >
 > These two rows were created `active` on 7 September, the readiness function
-> immediately reported Facebook and Instagram as `CONNECTED` to an ALBA session,
+> immediately reported Facebook and Instagram as `CONNECTED` to an Tenant A session,
 > and they were disabled again the same day. That was the correct call and it is
 > why they sit `disabled` today. Enabling them while the token is missing gives a
 > dealership a green pill over a source where every lead stops at `RECEIVED` —

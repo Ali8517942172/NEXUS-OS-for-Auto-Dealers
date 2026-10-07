@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><title>NEXUS OS — Revenue Recovery &amp; Action OS</title><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "on-background": "#131b2d",
+          "inverse-primary": "#afc6ff",
+          "surface-bright": "#faf8ff",
+          "on-tertiary-container": "#b1f1ff",
+          "surface-container-low": "#f2f3ff",
+          "surface": "#faf8ff",
+          "on-secondary-fixed": "#041a40",
+          "on-primary-fixed": "#001a43",
+          "surface-container": "#e9edff",
+          "inverse-surface": "#283043",
+          "on-error": "#ffffff",
+          "primary-container": "#2563c9",
+          "primary-fixed-dim": "#afc6ff",
+          "on-tertiary-fixed-variant": "#004e59",
+          "on-secondary-container": "#465780",
+          "on-surface": "#131b2d",
+          "outline": "#737784",
+          "on-primary-container": "#dee6ff",
+          "error": "#ba1a1a",
+          "secondary-fixed": "#d9e2ff",
+          "secondary-container": "#bccefe",
+          "surface-container-highest": "#dbe2fb",
+          "background": "#faf8ff",
+          "on-primary": "#ffffff",
+          "tertiary-container": "#007281",
+          "on-error-container": "#93000a",
+          "inverse-on-surface": "#edf0ff",
+          "surface-variant": "#dbe2fb",
+          "secondary": "#4c5e87",
+          "on-tertiary": "#ffffff",
+          "on-tertiary-fixed": "#001f25",
+          "tertiary-fixed-dim": "#44d8f0",
+          "error-container": "#ffdad6",
+          "primary-fixed": "#d9e2ff",
+          "on-secondary": "#ffffff",
+          "surface-dim": "#d2d9f3",
+          "secondary-fixed-dim": "#b4c6f5",
+          "surface-tint": "#155ac0",
+          "surface-container-high": "#e1e8ff",
+          "outline-variant": "#c2c6d5",
+          "on-primary-fixed-variant": "#004398",
+          "tertiary-fixed": "#a0efff",
+          "primary": "#004ba8",
+          "tertiary": "#005864",
+          "on-secondary-fixed-variant": "#34466e",
+          "on-surface-variant": "#424753",
+          "surface-container-lowest": "#ffffff"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.25rem",
+          "lg": "0.5rem",
+          "xl": "0.75rem",
+          "full": "9999px"
+        },
+        "spacing": {
+          "space-xs": "0.25rem",
+          "space-md": "1rem",
+          "space-xl": "2rem",
+          "space-lg": "1.5rem",
+          "space-sm": "0.5rem",
+          "margin": "1.5rem",
+          "gutter": "1rem"
+        },
+        "fontFamily": {
+          "headline-xl": [
+            "Inter"
+          ],
+          "body-sm": [
+            "Inter"
+          ],
+          "label-numeric-md": [
+            "JetBrains Mono"
+          ],
+          "headline-md": [
+            "Inter"
+          ],
+          "body-md": [
+            "Inter"
+          ],
+          "label-numeric-lg": [
+            "JetBrains Mono"
+          ],
+          "headline-lg": [
+            "Inter"
+          ],
+          "body-lg": [
+            "Inter"
+          ],
+          "label-numeric-sm": [
+            "JetBrains Mono"
+          ],
+          "table-header": [
+            "Inter"
+          ]
+        },
+        "fontSize": {
+          "headline-xl": [
+            "2rem",
+            {
+              "lineHeight": "2.5rem",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "700"
+            }
+          ],
+          "body-sm": [
+            "0.75rem",
+            {
+              "lineHeight": "1rem",
+              "fontWeight": "400"
+            }
+          ],
+          "label-numeric-md": [
+            "0.875rem",
+            {
+              "lineHeight": "1.25rem",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-md": [
+            "1.125rem",
+            {
+              "lineHeight": "1.5rem",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-md": [
+            "0.875rem",
+            {
+              "lineHeight": "1.25rem",
+              "fontWeight": "400"
+            }
+          ],
+          "label-numeric-lg": [
+            "1.25rem",
+            {
+              "lineHeight": "1.5rem",
+              "letterSpacing": "-0.02em",
+              "fontWeight": "600"
+            }
+          ],
+          "headline-lg": [
+            "1.5rem",
+            {
+              "lineHeight": "2rem",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-lg": [
+            "1rem",
+            {
+              "lineHeight": "1.5rem",
+              "fontWeight": "400"
+            }
+          ],
+          "label-numeric-sm": [
+            "0.75rem",
+            {
+              "lineHeight": "1rem",
+              "fontWeight": "500"
+            }
+          ],
+          "table-header": [
+            "0.6875rem",
+            {
+              "lineHeight": "0.875rem",
+              "letterSpacing": "0.05em",
+              "fontWeight": "600"
+            }
+          ]
+        }
+      },
+    },
+  }</script></head><body class="bg-[#F7F8FA] font-body-md text-body-md text-on-surface antialiased min-h-screen"><aside class="fixed left-0 top-0 h-full w-[240px] bg-[#16294F] z-50 flex flex-col justify-between select-none border-r border-[#1E3566]"><div class="flex flex-col flex-1 overflow-y-auto"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566]"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[#38D0E8] text-[20px]">radar</span><span class="font-headline-md text-headline-md tracking-tight font-bold text-white">NEXUS <span class="text-[#38D0E8]">OS</span></span></div><span class="font-label-numeric-sm text-label-numeric-sm bg-[#1E3566] text-[#38D0E8] px-1.5 py-0.5 rounded font-semibold border border-[#24428A]">PRO</span></div><nav class="px-2 py-3 space-y-4" data-active-classes="bg-[#24428A] text-white border-l-[3px] border-[#38D0E8] font-semibold pl-[13px]"><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Today</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#"><span class="material-symbols-outlined text-[18px]">dashboard</span><span>Overview</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#"><span class="material-symbols-outlined text-[18px]">bolt</span><span>Action Center</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[18px]">currency_exchange</span><span>Revenue Recovery</span></a></div><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Pipeline</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="leads" href="#"><span class="material-symbols-outlined text-[18px]">filter_list</span><span>Leads</span></a><a aria-current="page" class="flex items-center gap-2.5 px-3 py-1.5 rounded transition-colors bg-[#24428A] text-white border-l-[3px] border-[#38D0E8] font-semibold pl-[13px]" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[18px]">person_add</span><span>Record a Lead</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[18px]">replay</span><span>Lead Recovery</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#"><span class="material-symbols-outlined text-[18px]">handshake</span><span>Deals</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[18px]">emergency</span><span>Deal Rescue</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#"><span class="material-symbols-outlined text-[18px]">calendar_today</span><span>Appointments</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#"><span class="material-symbols-outlined text-[18px]">forum</span><span>Conversations</span></a></div><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Stock</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#"><span class="material-symbols-outlined text-[18px]">directions_car</span><span>Inventory</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#"><span class="material-symbols-outlined text-[18px]">query_stats</span><span>Competitors</span></a></div><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Customers</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[18px]">contacts</span><span>Customer 360</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#"><span class="material-symbols-outlined text-[18px]">campaign</span><span>Campaigns</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[18px]">payments</span><span>Finance Desk</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance" href="#"><span class="material-symbols-outlined text-[18px]">verified_user</span><span>Compliance</span></a></div><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Insight</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="attribution" href="#"><span class="material-symbols-outlined text-[18px]">hub</span><span>Attribution</span></a><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[18px]">smart_toy</span><span>Ask AI</span></a></div><div class="space-y-0.5"><div class="px-2.5 pb-1.5 font-table-header text-table-header uppercase text-[#7388B2] tracking-wider">Setup</div><a class="flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[18px]">settings</span><span>Settings</span></a></div></nav></div><div class="p-3 border-t border-[#1E3566] bg-[#112140]"><div class="font-label-numeric-sm text-label-numeric-sm text-[#7388B2] tracking-tight text-center">DXB-HQ · CLUSTER 04 · v4.12.0</div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 px-4 flex items-center justify-between"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2 px-2.5 py-1 bg-[#F7F8FA] border border-[#E8EAEF] rounded-lg"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span class="font-headline-md text-headline-md text-on-surface">Demo Motors</span><span class="text-[#CBD1DC]">|</span><span class="font-table-header text-table-header text-on-surface-variant tracking-wider uppercase">DUBAI SHOWROOM</span></div><div class="relative flex-1 max-w-md"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span><input class="w-full bg-[#F7F8FA] border border-[#E8EAEF] rounded-lg pl-9 pr-12 py-1.5 text-body-sm font-body-sm text-on-surface placeholder:text-outline focus:outline-none focus:border-primary-container focus:bg-surface-container-lowest transition-all" placeholder="Search leads, chassis / VIN, stock #" type="text"/><span class="absolute right-2.5 top-1/2 -translate-y-1/2 font-label-numeric-sm text-label-numeric-sm text-outline border border-[#E8EAEF] bg-surface-container-lowest px-1.5 py-0.5 rounded">⌘K</span></div></div><div class="flex items-center gap-3 ml-4"><div class="hidden xl:flex items-center gap-1.5 px-2.5 py-1 bg-[#F7F8FA] border border-[#E8EAEF] rounded-md"><span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">AED</span><span class="text-[#CBD1DC]">•</span><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 font-label-numeric-sm text-label-numeric-sm"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span><span>Live Sync</span></div><button class="relative p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-[#F7F8FA] rounded-md transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span></button><div class="h-5 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right hidden sm:block"><div class="font-body-md text-body-md font-semibold text-on-surface leading-tight">Faris M.</div><div class="font-table-header text-table-header text-on-surface-variant uppercase">GM / Sales Director</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen px-6 py-6"><div class="max-w-7xl mx-auto space-y-6"><div class="flex flex-col w-full">
+<script>
+    (() => {
+      const activeNav = document.querySelector('nav a[data-path="record-a-lead"]');
+      if (activeNav) {
+        document.querySelectorAll('nav a').forEach(a => {
+          a.className = 'flex items-center gap-2.5 px-3 py-1.5 rounded text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors';
+        });
+        activeNav.className = 'flex items-center gap-2.5 px-3 py-1.5 rounded bg-[#24428A] text-white border-l-[3px] border-[#38D0E8] font-semibold pl-[13px]';
+      }
+    })();
+  </script>
+<!-- Contextual Notification Banner -->
+<div class="mb-5 bg-surface-container-high rounded-xl p-3.5 flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary-container text-on-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">bolt</span>
+</div>
+<div>
+<span class="font-headline-md text-headline-md text-on-surface">Fast Track Active: </span>
+<span class="font-body-md text-body-md text-on-surface-variant">Phone number is the only strictly required contact field. System auto-enriches vehicle match and financing tier.</span>
+</div>
+</div>
+<div class="hidden sm:flex items-center gap-2 font-label-numeric-sm text-label-numeric-sm text-primary font-semibold bg-surface px-2.5 py-1 rounded-md">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+      SLA AUTO-CLOCK 05:00
+    </div>
+</div>
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="font-table-header text-table-header uppercase text-secondary tracking-wider">Showroom Intake Desk</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-bold">TERMINAL DXB-04</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Record a Lead</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">
+        Rapid-entry intake for showroom walk-ins and phone calls. Optimized for under 30-second completion.
+      </p>
+</div>
+<div class="flex items-center gap-2">
+<div class="bg-surface-container px-3 py-1.5 rounded-lg flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]">timer</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Average Desk Speed:</span>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">22.4s</span>
+</div>
+</div>
+</div>
+<!-- Main Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<!-- LEFT COLUMN: Intake Form (7 cols) -->
+<div class="lg:col-span-7 bg-surface rounded-xl p-6 shadow-sm space-y-6">
+<!-- Section: Intake Source -->
+<div>
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant tracking-wider mb-2.5">
+          Intake Source Channel *
+        </label>
+<div class="grid grid-cols-2 gap-3" id="sourcePicker">
+<button class="source-chip flex items-center justify-center gap-2.5 py-3 px-4 rounded-lg bg-surface-container-high text-primary font-headline-md text-headline-md shadow-sm transition-all" data-source="walkin" type="button">
+<span class="material-symbols-outlined text-[20px]">directions_walk</span>
+<span>Walk-in Showroom</span>
+<span class="material-symbols-outlined text-[16px] text-primary">check_circle</span>
+</button>
+<button class="source-chip flex items-center justify-center gap-2.5 py-3 px-4 rounded-lg bg-surface-container-low text-on-surface font-headline-md text-headline-md hover:bg-surface-container transition-all" data-source="phone" type="button">
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant">call</span>
+<span>Phone Inquiry</span>
+</button>
+</div>
+</div>
+<!-- Section: Lead Contact Info -->
+<div class="space-y-4 pt-1">
+<div class="flex items-center justify-between">
+<label class="font-table-header text-table-header uppercase text-on-surface-variant tracking-wider">
+            Lead Contact Information
+          </label>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-medium">UAE MOBILE ID COMPLIANT</span>
+</div>
+<div>
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+            Full Name <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">(Optional on Floor Intake)</span>
+</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">person</span>
+<input class="w-full bg-surface-container-low rounded-lg pl-9 pr-3 py-2 text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:shadow-sm transition-all" id="leadName" placeholder="e.g. Dr. Sultan Al-Qassimi" type="text"/>
+</div>
+</div>
+<div>
+<div class="flex justify-between items-center mb-1">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface">
+              Mobile Phone Number <span class="text-error">*</span>
+</label>
+<span class="font-label-numeric-sm text-label-numeric-sm text-error bg-error-container text-on-error-container px-1.5 py-0.5 rounded">REQUIRED</span>
+</div>
+<div class="flex rounded-lg overflow-hidden bg-surface-container-low focus-within:bg-surface-container-lowest focus-within:shadow-sm transition-all">
+<span class="inline-flex items-center px-3.5 bg-surface-container text-on-surface-variant font-label-numeric-md text-label-numeric-md font-semibold select-none">
+              +971
+            </span>
+<input class="flex-1 bg-transparent px-3 py-2 text-label-numeric-md font-label-numeric-md text-on-surface tracking-wide focus:outline-none" id="leadPhone" placeholder="50 000 0000" type="tel" value="50 882 1920"/>
+<div class="pr-3 flex items-center text-primary">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+</div>
+</div>
+<p class="mt-1.5 font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary">lightbulb</span>
+<span>Phone-only is fine — email is strictly optional for ultra-rapid showroom intake.</span>
+</p>
+</div>
+<div>
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+            Email Address <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">(Optional)</span>
+</label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">mail</span>
+<input class="w-full bg-surface-container-low rounded-lg pl-9 pr-3 py-2 text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:shadow-sm transition-all" id="leadEmail" placeholder="sultan@company.ae (optional)" type="email"/>
+</div>
+</div>
+</div>
+<!-- Section: Deal & Inventory Interest -->
+<div class="space-y-4 pt-2">
+<label class="block font-table-header text-table-header uppercase text-on-surface-variant tracking-wider">
+          Deal &amp; Inventory Allocation
+        </label>
+<div>
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+            Vehicle of Interest
+          </label>
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">directions_car</span>
+<select class="w-full appearance-none bg-surface-container-low rounded-lg pl-9 pr-10 py-2 text-body-md font-body-md text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:shadow-sm transition-all" id="leadVehicle">
+<option selected="" value="porsche-cayenne-gts">2023 Porsche Cayenne GTS (Stock #DXB-9102) • AED 720k</option>
+<option value="range-rover-sport">2023 Range Rover Sport First Ed. (#DXB-8840) • AED 820k</option>
+<option value="mercedes-amg-g63">2024 Mercedes-AMG G63 Magno Night (#DXB-9331) • AED 1.15M</option>
+<option value="bentley-continental">2022 Bentley Continental GT V8 (#DXB-7741) • AED 890k</option>
+<option value="custom">General Inventory Match (Walk-in Consult)</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline pointer-events-none text-[18px]">expand_more</span>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div>
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+              Estimated Target Budget
+            </label>
+<div class="flex rounded-lg overflow-hidden bg-surface-container-low focus-within:bg-surface-container-lowest focus-within:shadow-sm transition-all">
+<span class="inline-flex items-center px-3 bg-surface-container text-on-surface-variant font-label-numeric-sm text-label-numeric-sm font-bold">
+                AED
+              </span>
+<input class="flex-1 bg-transparent px-3 py-2 text-label-numeric-md font-label-numeric-md text-on-surface text-right focus:outline-none" id="leadBudget" type="text" value="750,000"/>
+</div>
+</div>
+<div>
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+              Purchase Intent / Timeline
+            </label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low rounded-lg pl-3 pr-8 py-2 text-body-md font-body-md text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:shadow-sm transition-all" id="leadTimeline">
+<option selected="" value="immediate">⚡ Immediate (Within 48h)</option>
+<option value="week">📅 This Week (3-7 days)</option>
+<option value="month">🗓️ This Month (Evaluation)</option>
+<option value="quarter">⏳ Q2 Horizon / Trade-in swap</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-outline pointer-events-none text-[18px]">unfold_more</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section: Floor Notes -->
+<div class="pt-1">
+<label class="block font-body-sm text-body-sm font-semibold text-on-surface mb-1">
+          Showroom Floor &amp; Trade-In Notes
+        </label>
+<textarea class="w-full bg-surface-container-low rounded-lg p-3 text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:shadow-sm transition-all" id="leadNotes" placeholder="Enter customer trade-in details, financing preference (cash/bank), preferred color spec, or specific trade requirements..." rows="3"></textarea>
+</div>
+<!-- CTA Action Desk -->
+<div class="pt-3 flex flex-col sm:flex-row items-center gap-3">
+<button class="w-full sm:flex-1 py-3 px-5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-headline-md text-headline-md flex items-center justify-center gap-2 shadow-sm transition-all" id="submitLeadBtn" type="button">
+<span class="material-symbols-outlined text-[20px]">bolt</span>
+<span>Record Lead &amp; Dispatch SLA Timer</span>
+</button>
+<button class="w-full sm:w-auto py-3 px-4 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-body-md text-body-md transition-all" id="draftResetBtn" type="button">
+          Save Draft &amp; Clear
+        </button>
+</div>
+<!-- Live Speed Metric Bar -->
+<div class="pt-2 flex items-center justify-between text-on-surface-variant font-label-numeric-sm text-label-numeric-sm bg-surface-container-low px-3 py-2 rounded-lg">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-tertiary">speed</span>
+<span>Active Intake Session:</span>
+<span class="font-bold text-on-surface" id="sessionStopwatch">00:19.4</span>
+</div>
+<div>Security Tier: <span class="text-on-surface font-semibold">ENCRYPTED UAE-FIN</span></div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Live Intake Success State & Preview Card (5 cols) -->
+<div class="lg:col-span-5 space-y-5">
+<!-- Primary Success State Container -->
+<div class="bg-surface rounded-xl overflow-hidden shadow-sm">
+<!-- Success Header Pill -->
+<div class="bg-surface-container px-5 py-4 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-lowest text-primary flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div>
+<div class="font-headline-md text-headline-md text-on-surface font-semibold">Lead Successfully Recorded</div>
+<div class="font-table-header text-table-header uppercase text-secondary tracking-wider">Dispatched to Sales Floor</div>
+</div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold bg-primary-fixed text-on-primary-fixed px-2.5 py-1 rounded-md">
+              #L-9948
+            </span>
+</div>
+</div>
+<!-- Live SLA Monitor Banner -->
+<div class="bg-surface-container-high px-5 py-3 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-error animate-ping"></span>
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Live Floor SLA</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md text-label-numeric-md text-error font-bold" id="slaTimer">00:01:24</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">(Target: 05:00)</span>
+</div>
+</div>
+<!-- Card Body / Detail Summary -->
+<div class="p-5 space-y-4">
+<!-- Key Lead Card Specs -->
+<div class="bg-surface-container-low rounded-lg p-4 space-y-3">
+<div class="flex justify-between items-start">
+<div>
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Customer</span>
+<div class="font-headline-md text-headline-md text-on-surface font-semibold mt-0.5" id="previewCustomerName">
+                  Sheikh Mansoor Al-Nahyan
+                </div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm bg-surface-container-highest text-on-secondary-container px-2 py-0.5 rounded font-bold">
+                VIP TIER 1
+              </span>
+</div>
+<div class="grid grid-cols-2 gap-3 pt-1">
+<div>
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Phone</span>
+<div class="font-label-numeric-md text-label-numeric-md text-on-surface font-semibold mt-0.5" id="previewCustomerPhone">
+                  +971 52 ••• 4491
+                </div>
+</div>
+<div class="text-right">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Channel</span>
+<div class="font-body-md text-body-md text-on-surface font-medium mt-0.5" id="previewCustomerChannel">
+                  Walk-in (Showroom Floor)
+                </div>
+</div>
+</div>
+<div class="pt-2">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Allocated Vehicle &amp; Stock</span>
+<div class="flex items-center justify-between mt-1">
+<span class="font-body-md text-body-md font-semibold text-on-surface" id="previewCustomerVehicle">
+                  2023 Range Rover Sport First Edition
+                </span>
+<span class="font-label-numeric-sm text-label-numeric-sm bg-surface-container-high text-primary px-2 py-0.5 rounded font-semibold">
+                  #DXB-8840
+                </span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3 pt-2">
+<div>
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Approved Budget</span>
+<div class="font-label-numeric-lg text-label-numeric-lg text-primary font-bold mt-0.5" id="previewCustomerBudget">
+                  AED 820,000
+                </div>
+</div>
+<div class="text-right">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Assigned Exec</span>
+<div class="font-body-md text-body-md text-on-surface font-semibold mt-0.5">
+                  Faris M.
+                </div>
+<div class="font-table-header text-table-header text-on-surface-variant uppercase">GM / Sales Director</div>
+</div>
+</div>
+</div>
+<!-- Vehicle Visual Snapshot -->
+<div class="relative rounded-lg overflow-hidden bg-surface-container-low shadow-inner">
+<img class="w-full h-36 object-cover" data-alt="Editorial commercial studio photography of a metallic santorini black 2023 Range Rover Sport First Edition parked inside a pristine Dubai luxury automotive showroom floor, soft dramatic architectural overhead lights, clean reflections, automotive executive design, ultra clear focus" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBy6GWKnXaGKSYHqVilCClxvEK93IUVwQ2YvfgoVaP0tlZywb1eyZCTv1CnTYoS0W5qAJqJUU7VR14anT0GMX8WSb7dHSbuwbWu1XyWQ5fDZiNHwt-wEkLoY5jXow7rdVAuLiWhJesJEXfPKTiTlKkvGfdv2hJg1YlXJjdoo2meavGgZDhNR1-F4IWTaA_Ku-9r2c6rDNqvHKQaxDyCMlfvZjL7Um6Q6uvN0S1u_g"/>
+<div class="absolute inset-0 bg-gradient-to-t from-on-surface/80 via-transparent to-transparent flex items-end p-3">
+<div class="w-full flex items-center justify-between text-surface">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-tertiary-fixed"></span>
+<span class="font-label-numeric-sm text-label-numeric-sm">In Stock (Bay 03 - Front Row)</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold">Odometer: 1,420 km</span>
+</div>
+</div>
+</div>
+<!-- Quick Action Buttons -->
+<div>
+<div class="font-table-header text-table-header uppercase text-on-surface-variant tracking-wider mb-2.5">
+              Instant Desk Actions
+            </div>
+<div class="space-y-2">
+<button class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-md font-body-md transition-colors group" type="button">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px] text-primary">description</span>
+<span>Print Customer Test-Drive Agreement</span>
+</div>
+<span class="material-symbols-outlined text-[16px] text-outline group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+<button class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-md font-body-md transition-colors group" type="button">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px] text-tertiary">chat</span>
+<span>Send WhatsApp Welcome Pack</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-bold px-2 py-0.5 rounded bg-surface">INSTANT</span>
+</button>
+<button class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface text-body-md font-body-md transition-colors group" type="button">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-[18px] text-secondary">swap_driving_apps</span>
+<span>Trigger Trade-in Valuation</span>
+</div>
+<span class="material-symbols-outlined text-[16px] text-outline group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Footer Notification with Monospace Pill Copy -->
+<div class="bg-surface-container px-5 py-3 flex items-center justify-between">
+<div class="flex items-center gap-2 text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+<span class="material-symbols-outlined text-[16px]">fingerprint</span>
+<span>Ref: 2404-DXB-9948</span>
+</div>
+<button class="flex items-center gap-1 font-label-numeric-sm text-label-numeric-sm text-primary hover:text-primary-container font-semibold transition-colors" id="copyIdBtn" type="button">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span>Copy ID</span>
+</button>
+</div>
+</div>
+<!-- Secondary Operational Card: Live Showroom Capacity -->
+<div class="bg-surface rounded-xl p-4 shadow-sm flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[22px]">badge</span>
+</div>
+<div>
+<div class="font-headline-md text-headline-md text-on-surface">Floor Active Reps</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">4 Sales Consultants Available • 2 In Test Drive</div>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-md text-label-numeric-md text-on-surface font-bold">88%</span>
+<span class="block font-table-header text-table-header text-secondary uppercase">SLA COMPLIANCE</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+    // Source Picker Toggle Micro-interaction
+    const sourceChips = document.querySelectorAll('.source-chip');
+    let selectedSource = 'walkin';
+
+    sourceChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        sourceChips.forEach(c => {
+          c.className = 'source-chip flex items-center justify-center gap-2.5 py-3 px-4 rounded-lg bg-surface-container-low text-on-surface font-headline-md text-headline-md hover:bg-surface-container transition-all';
+          const badge = c.querySelector('.material-symbols-outlined:last-child');
+          if (badge && badge.textContent === 'check_circle') badge.remove();
+        });
+
+        chip.className = 'source-chip flex items-center justify-center gap-2.5 py-3 px-4 rounded-lg bg-surface-container-high text-primary font-headline-md text-headline-md shadow-sm transition-all';
+        const check = document.createElement('span');
+        check.className = 'material-symbols-outlined text-[16px] text-primary';
+        check.textContent = 'check_circle';
+        chip.appendChild(check);
+        selectedSource = chip.getAttribute('data-source');
+      });
+    });
+
+    // Dynamic SLA Stopwatch
+    let slaSeconds = 84;
+    const slaTimerEl = document.getElementById('slaTimer');
+    setInterval(() => {
+      slaSeconds++;
+      const mins = String(Math.floor(slaSeconds / 60)).padStart(2, '0');
+      const secs = String(slaSeconds % 60).padStart(2, '0');
+      if (slaTimerEl) {
+        slaTimerEl.textContent = `00:${mins}:${secs}`;
+      }
+    }, 1000);
+
+    // Dynamic Session Stopwatch
+    let sessionSecs = 19;
+    let sessionTenths = 4;
+    const sessionEl = document.getElementById('sessionStopwatch');
+    setInterval(() => {
+      sessionTenths++;
+      if (sessionTenths >= 10) {
+        sessionTenths = 0;
+        sessionSecs++;
+      }
+      if (sessionEl) {
+        sessionEl.textContent = `00:${String(sessionSecs).padStart(2, '0')}.${sessionTenths}`;
+      }
+    }, 100);
+
+    // Form submission mock to update preview state
+    const submitBtn = document.getElementById('submitLeadBtn');
+    submitBtn.addEventListener('click', () => {
+      const nameInput = document.getElementById('leadName').value.trim();
+      const phoneInput = document.getElementById('leadPhone').value.trim();
+      const budgetInput = document.getElementById('leadBudget').value.trim();
+      const vehicleSelect = document.getElementById('leadVehicle');
+      const selectedVehicleText = vehicleSelect.options[vehicleSelect.selectedIndex].text.split('•')[0].trim();
+
+      if (nameInput) {
+        document.getElementById('previewCustomerName').textContent = nameInput;
+      }
+      if (phoneInput) {
+        document.getElementById('previewCustomerPhone').textContent = '+971 ' + phoneInput;
+      }
+      if (budgetInput) {
+        document.getElementById('previewCustomerBudget').textContent = 'AED ' + budgetInput;
+      }
+      if (selectedVehicleText) {
+        document.getElementById('previewCustomerVehicle').textContent = selectedVehicleText;
+      }
+
+      document.getElementById('previewCustomerChannel').textContent = 
+        selectedSource === 'walkin' ? 'Walk-in (Showroom Floor)' : 'Phone Inquiry (Desk)';
+
+      // Reset SLA timer
+      slaSeconds = 0;
+      sessionSecs = 0;
+      sessionTenths = 0;
+
+      // Brief visual confirmation feedback
+      submitBtn.classList.add('bg-tertiary-container');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.innerHTML = '<span class="material-symbols-outlined text-[20px]">check</span><span>Dispatched & SLA Active</span>';
+      setTimeout(() => {
+        submitBtn.innerHTML = originalText;
+        submitBtn.classList.remove('bg-tertiary-container');
+      }, 1800);
+    });
+
+    // Copy ID button
+    const copyIdBtn = document.getElementById('copyIdBtn');
+    copyIdBtn.addEventListener('click', () => {
+      navigator.clipboard?.writeText('#L-9948');
+      const span = copyIdBtn.querySelector('span:last-child');
+      const orig = span.textContent;
+      span.textContent = 'Copied!';
+      setTimeout(() => {
+        span.textContent = orig;
+      }, 1500);
+    });
+
+    // Save Draft & Clear
+    document.getElementById('draftResetBtn').addEventListener('click', () => {
+      document.getElementById('leadName').value = '';
+      document.getElementById('leadEmail').value = '';
+      document.getElementById('leadNotes').value = '';
+    });
+  </script>
+</div></div></main></div></body></html>

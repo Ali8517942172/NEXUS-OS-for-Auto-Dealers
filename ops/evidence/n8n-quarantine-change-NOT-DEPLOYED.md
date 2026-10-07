@@ -22,9 +22,9 @@ Date: 5 September 2026. Database change it accompanies: migrations
 
 | | before 5 Sep | after 5 Sep |
 |---|---|---|
-| a `service_role` write that OMITS `tenant_id` | filed under **ALBA CARS** | filed under **UNATTRIBUTED — QUARANTINE** |
-| that row visible on ALBA's dashboard | yes | **no** |
-| that row in ALBA's revenue / recovery / attribution figures | yes | **no** |
+| a `service_role` write that OMITS `tenant_id` | filed under **Tenant A** | filed under **UNATTRIBUTED — QUARANTINE** |
+| that row visible on Tenant A's dashboard | yes | **no** |
+| that row in Tenant A's revenue / recovery / attribution figures | yes | **no** |
 | that row recoverable | n/a | yes — one `UPDATE ... SET tenant_id` as `service_role` |
 
 A write that **sends** `tenant_id` is completely unaffected. The column default
@@ -41,19 +41,19 @@ Recorded on 3 Sep (`claude/nexus-tenancy-wave-and-the-second-waha-2026-09-03.md`
 > **which is the documented rollback.**
 
 That rollback used to be harmless with one dealership: disabling the node sent
-rows to ALBA, which was correct anyway. **It is no longer harmless.** Disabling
-`Resolve Tenant` now sends live ALBA WhatsApp traffic to quarantine, where the
+rows to Tenant A, which was correct anyway. **It is no longer harmless.** Disabling
+`Resolve Tenant` now sends live Tenant A WhatsApp traffic to quarantine, where the
 dealership cannot see it.
 
 **Required edit** — WhatsApp BDC AI Agent, node `Resolve Tenant`, and the sticky
 note next to it:
 
 > ROLLBACK WARNING (changed 5 Sep 2026). Disabling this node no longer falls back
-> to ALBA CARS. `nexus_default_tenant_id()` now returns the UNATTRIBUTED
+> to Tenant A. `nexus_default_tenant_id()` now returns the UNATTRIBUTED
 > quarantine tenant, so every row written while this node is off is invisible to
 > the dealership until it is re-attributed. If you disable it, note the start
 > time, and afterwards run `select * from public.nexus_quarantine_census();` as
-> service_role and `UPDATE` those rows back to ALBA's tenant id
+> service_role and `UPDATE` those rows back to Tenant A's tenant id
 > (`fff6a2b5-cfd5-4460-8383-875bc5826de0`). Do not delete them.
 
 This is a **note/documentation** change, not a logic change. The node's behaviour
@@ -109,7 +109,7 @@ already exist.
 
 ## 4. Rollback of the database change itself
 
-There is no "put the flag back on ALBA" — a CHECK constraint
+There is no "put the flag back on Tenant A" — a CHECK constraint
 (`tenants_unattributed_default_must_be_quarantine`) forbids it, deliberately.
 If the quarantine behaviour has to be undone in an emergency, the honest options
 are, in order of preference:

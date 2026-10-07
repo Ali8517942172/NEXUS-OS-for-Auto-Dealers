@@ -32,7 +32,7 @@ the objection. Two facts, both measured today:
 
 ```
 integration_id  75d67b05-1cd4-4f81-8afd-3c2186f25590
-tenant_id       fff6a2b5-cfd5-4460-8383-875bc5826de0   (ALBA CARS)
+tenant_id       fff6a2b5-cfd5-4460-8383-875bc5826de0   (Tenant A)
 channel_type    whatsapp_waha_session
 external_identifier  'default'
 status          active
@@ -112,5 +112,5 @@ Disable the new lookup node and restore the `$env.NEXUS_TENANT_MAP` /
 `BUILTIN` body in `Resolve Tenant`, then republish.
 
 **Do NOT roll back by disabling `Resolve Tenant` itself.** Since 5 September that
-sends live ALBA traffic to the quarantine tenant, where the dealership cannot see
+sends live Tenant A traffic to the quarantine tenant, where the dealership cannot see
 it — see file 01.

@@ -78,7 +78,7 @@ the default landing screen — but on `wip/platform-truth-2026-09-01` only, and
 that branch is not deployed, so it is not yet on any site a buyer can open. The
 AED figure it opens with states its own derivation on the screen — the sum of
 `engine_impact_aed` over the first register, one impact kind, one engine, two
-stored columns — and it is never called revenue. Measured on ALBA's real data
+stored columns — and it is never called revenue. Measured on Tenant A's real data
 when it was built: **2 leaks · AED 66,000 gross margin exposed · 8 checks clear ·
 9 checks that could not run.**
 
@@ -156,7 +156,7 @@ done.** `STATUS-2026-09-06.md` is the current list and `OWNER-ACTIONS.md` is
 the ordered set of steps.
 
 **Track B — make it sellable.** Three to five UAE dealers. Show the real Profit
-Sentinel on ALBA's own honest data and Today's Money Leaks. Ask **what they
+Sentinel on Tenant A's own honest data and Today's Money Leaks. Ask **what they
 would pay**, and what the one missing capability is.
 
 Never ask *"what features would you like"* — that is how a product becomes an

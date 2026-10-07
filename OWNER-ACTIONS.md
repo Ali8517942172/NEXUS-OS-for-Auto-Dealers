@@ -23,7 +23,7 @@ The list is in **three tiers**, and the tiers matter more than the items:
 
 **The single most important sentence in this file:** *tier A does not depend on
 tier B or C at any point.* The Profit Sentinel and Today's Money Leaks demo is
-read-only, runs on ALBA's own honest data, and needs no WhatsApp, no Meta
+read-only, runs on Tenant A's own honest data, and needs no WhatsApp, no Meta
 attestation and no second dealership. **You can be demoing this afternoon.**
 
 ---

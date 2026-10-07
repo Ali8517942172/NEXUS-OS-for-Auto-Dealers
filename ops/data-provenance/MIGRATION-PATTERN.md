@@ -309,5 +309,5 @@ being a no-op is the day someone grants the dashboard a write path.
 Its one row is the AED 585,000 sale. The file does **not** attest it. It cannot:
 `MEASUREMENTS.md` §5.4 shows the row's `deal_id` names a different email from
 its own `customer_name` and from the lead it points at, and no query settles
-whether it is ALBA's sale or a setup artefact. It becomes `UNKNOWN`, and the
+whether it is Tenant A's sale or a setup artefact. It becomes `UNKNOWN`, and the
 open question goes to the owner.

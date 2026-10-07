@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"primary-fixed":"#d9e2ff","on-error":"#ffffff","surface-container-lowest":"#ffffff","on-secondary-container":"#465780","inverse-surface":"#283043","secondary-container":"#bccefe","outline-variant":"#c2c6d5","tertiary-container":"#007281","surface-container-high":"#e1e8ff","on-tertiary-fixed":"#001f25","on-secondary-fixed":"#041a40","on-error-container":"#93000a","on-tertiary-fixed-variant":"#004e59","on-tertiary":"#ffffff","on-primary-fixed-variant":"#004398","on-primary":"#ffffff","background":"#faf8ff","surface-bright":"#faf8ff","on-secondary-fixed-variant":"#34466e","on-surface-variant":"#424753","surface-container-low":"#f2f3ff","on-primary-container":"#dee6ff","on-primary-fixed":"#001a43","surface-dim":"#d2d9f3","primary":"#004ba8","inverse-primary":"#afc6ff","secondary":"#4c5e87","surface":"#faf8ff","tertiary-fixed":"#a0efff","error-container":"#ffdad6","inverse-on-surface":"#edf0ff","tertiary-fixed-dim":"#44d8f0","secondary-fixed":"#d9e2ff","tertiary":"#005864","on-background":"#131b2d","on-tertiary-container":"#b1f1ff","surface-tint":"#155ac0","primary-container":"#2563c9","surface-container-highest":"#dbe2fb","surface-variant":"#dbe2fb","error":"#ba1a1a","outline":"#737784","on-secondary":"#ffffff","on-surface":"#131b2d","surface-container":"#e9edff","primary-fixed-dim":"#afc6ff","secondary-fixed-dim":"#b4c6f5"},borderRadius:{DEFAULT:"0.25rem",lg:"0.5rem",xl:"0.75rem",full:"9999px"},spacing:{"gutter":"1rem","space-xl":"2rem","space-lg":"1.5rem","space-md":"1rem","margin":"1.5rem","space-xs":"0.25rem","space-sm":"0.5rem"},fontFamily:{"headline-lg":["Inter"],"body-lg":["Inter"],"body-md":["Inter"],"body-sm":["Inter"],"label-numeric-lg":["JetBrains Mono"],"label-numeric-sm":["JetBrains Mono"],"table-header":["Inter"],"headline-xl":["Inter"],"label-numeric-md":["JetBrains Mono"],"headline-md":["Inter"]},fontSize:{"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}]}}}}</script></head><body class="bg-background font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-72 bg-surface-container-low shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50 flex flex-col justify-between overflow-hidden"><div class="flex flex-col h-full"><div class="h-16 px-space-md flex items-center justify-between flex-shrink-0 bg-surface-container-low"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-headline-md text-headline-md tracking-wider">N</div><div class="flex flex-col"><span class="font-headline-md text-headline-md text-on-surface leading-none tracking-tight">NEXUS OS</span><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant leading-none mt-space-xs">v4.2 // REGION-DXB</span></div></div><div class="px-space-xs py-0.5 rounded bg-surface-container-high text-primary font-label-numeric-sm text-label-numeric-sm uppercase font-semibold">ENT</div></div><nav class="flex-1 overflow-y-auto px-space-sm py-space-sm space-y-space-md" data-active-classes="bg-primary-container text-on-primary-container font-semibold rounded-lg shadow-sm"><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline tracking-wider">Primary / Work</div><div class="space-y-0.5"><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="overview" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span>Overview</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="owner-brief" href="#"><span class="material-symbols-outlined text-[20px]">shield_person</span>Owner Brief</a><a class="flex items-center justify-between px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="todays-money-leaks" href="#"><span class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px] text-error">crisis_alert</span>Today's Money Leaks</span><span class="px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-label-numeric-sm">3</span></a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="leads" href="#"><span class="material-symbols-outlined text-[20px]">group</span>Leads</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[20px]">person_add</span>Record a Lead</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="action-center" href="#"><span class="material-symbols-outlined text-[20px]">bolt</span>Action Center</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="deals" href="#"><span class="material-symbols-outlined text-[20px]">contract</span>Deals</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="appointments" href="#"><span class="material-symbols-outlined text-[20px]">calendar_today</span>Appointments</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="conversations" href="#"><span class="material-symbols-outlined text-[20px]">forum</span>Conversations</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="calls-and-voice" href="#"><span class="material-symbols-outlined text-[20px]">call</span>Calls &amp; Voice</a></div></div><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline tracking-wider">Intelligence &amp; Assets</div><div class="space-y-0.5"><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="inventory" href="#"><span class="material-symbols-outlined text-[20px]">directions_car</span>Inventory</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="competitors" href="#"><span class="material-symbols-outlined text-[20px]">monitoring</span>Competitors</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="market-sentinel" href="#"><span class="material-symbols-outlined text-[20px]">radar</span>Market Sentinel</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[20px]">account_balance</span>Finance Desk</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[20px]">contact_page</span>Customer 360</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[20px] text-tertiary">smart_toy</span>Ask AI</a></div></div><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline tracking-wider">Revenue Engines / Recovery</div><div class="space-y-0.5"><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-2 transition-colors bg-primary-container text-on-primary-container font-semibold rounded-lg shadow-sm" data-path="deal-room" href="#"><span class="material-symbols-outlined text-[20px]">meeting_room</span>Deal Room</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[20px]">currency_exchange</span>Revenue Recovery</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[20px]">restore</span>Lead Recovery</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[20px]">healing</span>Deal Rescue</a></div></div><div class="space-y-1"><div class="px-space-sm py-1 font-table-header text-table-header uppercase text-outline tracking-wider">Infrastructure &amp; Compliance</div><div class="space-y-0.5"><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[20px]">hub</span>Lead Sources</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="channels" href="#"><span class="material-symbols-outlined text-[20px]">alt_route</span>Channels</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="integrations" href="#"><span class="material-symbols-outlined text-[20px]">integration_instructions</span>Integrations</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="policy-and-house-rules" href="#"><span class="material-symbols-outlined text-[20px]">rule</span>Policy &amp; House Rules</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="compliance-and-kyc" href="#"><span class="material-symbols-outlined text-[20px]">verified_user</span>Compliance &amp; KYC</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="automation" href="#"><span class="material-symbols-outlined text-[20px]">account_tree</span>Automation</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="team" href="#"><span class="material-symbols-outlined text-[20px]">badge</span>Team</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="setup" href="#"><span class="material-symbols-outlined text-[20px]">settings</span>Setup</a><a class="flex items-center gap-space-sm px-space-sm py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors font-body-md text-body-md" data-path="subscription" href="#"><span class="material-symbols-outlined text-[20px]">credit_card</span>Subscription</a></div></div></nav><div class="p-space-sm bg-surface-container flex-shrink-0 m-space-sm rounded-lg"><div class="flex items-center justify-between font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mb-1"><span>NETWORK STATUS</span><span class="text-tertiary font-bold">SECURE</span></div><div class="font-label-numeric-sm text-label-numeric-sm text-on-surface truncate">GATEWAY: DXB-CENTRAL-01</div></div></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-16 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex items-center justify-between px-space-lg"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm bg-surface-container-low px-space-sm py-1.5 rounded-lg"><span class="material-symbols-outlined text-primary text-[20px]">storefront</span><span class="font-headline-md text-headline-md text-on-surface leading-none">Demo Motors</span><span class="px-1.5 py-0.5 rounded bg-primary-fixed text-on-primary-fixed-variant font-label-numeric-sm text-label-numeric-sm font-semibold uppercase">Dubai UAE</span><span class="material-symbols-outlined text-outline text-[18px]">expand_more</span></div><div class="flex items-center gap-1.5 px-space-sm py-1 rounded bg-surface-container-highest"><span class="w-2 h-2 rounded-full bg-tertiary-container animate-pulse"></span><span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold tracking-wide">PRODUCTION</span></div><div class="hidden xl:flex items-center gap-1.5 font-label-numeric-sm text-label-numeric-sm text-on-surface-variant bg-surface-container-low px-space-sm py-1 rounded"><span class="material-symbols-outlined text-[16px]">schedule</span><span>UAE GST (UTC+4):</span><span class="text-on-surface font-semibold">14:32:08</span></div></div><div class="flex items-center gap-space-md"><div class="relative w-64 lg:w-80"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span><input class="w-full bg-surface-container-lowest text-on-surface pl-9 pr-4 py-1.5 rounded-lg font-body-sm text-body-sm outline-none focus:bg-surface-container-low placeholder:text-outline transition-colors" placeholder="Search VIN, Customer, Deal ID..." type="text"/></div><div class="flex items-center gap-space-xs"><button class="w-9 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant transition-colors relative"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span></button><button class="w-9 h-9 rounded-lg bg-surface-container-low hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant transition-colors"><span class="material-symbols-outlined text-[20px]">sync</span></button></div><div class="flex items-center gap-space-sm pl-space-xs"><div class="flex flex-col text-right hidden sm:flex"><span class="font-headline-md text-headline-md text-on-surface leading-tight text-right">Rashid Al-Maktoum</span><span class="font-body-sm text-body-sm text-on-surface-variant text-right">Dealer Principal</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-16 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Interactive Toast Notification Component -->
+<div class="fixed bottom-6 right-6 z-50 transform translate-y-16 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-space-sm px-space-md py-3 rounded-lg bg-inverse-surface text-inverse-on-surface shadow-xl" id="statusToast">
+<span class="material-symbols-outlined text-[20px] text-tertiary-fixed-dim">check_circle</span>
+<span class="font-body-md text-body-md font-medium" id="toastMsg">Notification recorded for Deal Room launch.</span>
+</div>
+<!-- Main Content Space -->
+<div class="px-space-lg py-space-lg max-w-[1600px] mx-auto w-full flex flex-col gap-space-lg">
+<!-- Top Area: Breadcrumbs, Header, Action Triggers -->
+<div class="flex flex-col gap-space-sm pb-space-xs">
+<!-- Breadcrumb Navigation -->
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant uppercase tracking-wider font-semibold">REVENUE RECOVERY</span>
+<span class="text-outline-variant text-[14px]">/</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-semibold uppercase tracking-wider">DEAL EXECUTION</span>
+</div>
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md mt-1">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-sm">
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Deal Room</h1>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-secondary-container/60 text-on-secondary-container font-label-numeric-sm text-label-numeric-sm font-semibold tracking-wide">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+              COMING SOON
+            </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+            Centralizes high-value transaction stages from initial commitment through finance pre-approval, insurance, and showroom delivery handover.
+          </p>
+</div>
+<!-- Action Triggers -->
+<div class="flex items-center gap-space-sm flex-shrink-0">
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-md text-body-md font-medium transition-colors shadow-sm" id="learnMoreBtn">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">info</span>
+<span>Learn more</span>
+</button>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container-high text-on-surface font-body-md text-body-md font-medium transition-colors shadow-sm" id="previewBtn">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant">visibility</span>
+<span>Preview schematic</span>
+</button>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-md text-body-md font-semibold transition-colors shadow-sm" id="notifyBtn">
+<span class="material-symbols-outlined text-[18px]">notifications_active</span>
+<span>Notify me when available</span>
+</button>
+</div>
+</div>
+<!-- Prerequisite Alert Banner -->
+<div class="flex items-center gap-space-sm px-space-md py-3 rounded-lg bg-surface-container-low text-on-surface-variant mt-2 shadow-sm">
+<span class="material-symbols-outlined text-[20px] text-primary flex-shrink-0">verified</span>
+<div class="flex-1 font-body-sm text-body-sm">
+<span class="font-semibold text-on-surface">Prerequisite:</span>
+<span>Needs a deal record at first commitment (minimum verbal agreement or reservation deposit logged in Deals).</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant uppercase tracking-wider bg-surface-container px-2 py-0.5 rounded">PREREQ-REQ-01</span>
+</div>
+</div>
+<!-- Section 1: Deal Room Stages Progress Stepper (Visual Stage Pipeline) -->
+<div class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px] text-primary">linear_scale</span>
+<span class="font-headline-md text-headline-md text-on-surface">Deal Velocity Pipeline</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">7-STAGE TRACKER</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Tracks deal velocity across the 7 critical closing gates to prevent showroom deal drop-offs.
+        </p>
+</div>
+<!-- Stepper Component Schematic -->
+<div class="grid grid-cols-1 md:grid-cols-7 gap-space-sm pt-space-xs">
+<!-- Stage 1 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">01</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-1</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Test Drive</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 2 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">02</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-2</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Quote Issued</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 3 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">03</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-3</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Finance Application</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 4 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">04</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-4</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Documents &amp; KYC</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 5 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">05</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-5</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Insurance Desk</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 6 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">06</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-6</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Payment &amp; Escrow</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+<!-- Stage 7 -->
+<div class="relative flex flex-col gap-2 p-3 rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors">
+<div class="flex items-center justify-between">
+<span class="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">07</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline uppercase">G-7</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface">Delivery Handover</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">[ Stage — ]</span>
+</div>
+<div class="h-1 w-full bg-surface-container-high rounded-full overflow-hidden mt-1">
+<div class="h-full bg-outline-variant w-0"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 2: Top KPI / Deal Velocity Tiles (4 Tiles) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- Tile 1 -->
+<div class="rounded-xl bg-surface-container-lowest p-space-md flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Active Deal Rooms</span>
+<span class="material-symbols-outlined text-[18px] text-outline">meeting_room</span>
+</div>
+<div class="font-label-numeric-lg text-headline-xl font-bold text-on-surface mt-2">—</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">No active room initialized</span>
+</div>
+<div class="pt-4 flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">CAPACITY: 0/0</span>
+<button class="kpi-learn-more text-primary hover:text-primary-container font-label-numeric-sm text-label-numeric-sm font-semibold flex items-center gap-1 transition-colors">
+            Learn more <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Tile 2 -->
+<div class="rounded-xl bg-surface-container-lowest p-space-md flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Average Days to Handover</span>
+<span class="material-symbols-outlined text-[18px] text-outline">timer</span>
+</div>
+<div class="font-label-numeric-lg text-headline-xl font-bold text-on-surface mt-2">—</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Baseline requires 5 closed rooms</span>
+</div>
+<div class="pt-4 flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">TARGET: &lt; 4.5 DAYS</span>
+<button class="kpi-learn-more text-primary hover:text-primary-container font-label-numeric-sm text-label-numeric-sm font-semibold flex items-center gap-1 transition-colors">
+            Learn more <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Tile 3 -->
+<div class="rounded-xl bg-surface-container-lowest p-space-md flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Documents Pending Customer</span>
+<span class="material-symbols-outlined text-[18px] text-outline">pending_actions</span>
+</div>
+<div class="font-label-numeric-lg text-headline-xl font-bold text-on-surface mt-2">—</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Awaiting deal commitment</span>
+</div>
+<div class="pt-4 flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">BOTTLENECK: NONE</span>
+<button class="kpi-learn-more text-primary hover:text-primary-container font-label-numeric-sm text-label-numeric-sm font-semibold flex items-center gap-1 transition-colors">
+            Learn more <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Tile 4 -->
+<div class="rounded-xl bg-surface-container-lowest p-space-md flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Financing Verification SLA</span>
+<span class="material-symbols-outlined text-[18px] text-outline">speed</span>
+</div>
+<div class="font-label-numeric-lg text-headline-xl font-bold text-on-surface mt-2">—</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">No bank dossiers submitted</span>
+</div>
+<div class="pt-4 flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">SLA: 24.0 HRS</span>
+<button class="kpi-learn-more text-primary hover:text-primary-container font-label-numeric-sm text-label-numeric-sm font-semibold flex items-center gap-1 transition-colors">
+            Learn more <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Section 3: Active Deal Room Inspector Wireframe (Master Stage Checklist) -->
+<div class="rounded-xl bg-surface-container-lowest shadow-sm flex flex-col overflow-hidden">
+<!-- Active Room Header Placeholder Metadata Bar -->
+<div class="px-space-lg py-space-md bg-surface-container-low flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex flex-wrap items-center gap-y-2 gap-x-space-lg">
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Target Buyer</span>
+<span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">[ Buyer Name — ]</span>
+</div>
+<div class="hidden sm:block w-px h-8 bg-surface-container-high"></div>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Vehicle Stock / VIN</span>
+<span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">[ Stock Unit VIN — ]</span>
+</div>
+<div class="hidden sm:block w-px h-8 bg-surface-container-high"></div>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Total Consideration</span>
+<span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">[ AED — ]</span>
+</div>
+<div class="hidden sm:block w-px h-8 bg-surface-container-high"></div>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Room Lead</span>
+<span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">[ Desk Manager — ]</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm flex-shrink-0">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-on-surface-variant font-semibold">
+<span class="material-symbols-outlined text-[16px]">lock</span>
+            STATUS: DORMANT
+          </span>
+</div>
+</div>
+<!-- Two-Column Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12">
+<!-- Left Column: Master Stage Checklist (7 cols) -->
+<div class="lg:col-span-7 p-space-lg flex flex-col justify-between space-y-space-md bg-surface-container-lowest">
+<div class="flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface">Checklist per Deal (with Owner &amp; Due Date)</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Deterministic closing sequence executed by floor staff and back-office teams.</p>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">0 / 5 COMPLETE</span>
+</div>
+<!-- Structured Empty Checklist Items -->
+<div class="flex flex-col gap-space-xs">
+<!-- Item 1 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div class="flex items-center gap-3">
+<span class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium text-on-surface">[ ] Step 1: Upload Emirates ID &amp; Driving License</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">IDENTITY &amp; PASSPORT VERIFICATION GATE</span>
+</div>
+</div>
+<div class="flex items-center gap- space-sm pl-8 sm:pl-0">
+<div class="flex flex-col text-left sm:text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Owner: [ Sales Rep — ]</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Due: [ Date — ]</span>
+</div>
+<span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">[ Pending — ]</span>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div class="flex items-center gap-3">
+<span class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium text-on-surface">[ ] Step 2: Bank Salary Certificate &amp; 3-Month Statements</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">CENTRAL BANK AFFORDABILITY &amp; DBR AUDIT</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm pl-8 sm:pl-0">
+<div class="flex flex-col text-left sm:text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Owner: [ Finance Desk — ]</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Due: [ Date — ]</span>
+</div>
+<span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">[ Pending — ]</span>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div class="flex items-center gap-3">
+<span class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium text-on-surface">[ ] Step 3: Comprehensive Motor Insurance Quotation</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">BROKER QUOTE BINDING &amp; PREMIUM APPROVAL</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm pl-8 sm:pl-0">
+<div class="flex flex-col text-left sm:text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Owner: [ Desk Manager — ]</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Due: [ Date — ]</span>
+</div>
+<span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">[ Pending — ]</span>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div class="flex items-center gap-3">
+<span class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium text-on-surface">[ ] Step 4: Down Payment &amp; Security Deposit Verification</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">LEDGER RECEIPT &amp; ESCROW RECONCILIATION</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm pl-8 sm:pl-0">
+<div class="flex flex-col text-left sm:text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Owner: [ Accounts — ]</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Due: [ Date — ]</span>
+</div>
+<span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">[ Pending — ]</span>
+</div>
+</div>
+<!-- Item 5 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div class="flex items-center gap-3">
+<span class="w-5 h-5 rounded bg-surface-container-high flex items-center justify-center text-outline">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium text-on-surface">[ ] Step 5: RTA Vehicle Registration &amp; Passing Certificate</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">TECHNICAL TESTING &amp; POSSESSION TRANSFER</span>
+</div>
+</div>
+<div class="flex items-center gap-space-sm pl-8 sm:pl-0">
+<div class="flex flex-col text-left sm:text-right">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface">Owner: [ Operations — ]</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Due: [ Date — ]</span>
+</div>
+<span class="ml-2 px-2 py-0.5 rounded bg-surface-container-high font-label-numeric-sm text-label-numeric-sm text-outline uppercase font-semibold">[ Pending — ]</span>
+</div>
+</div>
+</div>
+</div>
+<div class="pt-4 flex items-center justify-between">
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline font-semibold">TEMPLATE: UAE-RETAIL-STD-V2</span>
+<button class="preview-trigger text-primary hover:text-primary-container font-body-md text-body-md font-semibold flex items-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[18px]">rule</span>
+<span>Preview checklist schema</span>
+</button>
+</div>
+</div>
+<!-- Right Column: Customer Document Requests & Self-Service Portal (5 cols) -->
+<div class="lg:col-span-5 p-space-lg bg-surface-container-low flex flex-col justify-between space-y-space-md">
+<div class="flex flex-col gap-space-md">
+<div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px] text-primary">phonelink_ring</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Customer Document Requests</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                One-link secure mobile portal sent via WhatsApp where buyers upload required financing and KYC paperwork directly.
+              </p>
+</div>
+<!-- Portal Status Box -->
+<div class="rounded-xl bg-surface-container-lowest p-space-md shadow-sm flex flex-col gap-space-sm">
+<div class="flex flex-col gap-1">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Direct Customer Magic Link</span>
+<div class="flex items-center justify-between p-2 rounded-lg bg-surface-container font-label-numeric-sm text-label-numeric-sm text-on-surface">
+<span class="text-outline">nexus.deal/room/—</span>
+<button class="text-outline cursor-not-allowed opacity-60 flex items-center gap-1" title="Unavailable until room activation">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+<span>Disabled</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1">
+<div class="p-2 rounded bg-surface-container flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase">Dispatch Channel</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">[ Awaiting Room Activation ]</span>
+</div>
+<div class="p-2 rounded bg-surface-container flex flex-col">
+<span class="font-table-header text-table-header text-outline uppercase">Received Files</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">— of — documents submitted</span>
+</div>
+</div>
+<!-- List of Required Files with '—' Status Chips -->
+<div class="flex flex-col gap-1.5 pt-2">
+<span class="font-table-header text-table-header text-outline uppercase tracking-wider">Required Document Dossier</span>
+<div class="flex items-center justify-between p-2 rounded bg-surface-container-low text-on-surface">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-outline">badge</span>
+<span class="font-body-sm text-body-sm font-medium">Emirates ID (Front &amp; Back)</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline bg-surface-container px-2 py-0.5 rounded font-semibold">—</span>
+</div>
+<div class="flex items-center justify-between p-2 rounded bg-surface-container-low text-on-surface">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-outline">flight</span>
+<span class="font-body-sm text-body-sm font-medium">Passport &amp; Residency Visa Copy</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline bg-surface-container px-2 py-0.5 rounded font-semibold">—</span>
+</div>
+<div class="flex items-center justify-between p-2 rounded bg-surface-container-low text-on-surface">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-outline">work</span>
+<span class="font-body-sm text-body-sm font-medium">Salary Certificate to Bank</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline bg-surface-container px-2 py-0.5 rounded font-semibold">—</span>
+</div>
+<div class="flex items-center justify-between p-2 rounded bg-surface-container-low text-on-surface">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-outline">account_balance</span>
+<span class="font-body-sm text-body-sm font-medium">3-Month Bank Statements (Stamped)</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline bg-surface-container px-2 py-0.5 rounded font-semibold">—</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="pt-2 flex flex-col sm:flex-row items-center gap-2">
+<button class="preview-trigger w-full sm:w-1/2 py-2 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-body-sm text-body-sm font-medium transition-colors text-center">
+              Preview portal view
+            </button>
+<button class="notify-trigger w-full sm:w-1/2 py-2 px-3 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors text-center">
+              Notify me
+            </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section 4: Architectural Blueprint Explainer Section -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
+<div class="p-space-md rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">handshake</span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface mt-1">Zero-Loss Handovers</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Eliminates communication deadlocks between showroom sales executives, off-site bank underwriters, and the delivery staging yard.
+        </p>
+</div>
+<div class="p-space-md rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">chat_bubble_outline</span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface mt-1">WhatsApp Document Pipeline</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Clients receive instantaneous SMS/WhatsApp upload links without logging into complex portals, accelerating dossier compilation.
+        </p>
+</div>
+<div class="p-space-md rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">shield</span>
+</div>
+<h4 class="font-headline-md text-headline-md text-on-surface mt-1">Regulatory Escrow Rigor</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Validates that full deposit settlement and RTA passing tokens are confirmed prior to vehicle keys being released from custody.
+        </p>
+</div>
+</div>
+<!-- Footer: Regulatory & Security Assurance -->
+<div class="flex flex-col sm:flex-row items-center justify-between gap-space-sm py-space-sm px-space-md rounded-lg bg-surface-container-low text-on-surface-variant shadow-sm">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[18px] text-tertiary">lock</span>
+<span class="font-body-sm text-body-sm">
+          Encrypted UAE cloud repository compliant with UAE Central Bank and RTA vehicle transfer guidelines.
+        </span>
+</div>
+<div class="flex items-center gap-space-md flex-shrink-0">
+<span class="font-label-numeric-sm text-label-numeric-sm uppercase tracking-wider text-outline">AES-256 GCM</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">|</span>
+<span class="font-label-numeric-sm text-label-numeric-sm uppercase tracking-wider text-outline">DUBAI REGION COMPLIANT</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    const toast = document.getElementById('statusToast');
+    const toastMsg = document.getElementById('toastMsg');
+    let toastTimeout;
+
+    function showToast(message) {
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastMsg.textContent = message;
+      toast.classList.remove('translate-y-16', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-16', 'opacity-0');
+      }, 3500);
+    }
+
+    const notifyBtns = [
+      document.getElementById('notifyBtn'),
+      ...document.querySelectorAll('.notify-trigger')
+    ];
+    notifyBtns.forEach(btn => {
+      if (btn) {
+        btn.addEventListener('click', () => {
+          showToast('Notification preference saved. You will be alerted upon Deal Room v1 launch.');
+        });
+      }
+    });
+
+    const previewBtns = [
+      document.getElementById('previewBtn'),
+      ...document.querySelectorAll('.preview-trigger')
+    ];
+    previewBtns.forEach(btn => {
+      if (btn) {
+        btn.addEventListener('click', () => {
+          showToast('Wireframe schematics locked. Detailed functional preview will activate with Deals module.');
+        });
+      }
+    });
+
+    const learnMoreBtns = [
+      document.getElementById('learnMoreBtn'),
+      ...document.querySelectorAll('.kpi-learn-more')
+    ];
+    learnMoreBtns.forEach(btn => {
+      if (btn) {
+        btn.addEventListener('click', () => {
+          showToast('Documentation for Deal Velocity gates is being assembled under Knowledge Base #402.');
+        });
+      }
+    });
+  })();
+</script></main></div></body></html>

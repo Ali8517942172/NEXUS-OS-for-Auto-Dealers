@@ -3,8 +3,10 @@
    the original code, moved not rewritten. */
 import { canAddUnit, canDeleteUnit, canEditUnit, canSetCost, db, dbWrite, onIdentityChange } from './data.js';
 import { $ } from './dom.js';
-import { TZ, aed, esc, n0, num, pill } from './format.js';
-import { modalError, openModal } from './modal.js';
+import { TZ, aed, esc, n0, num } from './format.js';
+import { modalError } from './modal.js';
+import { BTN, openStitchModal } from './stitch-ui.js';
+import { FIELD, pill as sPill } from './desk-kit.js';
 
 /* 2 Sep 2026 — HOLDING_PER_DAY: 50 IS GONE, AND IT WAS THE LARGEST FABRICATION
    IN THIS PRODUCT.
@@ -470,48 +472,56 @@ function unitForm(existing, inv, onDone) {
     id: nextStockId(inv), model: '', vin: '', status: 'Available',
     acquired_at: dubaiToday(), price_aed: '', cost_aed: '', ai_recommendation: '',
   };
-  const f = (id, label, input, hint) => `<div class="field">
-    <label for="${id}">${label}</label>${input}
-    ${hint ? `<div class="cell-sub">${hint}</div>` : ''}</div>`;
+  /* The Stitch "Add / Edit Vehicle" modal (inventory-assets-profit-sentinel
+     --a81092): uppercase field labels, a tinted financial-parameters block with
+     the cost field role-gated, and the calculated panel. The fields, their ids
+     and every rule below are unchanged. The export's VIN decode, odometer,
+     spec, bay allocation, inspection upload and automation toggles are not
+     drawn: inventory has no column for any of them. */
+  const f = (id, label, input, hint) => `<div class="flex flex-col">
+    <label class="${FIELD.label}" for="${id}">${label}</label>${input}
+    ${hint ? `<p class="${FIELD.hint}">${hint}</p>` : ''}</div>`;
+  const I = FIELD.input;
 
-  const m = openModal(isNew ? 'Add vehicle' : `Edit ${u.model}`, `
-    <div class="grid g2">
-      ${f('uId', 'Stock number', `<input id="uId" value="${esc(u.id)}" ${isNew ? '' : 'disabled'} />`,
+  const m = openStitchModal({ wide: true, title: isNew ? 'Add vehicle to inventory' : `Edit ${u.model}`, bodyHtml: `
+    <div class="flex flex-col gap-space-md">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+      ${f('uId', 'Stock number *', `<input id="uId" class="${I}" value="${esc(u.id)}" ${isNew ? '' : 'disabled'} />`,
           isNew ? 'Must be unique. Used as the row key everywhere.' : 'The stock number cannot be changed once a unit exists.')}
-      ${f('uStatus', 'Status', `<select id="uStatus">${INV.STATUSES
+      ${f('uStatus', 'Status', `<select id="uStatus" class="${FIELD.select}">${INV.STATUSES
           .map(s => `<option ${s === u.status ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}
     </div>
-    ${f('uModel', 'Model', `<input id="uModel" value="${esc(u.model)}" placeholder="Toyota Land Cruiser 2024" />`)}
-    <div class="grid g2">
-      ${f('uVin', 'VIN (optional)', `<input id="uVin" value="${esc(u.vin || '')}" />`)}
-      ${f('uAcq', 'Acquired on', `<input type="date" id="uAcq" value="${esc(u.acquired_at || '')}" max="${dubaiToday()}" />`,
+    ${f('uModel', 'Model *', `<input id="uModel" class="${I}" value="${esc(u.model)}" placeholder="Toyota Land Cruiser 2024" />`)}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+      ${f('uVin', 'VIN (optional)', `<input id="uVin" class="${I} uppercase font-label-numeric-sm" value="${esc(u.vin || '')}" />`)}
+      ${f('uAcq', 'Acquired on *', `<input type="date" id="uAcq" class="${I}" value="${esc(u.acquired_at || '')}" max="${dubaiToday()}" />`,
           'Days in stock, holding cost and the aging alert are all counted from this date, on the Dubai calendar. Without it none of the three can be worked out at all.')}
     </div>
-    <div class="grid g2">
-      ${f('uPrice', 'List price (AED)', `<input type="number" min="0" id="uPrice" value="${esc(u.price_aed)}" placeholder="290000" />`)}
-      ${f('uCost', 'Cost (AED)',
-          `<input type="number" min="0" id="uCost" value="${esc(u.cost_aed)}" placeholder="250000" ${mayCost ? '' : 'disabled'} />`,
+    <div class="p-space-md rounded-lg bg-surface-container-low grid grid-cols-1 md:grid-cols-2 gap-space-md">
+      ${f('uPrice', 'List price (AED) *', `<input type="number" min="0" id="uPrice" class="${I} text-right font-label-numeric-md" value="${esc(u.price_aed)}" placeholder="290000" />`)}
+      ${f('uCost', `Acquisition cost (AED)${mayCost ? ' *' : ' · <span class="normal-case">role-gated</span>'}`,
+          `<input type="number" min="0" id="uCost" class="${I} text-right font-label-numeric-md" value="${esc(u.cost_aed)}" placeholder="250000" ${mayCost ? '' : 'disabled'} />`,
           mayCost ? '' : 'Cost price is an owner or admin decision at this dealership, so it is shown here but not editable. Everything else on this vehicle can still be saved.')}
     </div>
-    ${f('uRec', 'AI recommendation (optional)', `<textarea id="uRec" rows="2">${esc(u.ai_recommendation || '')}</textarea>`,
+    ${f('uRec', 'AI recommendation (optional)', `<textarea id="uRec" class="${I}" rows="2">${esc(u.ai_recommendation || '')}</textarea>`,
         'Normally written by the pricing workflow. Editable here for a manual override.')}
-    <div class="card" style="background:var(--sunken);margin-top:4px">
-      <div class="label-caps" style="margin-bottom:10px">Calculated</div>
-      <dl class="kv" id="uCalc"></dl>
-      <div class="cell-sub" style="margin-top:10px" id="uRateNote"></div>
-      <div class="cell-sub" style="margin-top:8px">
+    <div class="rounded-lg bg-surface-container-low p-space-md flex flex-col gap-2">
+      <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Calculated</div>
+      <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface [&>dd]:text-right" id="uCalc"></dl>
+      <p class="${FIELD.hint}" id="uRateNote"></p>
+      <p class="${FIELD.hint}">
         These are worked out here for you and are not what gets saved. Saving stores the
         stock number, model, VIN, status, acquisition date, price, cost and recommendation;
         the figures above are the Inventory Profit Sentinel's, recomputed from those inputs
         the moment this screen next reads it.
-      </div>
+      </p>
+    </div>
     </div>`,
-    `<button class="btn primary" id="uSave"${mayEdit ? '' : ` disabled title="${esc(isNew
+    footHtml: `${isNew || !mayDelete ? '' : `<button type="button" class="${BTN.destructive} mr-auto" id="uDelete">Delete</button>`}
+     <button type="button" class="${BTN.secondary}" id="uCancel">Cancel</button>
+     <button type="button" class="${BTN.primary}" id="uSave"${mayEdit ? '' : ` disabled title="${esc(isNew
        ? 'Adding a vehicle states what it cost, so it is an owner or admin decision at this dealership.'
-       : 'Changing a vehicle is an owner, admin or manager decision at this dealership. You can read everything on this form.')}"`}>${isNew ? 'Add vehicle' : 'Save changes'}</button>
-     <button class="btn" id="uCancel">Cancel</button>
-     <div style="flex:1"></div>
-     ${isNew || !mayDelete ? '' : '<button class="btn danger" id="uDelete">Delete</button>'}`);
+       : 'Changing a vehicle is an owner, admin or manager decision at this dealership. You can read everything on this form.')}"`}>${isNew ? 'Add vehicle' : 'Save changes'}</button>` });
 
   const read = () => ({
     id: $('uId').value.trim(),
@@ -530,7 +540,7 @@ function unitForm(existing, inv, onDone) {
      given a null renders `<span class="pill "><span class="dot"></span></span>`,
      an empty grey chip that reads as a state rather than the absence of one, so
      it is spelled out with the reason attached. */
-  const NO_DATE = `<span class="t-muted" title="${esc(
+  const NO_DATE = `<span class="text-outline" title="${esc(
     'No acquisition date, so there is no day count to band this unit by. '
     + 'The nightly recompute skips rows with no acquired_at, so nothing will fill this in either.',
   )}">—</span>`;
@@ -540,15 +550,15 @@ function unitForm(existing, inv, onDone) {
      nothing owed — which for a holding cost is exactly the zero this pass
      exists to stop printing. */
   const notComputable = (why, inputs) =>
-    `<span class="t-warm" title="${esc(why)}">Not computable</span>`
-    + `<div class="cell-sub" style="white-space:normal;text-align:right">${esc(why)}${
+    `<span class="text-amber-700 font-semibold" title="${esc(why)}">Not computable</span>`
+    + `<div class="font-body-sm text-body-sm text-on-surface-variant whitespace-normal">${esc(why)}${
       inputs ? `<br>${esc(inputs)}` : ''}</div>`;
 
   /* PLACEHOLDER is marked on the figure itself and not underneath it. A rate the
      dealership has not stood behind produces a number that looks exactly like a
      real one, and a caveat two rows below is a caveat nobody screenshots. */
   const assumed = (html, why) =>
-    `${html} <span class="pill warm" title="${esc(why)}"><span class="dot"></span>assumed</span>`;
+    `${html} <span title="${esc(why)}">${sPill('assumed', 'warm', { verbatim: false })}</span>`;
 
   /* CFG is null until the settings read lands, and null means "no rate", which
      is the state that shows the inputs instead of a figure. So the panel is
@@ -576,26 +586,26 @@ function unitForm(existing, inv, onDone) {
       + (CFG ? ', from this dealership\'s Sentinel settings.' : ', the built-in fallback — the settings row has not been read.');
 
     $('uCalc').innerHTML = `
-      <dt>Days in stock</dt><dd class="num">${d.days_in_stock == null ? NO_DATE : num(d.days_in_stock)}</dd>
+      <dt>Days in stock</dt><dd class="tabular-nums">${d.days_in_stock == null ? NO_DATE : num(d.days_in_stock)}</dd>
       <dt>Aging alert</dt><dd>${d.aging_alert
-        ? `<span title="${esc(bandWhy)}">${pill(d.aging_alert, undefined, { verbatim: false })}</span>`
+        ? `<span title="${esc(bandWhy)}">${sPill(d.aging_alert, undefined, { verbatim: false })}</span>`
         : NO_DATE}</dd>
-      <dt>Gross margin</dt><dd class="num ${d.gross_margin < 0 ? 't-hot' : ''}">${d.gross_margin_state !== 'COMPUTED'
+      <dt>Gross margin</dt><dd class="tabular-nums ${d.gross_margin < 0 ? 'text-red-700' : ''}">${d.gross_margin_state !== 'COMPUTED'
         ? notComputable(d.gross_margin_note, '')
         : aed(d.gross_margin)}</dd>
-      <dt>Holding cost</dt><dd class="num">${d.holding_cost_state === 'NOT_COMPUTABLE'
+      <dt>Holding cost</dt><dd class="tabular-nums">${d.holding_cost_state === 'NOT_COMPUTABLE'
         ? notComputable(rateWhy, inputs)
         : placeholder ? assumed(aed(d.holding_cost_accrued), rateWhy) : aed(d.holding_cost_accrued)}</dd>
-      <dt>Net margin</dt><dd class="num">${d.net_margin_state === 'NOT_COMPUTABLE'
+      <dt>Net margin</dt><dd class="tabular-nums">${d.net_margin_state === 'NOT_COMPUTABLE'
         ? notComputable(d.gross_margin == null
             ? d.net_margin_note
             : `Gross margin of ${aed(d.gross_margin)} is real; the holding cost that would be subtracted from it is not on record.`,
           d.gross_margin == null ? '' : inputs)
         : placeholder
-          ? assumed(`<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`, rateWhy)
-          : `<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`}</dd>
-      <dt>VAT</dt><dd class="num">${aed(d.vat_amount)}</dd>
-      <dt>Recommended commission</dt><dd class="num">${d.recommended_commission == null
+          ? assumed(`<strong class="${d.net_margin < 0 ? 'text-red-700' : ''}">${aed(d.net_margin)}</strong>`, rateWhy)
+          : `<strong class="${d.net_margin < 0 ? 'text-red-700' : ''}">${aed(d.net_margin)}</strong>`}</dd>
+      <dt>VAT</dt><dd class="tabular-nums">${aed(d.vat_amount)}</dd>
+      <dt>Recommended commission</dt><dd class="tabular-nums">${d.recommended_commission == null
         ? notComputable('Commission is a share of net margin, and net margin is not computable for this unit.', '')
         : placeholder ? assumed(aed(d.recommended_commission), rateWhy) : aed(d.recommended_commission)}</dd>`;
 
@@ -630,22 +640,22 @@ function unitForm(existing, inv, onDone) {
        gone. The real one is rbac_02's inventory_role_update policy. */
     if (!mayEdit) return;
     const v = read();
-    if (!v.id) return m.msg('<span class="t-hot">A stock number is required.</span>');
-    if (!v.model) return m.msg('<span class="t-hot">A model is required.</span>');
-    if (!v.acquired_at) return m.msg('<span class="t-hot">An acquisition date is required.</span>');
+    if (!v.id) return m.msg('<span class="text-red-700">A stock number is required.</span>');
+    if (!v.model) return m.msg('<span class="text-red-700">A model is required.</span>');
+    if (!v.acquired_at) return m.msg('<span class="text-red-700">An acquisition date is required.</span>');
     if (v.price_aed === '' || (mayCost && v.cost_aed === ''))
-      return m.msg(`<span class="t-hot">${mayCost ? 'List price and cost are both required' : 'A list price is required'} — every margin on this screen is derived from them.</span>`);
+      return m.msg(`<span class="text-red-700">${mayCost ? 'List price and cost are both required' : 'A list price is required'} — every margin on this screen is derived from them.</span>`);
     /* `min="0"` on a number input is a spinner hint, not a constraint: typing
        -5000 submits happily. Gross margin, net margin, VAT and the recommended
        commission are all derived from these two, so one negative number here
        propagates into five stored columns and into whatever the workflows and
        the Finance Desk read out of them afterwards. */
     if (Number(v.price_aed) < 0 || (mayCost && Number(v.cost_aed) < 0))
-      return m.msg('<span class="t-hot">List price and cost cannot be negative — every margin, the VAT figure and the commission are derived from them.</span>');
+      return m.msg('<span class="text-red-700">List price and cost cannot be negative — every margin, the VAT figure and the commission are derived from them.</span>');
     if (!Number.isFinite(Number(v.price_aed)) || (mayCost && !Number.isFinite(Number(v.cost_aed))))
-      return m.msg('<span class="t-hot">List price and cost must both be numbers.</span>');
+      return m.msg('<span class="text-red-700">List price and cost must both be numbers.</span>');
     if (isNew && inv.some(x => String(x.id) === v.id))
-      return m.msg(`<span class="t-hot">Stock number ${esc(v.id)} already exists.</span>`);
+      return m.msg(`<span class="text-red-700">Stock number ${esc(v.id)} already exists.</span>`);
 
     const btn = m.wrap.querySelector('#uSave');
     btn.disabled = true; btn.textContent = 'Saving…';
@@ -663,7 +673,7 @@ function unitForm(existing, inv, onDone) {
         : await dbWrite('PATCH', `inventory?id=eq.${encodeURIComponent(v.id)}`, unitRow(v, mayCost));
       if (Array.isArray(saved) && saved.length === 0) {
         btn.disabled = false; btn.textContent = isNew ? 'Add vehicle' : 'Save changes';
-        return m.msg(`<span class="t-hot">Nothing was saved. No row in stock has stock number ${esc(v.id)} any more,
+        return m.msg(`<span class="text-red-700">Nothing was saved. No row in stock has stock number ${esc(v.id)} any more,
           or your account is not allowed to change this vehicle. Nothing was changed either way.</span>`);
       }
       m.close(); onDone();
@@ -674,10 +684,10 @@ function unitForm(existing, inv, onDone) {
   });
 
   m.wrap.querySelector('#uDelete')?.addEventListener('click', () => {
-    m.msg(`<span class="t-hot">Delete ${esc(u.id)} — ${esc(u.model)}? This cannot be undone.</span>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn danger" id="uDelYes">Yes, delete it</button>
-        <button class="btn" id="uDelNo">Keep it</button></div>`);
+    m.msg(`<span class="text-red-700">Delete ${esc(u.id)} — ${esc(u.model)}? This cannot be undone.</span>
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="${BTN.destructive}" id="uDelYes">Yes, delete it</button>
+        <button type="button" class="${BTN.secondary}" id="uDelNo">Keep it</button></div>`);
     $('uDelNo').addEventListener('click', () => m.msg(''));
     $('uDelYes').addEventListener('click', async () => {
       try {
@@ -694,7 +704,7 @@ function unitForm(existing, inv, onDone) {
            erase a unit that has recommendation history behind it. */
         const gone = await dbWrite('POST', 'rpc/inventory_delete_unit', { p_unit_id: u.id });
         if (Array.isArray(gone) && gone.length === 0) {
-          m.msg(`<span class="t-hot">Nothing was deleted — no row in inventory has stock number ${esc(u.id)} any more.
+          m.msg(`<span class="text-red-700">Nothing was deleted — no row in inventory has stock number ${esc(u.id)} any more.
             It may already be gone, or your account may not be allowed to delete it. The list is unchanged.</span>`);
           return;
         }

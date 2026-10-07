@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"primary-fixed-dim":"#afc6ff","surface-container-low":"#f2f3ff","tertiary-fixed-dim":"#44d8f0","secondary-fixed-dim":"#b4c6f5","surface-variant":"#dbe2fb","primary-container":"#2563c9","secondary-container":"#bccefe","tertiary":"#005864","primary-fixed":"#d9e2ff","on-error-container":"#93000a","surface-bright":"#faf8ff","inverse-on-surface":"#edf0ff","tertiary-container":"#007281","on-background":"#131b2d","surface-dim":"#d2d9f3","outline-variant":"#c2c6d5","primary":"#004ba8","secondary":"#4c5e87","surface-container-high":"#e1e8ff","error":"#ba1a1a","inverse-surface":"#283043","secondary-fixed":"#d9e2ff","outline":"#737784","surface-container-highest":"#dbe2fb","on-tertiary-fixed-variant":"#004e59","on-tertiary-fixed":"#001f25","on-primary-container":"#dee6ff","on-surface-variant":"#424753","on-surface":"#131b2d","on-tertiary-container":"#b1f1ff","on-secondary":"#ffffff","on-secondary-container":"#465780","tertiary-fixed":"#a0efff","surface-container-lowest":"#ffffff","on-primary-fixed-variant":"#004398","background":"#faf8ff","inverse-primary":"#afc6ff","surface-container":"#e9edff","on-error":"#ffffff","on-primary-fixed":"#001a43","on-primary":"#ffffff","on-secondary-fixed":"#041a40","on-secondary-fixed-variant":"#34466e","error-container":"#ffdad6","on-tertiary":"#ffffff","surface":"#faf8ff","surface-tint":"#155ac0"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-xs":"0.25rem","gutter":"1rem","margin":"1.5rem","space-lg":"1.5rem","space-xl":"2rem","space-sm":"0.5rem","space-md":"1rem"},"fontFamily":{"label-numeric-lg":["JetBrains Mono"],"headline-lg":["Inter"],"label-numeric-sm":["JetBrains Mono"],"body-lg":["Inter"],"headline-md":["Inter"],"headline-xl":["Inter"],"table-header":["Inter"],"body-md":["Inter"],"body-sm":["Inter"],"label-numeric-md":["JetBrains Mono"]},"fontSize":{"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}]}}}}</script></head><body class="bg-[#F7F8FA] font-body-md text-on-surface min-h-screen antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-[#16294F] text-[#C7D3EA] z-50 flex flex-col font-body-md select-none border-r border-[#1E3566]"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="font-headline-md text-white font-bold tracking-tight text-[15px]">NEXUS OS</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#0A3D4D] text-[#38D0E8] border border-[#13667E]">PRO</span></div><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#38D0E8] animate-pulse"></span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Today</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#"><span class="material-symbols-outlined text-[18px]">grid_view</span><span class="">Overview</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#"><span class="material-symbols-outlined text-[18px]">notifications_active</span><span class="">Action Center</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[18px]">price_check</span><span class="">Revenue Recovery</span></a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Pipeline</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="leads" href="#"><span class="material-symbols-outlined text-[18px]">filter_alt</span><span class="">Leads</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[18px]">add_circle</span><span class="">Record a Lead</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[18px]">sync_problem</span><span class="">Lead Recovery</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#"><span class="material-symbols-outlined text-[18px]">handshake</span><span class="">Deals</span></a><a aria-current="page" class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] transition-colors bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[18px]">emergency</span><span class="">Deal Rescue</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#"><span class="material-symbols-outlined text-[18px]">event</span><span class="">Appointments</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#"><span class="material-symbols-outlined text-[18px]">forum</span><span class="">Conversations</span></a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Stock</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#"><span class="material-symbols-outlined text-[18px]">directions_car</span><span class="">Inventory</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#"><span class="material-symbols-outlined text-[18px]">query_stats</span><span class="">Competitors</span></a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Customers</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[18px]">person_search</span><span class="">Customer 360</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#"><span class="material-symbols-outlined text-[18px]">campaign</span><span class="">Campaigns</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[18px]">account_balance</span><span class="">Finance Desk</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance" href="#"><span class="material-symbols-outlined text-[18px]">verified_user</span><span class="">Compliance</span></a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Insight</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="attribution" href="#"><span class="material-symbols-outlined text-[18px]">insights</span><span class="">Attribution</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[18px]">smart_toy</span><span class="">Ask AI</span></a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Setup</div><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[18px]">hub</span><span class="">Lead Sources</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="channels" href="#"><span class="material-symbols-outlined text-[18px]">alt_route</span><span class="">Channels</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="integrations" href="#"><span class="material-symbols-outlined text-[18px]">integration_instructions</span><span class="">Integrations</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="automation" href="#"><span class="material-symbols-outlined text-[18px]">bolt</span><span class="">Automation</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="policy" href="#"><span class="material-symbols-outlined text-[18px]">gavel</span><span class="">Policy</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="team" href="#"><span class="material-symbols-outlined text-[18px]">group</span><span class="">Team</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="setup" href="#"><span class="material-symbols-outlined text-[18px]">tune</span><span class="">Setup</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="subscription" href="#"><span class="material-symbols-outlined text-[18px]">credit_card</span><span class="">Subscription</span></a><a class="flex items-center gap-2.5 px-[14px] py-2 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[18px]">settings</span><span class="">Settings</span></a></nav></div><div class="p-3 border-t border-[#1E3566] shrink-0 flex items-center justify-between text-[11px] font-label-numeric-sm text-[#8598BA]"><span class="">DXB-HQ · CLUSTER 04</span><span class="text-[#38D0E8]">v4.12.0</span></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 flex items-center justify-between px-5 font-body-md"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2.5 shrink-0 pr-4 border-r border-[#E8EAEF]"><span class="font-headline-md font-bold text-[#0F1729] text-[14px] tracking-tight">Demo Motors</span><span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] uppercase font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>Dubai Showroom</span></div><div class="relative max-w-md w-full"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span><input class="w-full h-8 pl-8 pr-12 text-[13px] bg-surface-container-lowest border border-[#E8EAEF] rounded-[6px] text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Search leads, chassis / VIN, stock #..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm text-outline border border-[#E8EAEF] rounded bg-[#F7F8FA]">⌘K</kbd></div></div><div class="flex items-center gap-4 shrink-0"><div class="flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF]"><span class="text-[11px] font-label-numeric-sm font-semibold text-secondary">AED</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="text-[11px] font-label-numeric-sm text-on-surface">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-1 text-[11px] font-label-numeric-sm text-secondary"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="">LIVE SYNC</span></div><button class="relative p-1 text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error"></span></button><div class="h-6 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right leading-none"><div class="text-[13px] font-semibold text-[#0F1729]">Faris M.</div><div class="text-[11px] text-secondary mt-0.5">GM / Sales Director</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen"><div class="flex flex-col w-full">
+<!-- Sub-Header / Control Strip -->
+<div class="px-6 py-5 bg-surface-container-lowest border-b border-[#E8EAEF] flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F] border border-[#F5C2BC]">
+          HIGH SEVERITY COCKPIT
+        </span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">DESK: LUXURY PIPELINE A</span>
+</div>
+<h1 class="font-headline-lg text-[#0F1729] text-[22px] tracking-tight mt-1">
+        Deal Rescue — Slippage Prevention Desk
+      </h1>
+<p class="font-body-md text-[13px] text-secondary mt-0.5">
+        Algorithmic intervention for high-value open deals showing critical friction or stalling patterns.
+      </p>
+</div>
+<!-- Quick Action / Desk Status -->
+<div class="flex items-center gap-3 shrink-0">
+<div class="hidden xl:flex items-center gap-2 px-3 py-2 bg-[#F7F8FA] border border-[#E8EAEF] rounded-[6px]">
+<span class="material-symbols-outlined text-[16px] text-secondary">speed</span>
+<span class="text-[12px] font-body-md text-secondary">Deal Velocity Floor:</span>
+<span class="text-[12px] font-label-numeric-sm font-semibold text-[#0F1729]">48h Max Inactivity</span>
+</div>
+<button class="flex items-center gap-2 px-3.5 py-2 text-[13px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] active:bg-[#163D85] rounded-[6px] transition-colors focus:outline-none focus:ring-2 focus:ring-[#38D0E8] focus:ring-offset-2">
+<span class="material-symbols-outlined text-[18px]">bolt</span>
+        Batch SLA Dispatch
+      </button>
+<button class="flex items-center justify-center w-9 h-9 text-secondary hover:text-[#0F1729] bg-white border border-[#E8EAEF] rounded-[6px] hover:bg-[#F7F8FA] transition-colors">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+</div>
+<div class="p-6 space-y-6">
+<!-- KPI Summary Row -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- KPI 1 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[11px] font-table-header uppercase text-secondary">At-Risk Deal Value</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">
+            8 DEALS AT RISK
+          </span>
+</div>
+<div class="mt-1">
+<div class="text-[24px] font-label-numeric-lg font-bold text-[#0F1729] tracking-tight">AED 6,920,000</div>
+<div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-secondary font-body-sm">
+<span class="material-symbols-outlined text-[14px] text-[#C8321F]">trending_up</span>
+<span class="text-[#C8321F] font-label-numeric-sm font-semibold">+18.4%</span> vs prior 7-day cycle
+          </div>
+</div>
+</div>
+<!-- KPI 2 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[11px] font-table-header uppercase text-secondary">Average Days Stalled</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">
+            &gt; 48H SLA
+          </span>
+</div>
+<div class="mt-1">
+<div class="text-[24px] font-label-numeric-lg font-bold text-[#0F1729] tracking-tight">8.2 Days</div>
+<div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-secondary font-body-sm">
+<span class="material-symbols-outlined text-[14px] text-secondary">schedule</span>
+<span>Threshold breach: <strong class="text-[#0F1729] font-label-numeric-sm">4.1x</strong> standard cadence</span>
+</div>
+</div>
+</div>
+<!-- KPI 3 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[11px] font-table-header uppercase text-secondary">Top Friction Vector</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#E8F1FB] text-[#2563A8]">
+            FINANCE DESK
+          </span>
+</div>
+<div class="mt-1">
+<div class="text-[18px] font-headline-md font-semibold text-[#0F1729] truncate" title="Finance &amp; Bank Docs">
+            Finance &amp; Docs <span class="font-label-numeric-md text-primary">(42%)</span>
+</div>
+<div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-secondary font-body-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-[#2563C9]"></span>
+<span>Emirates NBD &amp; DIB bank packet delays</span>
+</div>
+</div>
+</div>
+<!-- KPI 4 -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between">
+<div class="flex items-center justify-between mb-2">
+<span class="text-[11px] font-table-header uppercase text-secondary">Potential Recovered Margin</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#E6F4EF] text-[#157A5B]">
+            PROJECTED
+          </span>
+</div>
+<div class="mt-1">
+<div class="text-[24px] font-label-numeric-lg font-bold text-[#157A5B] tracking-tight">AED 430,000</div>
+<div class="flex items-center gap-1.5 mt-1.5 text-[11px] text-secondary font-body-sm">
+<span class="material-symbols-outlined text-[14px] text-[#157A5B]">verified</span>
+<span>Based on 62% algorithmic rescue rate</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Filter Pills Strip -->
+<div class="flex items-center justify-between flex-wrap gap-3 pb-1 border-b border-[#E8EAEF]">
+<div class="flex items-center gap-2 overflow-x-auto py-1">
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-semibold bg-[#24428A] text-white flex items-center gap-1.5 shadow-none transition-colors">
+<span>All At-Risk</span>
+<span class="px-1.5 py-0.2 rounded bg-[#16294F] text-[#38D0E8] text-[10px] font-label-numeric-sm">8</span>
+</button>
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium bg-surface-container-lowest border border-[#E8EAEF] text-secondary hover:text-[#0F1729] hover:bg-[#F7F8FA] flex items-center gap-1.5 transition-colors">
+<span>Finance Pending</span>
+<span class="px-1.5 py-0.2 rounded bg-[#F7F8FA] text-secondary text-[10px] font-label-numeric-sm">3</span>
+</button>
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium bg-surface-container-lowest border border-[#E8EAEF] text-secondary hover:text-[#0F1729] hover:bg-[#F7F8FA] flex items-center gap-1.5 transition-colors">
+<span>No Test Drive</span>
+<span class="px-1.5 py-0.2 rounded bg-[#F7F8FA] text-secondary text-[10px] font-label-numeric-sm">2</span>
+</button>
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium bg-surface-container-lowest border border-[#E8EAEF] text-secondary hover:text-[#0F1729] hover:bg-[#F7F8FA] flex items-center gap-1.5 transition-colors">
+<span>Price Objection</span>
+<span class="px-1.5 py-0.2 rounded bg-[#F7F8FA] text-secondary text-[10px] font-label-numeric-sm">2</span>
+</button>
+<button class="px-3 py-1.5 rounded-[6px] text-[12px] font-medium bg-surface-container-lowest border border-[#E8EAEF] text-secondary hover:text-[#0F1729] hover:bg-[#F7F8FA] flex items-center gap-1.5 transition-colors">
+<span>Silent Customer</span>
+<span class="px-1.5 py-0.2 rounded bg-[#F7F8FA] text-secondary text-[10px] font-label-numeric-sm">1</span>
+</button>
+</div>
+<div class="flex items-center gap-2 text-[12px] text-secondary">
+<span>Sort:</span>
+<button class="flex items-center gap-1 font-semibold text-[#0F1729] hover:text-primary">
+          Highest Deal Value
+          <span class="material-symbols-outlined text-[16px]">arrow_downward</span>
+</button>
+</div>
+</div>
+<!-- Rescue Cards Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+<!-- CARD 1: Finance Pending -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] overflow-hidden flex flex-col justify-between">
+<div>
+<!-- Card Header Strip -->
+<div class="p-4 border-b border-[#E8EAEF] flex items-start justify-between gap-3 bg-surface-container-lowest">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md font-bold text-[#0F1729]">#D-3304</span>
+<span class="w-1 h-1 rounded-full bg-[#CBD1DC]"></span>
+<span class="font-headline-md text-[15px] font-bold text-[#0F1729]">Tariq Al-Hashimi</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">(+971 50 ••• 8821)</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#E8F1FB] text-[#2563A8]">
+                  FINANCE PENDING
+                </span>
+<span class="text-[11px] text-secondary">Stage: Bank Contract Approval</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-bold bg-[#FDECEA] text-[#C8321F] tracking-wider">
+                HOT
+              </span>
+</div>
+</div>
+<!-- Vehicle Specs & Valuation Row -->
+<div class="p-4 border-b border-[#E8EAEF] bg-[#FAFBFD]">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-[6px] bg-surface-container overflow-hidden shrink-0 border border-[#E8EAEF]">
+<img class="w-full h-full object-cover" data-alt="A pristine 2024 Mercedes-AMG G63 in Obsidian Black metallic finish staged on showroom marble floor under sharp architectural spotlights in Dubai, UAE." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB-PnxV5ZIi3-tPImGBFLEsLOPKZscUtZei01VX5GUFCAuclEbyIcr8wvKthitycOTPnV5hiqRmFgJmBk4GKDb0OyLoIvVGyz9p205BnzdbtYOYSQ_DcbJcu5E1cXVJodX5Tk7Dn7OHRc3_RgybmX-8_quFt8TEgwpfpcHEwvV4j11pv4lBxxF0nD97xPzlw4Qla1NKoltrUrfjnMmwbudjk0Oht8JmPI7e_Hz3Bw"/>
+</div>
+<div>
+<div class="text-[13px] font-headline-md font-semibold text-[#0F1729]">2024 Mercedes-AMG G63 4MATIC+</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-numeric-sm text-[11px] text-secondary">STOCK #DXB-9140</span>
+<span class="text-secondary">•</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">VIN: W1N4632801X•••</span>
+<button class="text-secondary hover:text-primary" title="Copy VIN">
+<span class="material-symbols-outlined text-[13px] align-middle">content_copy</span>
+</button>
+</div>
+</div>
+</div>
+<div class="sm:text-right shrink-0">
+<div class="text-[11px] font-table-header uppercase text-secondary">Contract Value</div>
+<div class="text-[18px] font-label-numeric-lg font-bold text-[#0F1729]">AED 890,000</div>
+</div>
+</div>
+</div>
+<!-- Latency & Friction Reason -->
+<div class="p-4 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-[#C8321F]">error</span>
+<span class="text-[12px] font-body-md text-[#0F1729]">Friction Pattern Analysis</span>
+</div>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#C8321F]"></span>
+                Stuck 9 days on stage
+              </span>
+</div>
+<div class="p-3 bg-[#FFF8F7] border border-[#FCDAD7] rounded-[6px] text-[12px] font-body-md text-[#5A1911] leading-relaxed">
+<strong class="font-semibold text-[#C8321F]">Blocker:</strong> Emirates NBD salary certificate HR stamp rejected; loan approval stalled awaiting attested chamber seal or updated digital verified salary statement.
+            </div>
+<!-- Consultant Info -->
+<div class="flex items-center justify-between pt-1 text-[12px]">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-[#16294F] text-[#38D0E8] font-label-numeric-sm text-[10px] flex items-center justify-center font-bold">
+                  KA
+                </div>
+<span class="text-secondary">Assigned: <strong class="text-[#0F1729]">Karim Abbas</strong> (Luxury Desk 2)</span>
+</div>
+<span class="font-label-numeric-sm text-[11px] text-secondary">Last Ping: 4h ago</span>
+</div>
+</div>
+</div>
+<!-- Next Best Action Box (Rescue Recommendation) -->
+<div class="p-4 bg-[#F2F6FC] border-t border-[#D5E2F6] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-[20px] text-primary shrink-0 mt-0.5">verified_user</span>
+<div>
+<div class="text-[11px] font-table-header uppercase text-primary font-bold">Recommended Next Best Action</div>
+<div class="text-[12px] font-body-md text-[#0F1729] font-medium">Dispatch VIP courier for wet-signature HR re-attestation</div>
+</div>
+</div>
+<button class="shrink-0 px-3 py-2 text-[12px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] rounded-[6px] flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[15px]">local_shipping</span>
+            Dispatch Courier for Physical Docs
+          </button>
+</div>
+</div>
+<!-- CARD 2: No Test Drive -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] overflow-hidden flex flex-col justify-between">
+<div>
+<!-- Card Header Strip -->
+<div class="p-4 border-b border-[#E8EAEF] flex items-start justify-between gap-3 bg-surface-container-lowest">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md font-bold text-[#0F1729]">#D-3289</span>
+<span class="w-1 h-1 rounded-full bg-[#CBD1DC]"></span>
+<span class="font-headline-md text-[15px] font-bold text-[#0F1729]">Marcus Vance</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">(+971 52 ••• 4190)</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">
+                  NO TEST DRIVE
+                </span>
+<span class="text-[11px] text-secondary">Stage: Vehicle Demonstration</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-bold bg-[#FDECEA] text-[#C8321F] tracking-wider">
+                HOT
+              </span>
+</div>
+</div>
+<!-- Vehicle Specs & Valuation Row -->
+<div class="p-4 border-b border-[#E8EAEF] bg-[#FAFBFD]">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-[6px] bg-surface-container overflow-hidden shrink-0 border border-[#E8EAEF]">
+<img class="w-full h-full object-cover" data-alt="Close up of a luxury 2024 Bentley Continental GT Azure in Sequin Blue finish positioned in an ultra-modern showroom bay with dramatic studio lighting reflections." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBhD4Umb0TBp99QFlB1CAntrU9TJ_wTo8WxYZANmvWAiSZ2RxhI4pxVhQ8sLy9kExPJykk7WXvHOEtXKpzXDk_DmTcKxrhUW_hlhs9FJFR6Mt4gPffG487lD9y6akgwzjLzzylpqSYSLRpxuI249T2mgRXUSNjgdlar1U65H5fTrV0faHGluJBTC_SmmKVHcSLmNPGWAv0pKo3sa4LqzYkHt1GQXYnWxxSTO0H1Pw"/>
+</div>
+<div>
+<div class="text-[13px] font-headline-md font-semibold text-[#0F1729]">2024 Bentley Continental GT V8 Azure</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-numeric-sm text-[11px] text-secondary">STOCK #DXB-8711</span>
+<span class="text-secondary">•</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">VIN: SCBCE6ZA3R•••</span>
+<button class="text-secondary hover:text-primary" title="Copy VIN">
+<span class="material-symbols-outlined text-[13px] align-middle">content_copy</span>
+</button>
+</div>
+</div>
+</div>
+<div class="sm:text-right shrink-0">
+<div class="text-[11px] font-table-header uppercase text-secondary">Contract Value</div>
+<div class="text-[18px] font-label-numeric-lg font-bold text-[#0F1729]">AED 1,150,000</div>
+</div>
+</div>
+</div>
+<!-- Latency & Friction Reason -->
+<div class="p-4 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-[#96570A]">crisis_alert</span>
+<span class="text-[12px] font-body-md text-[#0F1729]">Friction Pattern Analysis</span>
+</div>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#96570A]"></span>
+                Stuck 7 days on stage
+              </span>
+</div>
+<div class="p-3 bg-[#FFFDF7] border border-[#FBEAC9] rounded-[6px] text-[12px] font-body-md text-[#5B3E0B] leading-relaxed">
+<strong class="font-semibold text-[#96570A]">Blocker:</strong> High intent executive quoted full retail; declined showroom visit twice due to DIFC travel commitments. Deal cold without dynamic vehicle experience.
+            </div>
+<!-- Consultant Info -->
+<div class="flex items-center justify-between pt-1 text-[12px]">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-[#157A5B] text-white font-label-numeric-sm text-[10px] flex items-center justify-center font-bold">
+                  SR
+                </div>
+<span class="text-secondary">Assigned: <strong class="text-[#0F1729]">Sara Rahman</strong> (Bentley Desk)</span>
+</div>
+<span class="font-label-numeric-sm text-[11px] text-secondary">Last Ping: 1d ago</span>
+</div>
+</div>
+</div>
+<!-- Next Best Action Box (Rescue Recommendation) -->
+<div class="p-4 bg-[#F2F6FC] border-t border-[#D5E2F6] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-[20px] text-primary shrink-0 mt-0.5">home_pin</span>
+<div>
+<div class="text-[11px] font-table-header uppercase text-primary font-bold">Recommended Next Best Action</div>
+<div class="text-[12px] font-body-md text-[#0F1729] font-medium">Deploy concierge transport to DIFC Gate Precinct for VIP test drive</div>
+</div>
+</div>
+<button class="shrink-0 px-3 py-2 text-[12px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] rounded-[6px] flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[15px]">directions_car</span>
+            Schedule At-Home VIP Test Drive
+          </button>
+</div>
+</div>
+<!-- CARD 3: Price Objection -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] overflow-hidden flex flex-col justify-between">
+<div>
+<!-- Card Header Strip -->
+<div class="p-4 border-b border-[#E8EAEF] flex items-start justify-between gap-3 bg-surface-container-lowest">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md font-bold text-[#0F1729]">#D-3195</span>
+<span class="w-1 h-1 rounded-full bg-[#CBD1DC]"></span>
+<span class="font-headline-md text-[15px] font-bold text-[#0F1729]">Abdullah Mansoor</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">(+971 55 ••• 1042)</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#F1EAFA] text-[#5B2E8C]">
+                  PRICE OBJECTION
+                </span>
+<span class="text-[11px] text-secondary">Stage: Trade-In Closing Offer</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-bold bg-[#FEF3E2] text-[#96570A] tracking-wider">
+                WARM
+              </span>
+</div>
+</div>
+<!-- Vehicle Specs & Valuation Row -->
+<div class="p-4 border-b border-[#E8EAEF] bg-[#FAFBFD]">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-[6px] bg-surface-container overflow-hidden shrink-0 border border-[#E8EAEF]">
+<img class="w-full h-full object-cover" data-alt="A clean silver Porsche 911 Carrera GTS parked inside a premier automotive gallery with reflection lines highlighting the aerodynamic rear quarter panel." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcBO1kSz4vNATAn2qb1w_KyeHIIMGeJWjc5S1PdXYJiPxX9NHlndZuHMQ2bWkeLuly9geYSketI8aIiNwmxWOZNnUkXdAu6NUdQy_bamFYFEcPiQpDYTQOl2ki16jrV5voE4he1j91Guw6kb2heJG2Db4GdLDQYSfGZtYV8k7S-H6SzOkT-KRLK-jhsgQ5_lIJzUs1jtDk9ylQFsG2yMZCpX4zDckFQb-WKlnC0w"/>
+</div>
+<div>
+<div class="text-[13px] font-headline-md font-semibold text-[#0F1729]">2023 Porsche 911 Carrera GTS</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-numeric-sm text-[11px] text-secondary">STOCK #DXB-7904</span>
+<span class="text-secondary">•</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">VIN: WP0AB2A97P•••</span>
+<button class="text-secondary hover:text-primary" title="Copy VIN">
+<span class="material-symbols-outlined text-[13px] align-middle">content_copy</span>
+</button>
+</div>
+</div>
+</div>
+<div class="sm:text-right shrink-0">
+<div class="text-[11px] font-table-header uppercase text-secondary">Contract Value</div>
+<div class="text-[18px] font-label-numeric-lg font-bold text-[#0F1729]">AED 680,000</div>
+</div>
+</div>
+</div>
+<!-- Latency & Friction Reason -->
+<div class="p-4 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-[#5B2E8C]">query_stats</span>
+<span class="text-[12px] font-body-md text-[#0F1729]">Friction Pattern Analysis</span>
+</div>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#96570A]"></span>
+                Stuck 6 days on stage
+              </span>
+</div>
+<div class="p-3 bg-[#FAF7FD] border border-[#ECDDF8] rounded-[6px] text-[12px] font-body-md text-[#3E1B64] leading-relaxed">
+<strong class="font-semibold text-[#5B2E8C]">Blocker:</strong> Buyer cross-shopping rival showroom in Ras Al Khor / Al Aweer; AED 25,000 appraisal valuation spread on 2021 Panamera trade-in vehicle.
+            </div>
+<!-- Consultant Info -->
+<div class="flex items-center justify-between pt-1 text-[12px]">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-[#0A3D4D] text-[#38D0E8] font-label-numeric-sm text-[10px] flex items-center justify-center font-bold">
+                  ZL
+                </div>
+<span class="text-secondary">Assigned: <strong class="text-[#0F1729]">Zaid Lootah</strong> (Porsche Desk)</span>
+</div>
+<span class="font-label-numeric-sm text-[11px] text-secondary">Last Ping: 6h ago</span>
+</div>
+</div>
+</div>
+<!-- Next Best Action Box (Rescue Recommendation) -->
+<div class="p-4 bg-[#F2F6FC] border-t border-[#D5E2F6] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-[20px] text-primary shrink-0 mt-0.5">price_change</span>
+<div>
+<div class="text-[11px] font-table-header uppercase text-primary font-bold">Recommended Next Best Action</div>
+<div class="text-[12px] font-body-md text-[#0F1729] font-medium">Bridge trade-in gap by authorizing AED 15K floor adjustment (Net Margin preserved: 11.2%)</div>
+</div>
+</div>
+<button class="shrink-0 px-3 py-2 text-[12px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] rounded-[6px] flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[15px]">handshake</span>
+            Authorize AED 15,000 Floor Match
+          </button>
+</div>
+</div>
+<!-- CARD 4: Silent Customer -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] overflow-hidden flex flex-col justify-between">
+<div>
+<!-- Card Header Strip -->
+<div class="p-4 border-b border-[#E8EAEF] flex items-start justify-between gap-3 bg-surface-container-lowest">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-md font-bold text-[#0F1729]">#D-3042</span>
+<span class="w-1 h-1 rounded-full bg-[#CBD1DC]"></span>
+<span class="font-headline-md text-[15px] font-bold text-[#0F1729]">Dr. Elena Rostova</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">(+971 58 ••• 7760)</span>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#E4E6EC] text-[#3F4757]">
+                  SILENT CUSTOMER
+                </span>
+<span class="text-[11px] text-secondary">Stage: DocuSign Dispatched</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-bold bg-[#FDECEA] text-[#C8321F] tracking-wider">
+                HOT
+              </span>
+</div>
+</div>
+<!-- Vehicle Specs & Valuation Row -->
+<div class="p-4 border-b border-[#E8EAEF] bg-[#FAFBFD]">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-[6px] bg-surface-container overflow-hidden shrink-0 border border-[#E8EAEF]">
+<img class="w-full h-full object-cover" data-alt="A customized 2024 Land Rover Range Rover SV Autobiography in Matte Satin Eiger Grey parked on showroom tiles with distinct modern lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDLErSV6435HeMtiFVBb3pH9ks1a9hjy5Pjcq_rpy8UhOicMPYTCILreKHBsRZ98GHjXez3Cw_4FvZwad9nuxBj5rQQGOLxXJlUt8j8FieLv_Is8hSh1z3aww74mhvaxUj5Eq1v-mMqxGRXRVCWEmXgBOwPcWDrj0QUrMuXedpXu6TZG6khNxl1xRGA9HebL96iYDW5wR4IcXTC4RLIx9trnFpjD8m0ka9N76cGNQ"/>
+</div>
+<div>
+<div class="text-[13px] font-headline-md font-semibold text-[#0F1729]">2024 Range Rover SV P530 LWB</div>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-numeric-sm text-[11px] text-secondary">STOCK #DXB-9442</span>
+<span class="text-secondary">•</span>
+<span class="text-[11px] font-label-numeric-sm text-secondary">VIN: SALKP2S69R•••</span>
+<button class="text-secondary hover:text-primary" title="Copy VIN">
+<span class="material-symbols-outlined text-[13px] align-middle">content_copy</span>
+</button>
+</div>
+</div>
+</div>
+<div class="sm:text-right shrink-0">
+<div class="text-[11px] font-table-header uppercase text-secondary">Contract Value</div>
+<div class="text-[18px] font-label-numeric-lg font-bold text-[#0F1729]">AED 1,020,000</div>
+</div>
+</div>
+</div>
+<!-- Latency & Friction Reason -->
+<div class="p-4 space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-[#C8321F]">ring_volume</span>
+<span class="text-[12px] font-body-md text-[#0F1729]">Friction Pattern Analysis</span>
+</div>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FDECEA] text-[#C8321F]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#C8321F]"></span>
+                Stuck 11 days on stage
+              </span>
+</div>
+<div class="p-3 bg-[#FFF8F7] border border-[#FCDAD7] rounded-[6px] text-[12px] font-body-md text-[#5A1911] leading-relaxed">
+<strong class="font-semibold text-[#C8321F]">Blocker:</strong> Purchase order and DocuSign link opened 4 days ago with zero action. 3 direct consultant phone calls unanswered; high buyer remorse risk.
+            </div>
+<!-- Consultant Info -->
+<div class="flex items-center justify-between pt-1 text-[12px]">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-[#24428A] text-white font-label-numeric-sm text-[10px] flex items-center justify-center font-bold">
+                  NA
+                </div>
+<span class="text-secondary">Assigned: <strong class="text-[#0F1729]">Nasser Al-Qasimi</strong> (SV Desk)</span>
+</div>
+<span class="font-label-numeric-sm text-[11px] text-secondary">Last Ping: Yesterday</span>
+</div>
+</div>
+</div>
+<!-- Next Best Action Box (Rescue Recommendation) -->
+<div class="p-4 bg-[#F2F6FC] border-t border-[#D5E2F6] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-[20px] text-primary shrink-0 mt-0.5">forum</span>
+<div>
+<div class="text-[11px] font-table-header uppercase text-primary font-bold">Recommended Next Best Action</div>
+<div class="text-[12px] font-body-md text-[#0F1729] font-medium">Bypass sales consultant: Trigger executive video message from Managing Director</div>
+</div>
+</div>
+<button class="shrink-0 px-3 py-2 text-[12px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] rounded-[6px] flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[15px]">send</span>
+            Trigger WhatsApp CEO Escalation
+          </button>
+</div>
+</div>
+</div>
+<!-- Margin Recovery Utility Bar -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-[#E6F4EF] flex items-center justify-center text-[#157A5B]">
+<span class="material-symbols-outlined text-[18px]">price_check</span>
+</div>
+<div>
+<div class="text-[13px] font-headline-md font-semibold text-[#0F1729]">Live Desk Margin Exposure &amp; Protection</div>
+<div class="text-[12px] text-secondary">Target Gross Margin Floor: 8.5% • Projected Recovered Yield: 11.4%</div>
+</div>
+</div>
+<div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+<div class="text-right">
+<div class="text-[10px] font-table-header uppercase text-secondary">Target Slippage Cap</div>
+<div class="text-[13px] font-label-numeric-md font-bold text-[#0F1729]">AED 120,000 max</div>
+</div>
+<div class="h-8 w-[1px] bg-[#E8EAEF]"></div>
+<div class="text-right">
+<div class="text-[10px] font-table-header uppercase text-secondary">Floor Match Reserve</div>
+<div class="text-[13px] font-label-numeric-md font-bold text-[#157A5B]">AED 310,000 safe</div>
+</div>
+</div>
+</div>
+<!-- Honest 'Needs DMS Integration' Empty State Block -->
+<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-6">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
+<div class="space-y-3 max-w-3xl">
+<div class="flex items-center gap-2.5">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-[#FEF3E2] text-[#96570A] border border-[#FBEAC9]">
+<span class="material-symbols-outlined text-[14px]">sync_disabled</span>
+              Needs DMS Integration
+            </span>
+<span class="text-[12px] font-label-numeric-sm text-secondary">SECTION: AUTOMATED TITLE &amp; LIEN RISK</span>
+</div>
+<h3 class="text-[16px] font-headline-md font-semibold text-[#0F1729]">
+            Trade-In Equity Settlement &amp; Title Deeds
+          </h3>
+<p class="text-[13px] font-body-md text-secondary leading-relaxed">
+            Real-time lien clearance and RTA mortgage release status require a connected Dealer Management System (e.g. CDK Drive, Keyloop, or Pinewood DMS). Automated risk scoring for vehicle title checks is paused until DMS API credentials are configured.
+          </p>
+<div class="flex items-center gap-2 pt-1 text-[11px] font-label-numeric-sm text-secondary">
+<span class="w-2 h-2 rounded-full bg-[#CBD1DC]"></span>
+<span>Zero synthetic data simulated • Live endpoint status: <strong class="text-[#0F1729]">DISCONNECTED</strong></span>
+</div>
+</div>
+<!-- Integration Actions -->
+<div class="flex flex-col sm:flex-row md:flex-col gap-2 shrink-0 md:min-w-[220px]">
+<a class="px-3.5 py-2 text-[12px] font-semibold text-white bg-primary hover:bg-[#1D4FA8] rounded-[6px] text-center flex items-center justify-center gap-2 transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px]">integration_instructions</span>
+            Configure DMS Connector
+          </a>
+<button class="px-3.5 py-2 text-[12px] font-semibold text-[#0F1729] bg-white border border-[#E8EAEF] hover:bg-[#F7F8FA] rounded-[6px] text-center flex items-center justify-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-[16px]">edit_note</span>
+            Enter Manual Overrides
+          </button>
+</div>
+</div>
+<!-- Integration Blueprint Callout -->
+<div class="mt-5 pt-4 border-t border-[#E8EAEF] grid grid-cols-1 sm:grid-cols-3 gap-3">
+<div class="p-3 bg-[#F7F8FA] rounded-[6px] border border-[#E8EAEF]">
+<div class="text-[11px] font-table-header uppercase text-secondary">Supported Connectors</div>
+<div class="text-[12px] font-headline-md font-semibold text-[#0F1729] mt-0.5">CDK Drive / Keyloop DMS</div>
+<div class="text-[11px] text-secondary mt-1">Direct REST webhook listener</div>
+</div>
+<div class="p-3 bg-[#F7F8FA] rounded-[6px] border border-[#E8EAEF]">
+<div class="text-[11px] font-table-header uppercase text-secondary">RTA Title Clearance</div>
+<div class="text-[12px] font-headline-md font-semibold text-[#0F1729] mt-0.5">Dubai RTA Portal Gateway</div>
+<div class="text-[11px] text-secondary mt-1">Requires corporate token auth</div>
+</div>
+<div class="p-3 bg-[#F7F8FA] rounded-[6px] border border-[#E8EAEF]">
+<div class="text-[11px] font-table-header uppercase text-secondary">Bank Settlement Sync</div>
+<div class="text-[12px] font-headline-md font-semibold text-[#0F1729] mt-0.5">UAE Central Bank NOC Link</div>
+<div class="text-[11px] text-secondary mt-1">Auto-resolves encumbrance holds</div>
+</div>
+</div>
+</div>
+</div>
+</div></main></div>
+</body></html>

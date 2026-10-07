@@ -74,16 +74,46 @@
 
 import { db, dbWrite, edgeFn, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
+import { ago, dubaiStamp, esc, n0 } from '../lib/format.js';
 import { isPlatformAdmin, loadPlatformAdmin } from '../lib/platform.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { HEALTH_WORDS, healthWords } from '../lib/health.js';
+import { BTN, actor, bannerClass, panel, pill, stateEmpty, stateError, stateLoading, table } from '../lib/admin-kit.js';
+import { emptyState, statusChip, trustFooter } from '../lib/stitch-ui.js';
 
+/* 7 Oct 2026 — THE STITCH LAYOUT. design/stitch/founder-console-nexus-platform-
+   administration--d6c87c.html (primary) and --a38ee6. Sections, top to bottom:
+
+     Console banner                — no "platform pulse" or "edge latency": this
+                                     page measures neither, so neither is drawn.
+     Four KPI tiles, kept separate — Downloads, Activated, Active dealerships,
+                                     Paying subscriptions. Each is either counted
+                                     from nexus_founder_list_tenants() with its
+                                     rule printed on the tile, or "—" with why.
+     Ops controls                  — jump links to the six existing founder
+                                     actions below. Every action that worked
+                                     before still works, unchanged.
+     Every dealership              — the tenants table with its status control.
+     Quarantine census             — nexus_founder_quarantine_census().
+     Notification gateway          — nexus_notification_outbox is service-role
+                                     only (RLS: never end users), so this page
+                                     cannot read it; an honest empty state.
+     Infrastructure health probes  — no table records a probe result; the probe
+                                     workflow runs on the automation box and
+                                     writes nowhere this page can read.
+     Workflow health               — v_workflow_health, which IS readable here,
+                                     labelled for what it is: the register is
+                                     platform-wide, but the run counts are the
+                                     signed-in account's own dealership's.
+     Feature availability          — tenant_capability is readable only for the
+                                     caller's own dealership and no founder RPC
+                                     reads it across dealerships: COMING SOON.
+     Release readiness             — nothing records a release: COMING SOON.
+
+   The platform-admin authorisation logic is untouched: the guard at the top of
+   renderFounderConsole() and the server-side checks in every RPC. */
 const str = v => String(v == null ? '' : v).trim();
 const ROLES = ['owner', 'admin', 'manager', 'sales', 'technician', 'member'];
-const STATUS_TONE = { active: 'ok', suspended: 'hot', archived: 'unknown' };
 const count = v => { const x = n0(v); return x == null ? '—' : String(x); };
-
 /* -- The read, memoised per render, reset on identity change ---------------
    One list backs the KPI strip, the invite dropdown, the tenants table and
    the test-tenant callout -- the same `shared()` shape screens/channels.js
@@ -101,6 +131,7 @@ const resetReads = () => { MEMOS.forEach(reset => reset()); };
 onIdentityChange(resetReads);
 
 const readTenants = shared(() => db('rpc/nexus_founder_list_tenants'));
+const readWorkflows = shared(() => db('v_workflow_health?select=name,category,is_active,health,runs_30d,success_rate_30d,last_run&order=name.asc&limit=200'));
 
 /* -- Reading a founder-shaped refusal out of the wire -----------------------
    The same problem screens/team.js solved for nexus_team_* (see its
@@ -149,25 +180,43 @@ const errorText = e => refusalText(e) || String(e && e.message || 'The request d
    See the header comment: this is a courtesy, repeated here because
    the founder page's gate cannot see a render already in flight. */
 function stateFounderOnly() {
-  return `<div class="state err"><span class="material-symbols-outlined">shield_person</span>
-    <h3>This is the NEXUS founder console</h3>
-    <p>Every dealership's onboarding, status and invite controls live here, and none of them are scoped to one
-       dealership the way the rest of this app is -- so this screen is not shown, and its RPCs refuse, to anyone
-       whose account is not the platform admin. If that should be you, sign in as that account.</p></div>`;
+  return emptyState({ icon: 'shield_person', title: 'This is the NEXUS founder console',
+    body: "Every dealership's onboarding, status and invite controls live here, and none of them are scoped to one dealership the way the rest of this app is -- so this screen is not shown, and its RPCs refuse, to anyone whose account is not the platform admin. If that should be you, sign in as that account." });
 }
+
+/* -- Stitch pieces used only here -------------------------------------------- */
+const CARD = 'bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/40 overflow-hidden';
+const CARD_HEAD = 'px-space-lg py-space-md flex flex-wrap items-start justify-between gap-space-sm border-b border-outline-variant/30';
+const FORM_GRID2 = 'grid grid-cols-1 md:grid-cols-2 gap-space-md';
+const FORM_GRID3 = 'grid grid-cols-1 md:grid-cols-3 gap-space-md';
+const FIELD = 'flex flex-col gap-1 [&>label]:font-table-header [&>label]:text-table-header [&>label]:uppercase [&>label]:tracking-wider [&>label]:text-outline [&>label]:font-semibold [&_input]:w-full [&_input]:px-3 [&_input]:py-2 [&_input]:rounded-lg [&_input]:border [&_input]:border-outline-variant [&_input]:bg-surface-container-lowest [&_input]:text-on-surface [&_input:focus]:outline-none [&_input:focus]:border-primary [&_select]:w-full [&_select]:px-3 [&_select]:py-2 [&_select]:rounded-lg [&_select]:border [&_select]:border-outline-variant [&_select]:bg-surface-container-lowest [&_select]:text-on-surface';
+const SUB = 'font-body-sm text-body-sm text-on-surface-variant';
+const SEL_SM = 'px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-sm text-body-sm text-on-surface';
+const STATUS_CHIP = { active: 'live', suspended: 'blocked', archived: 'restricted' };
+const statusOf = r => statusChip(STATUS_CHIP[str(r.status)] || 'not-tested', str(r.status) || 'unknown');
+
+const cardHead = (icon, title, subHtml, tagHtml = '') => `<div class="${CARD_HEAD}">
+    <div class="flex items-start gap-2.5 min-w-0"><span class="material-symbols-outlined text-primary text-[22px]">${icon}</span>
+      <div class="min-w-0"><h2 class="font-headline-md text-headline-md text-on-surface font-semibold">${esc(title)}</h2>${subHtml ? `<p class="${SUB} mt-0.5">${subHtml}</p>` : ''}</div></div>
+    ${tagHtml}</div>`;
+const msgBox = (msg, tone) => (msg ? `<div class="${bannerClass(tone === 'ok' ? 'ok' : 'hot')}"><span class="material-symbols-outlined text-[20px]">${tone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : '');
+const KPI_ICON = 'w-9 h-9 rounded-lg bg-primary-container/10 text-primary flex items-center justify-center';
+const kpiTile = (label, icon, value, subHtml, footHtml) => `<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm border border-outline-variant/40 flex flex-col gap-space-sm">
+    <div class="flex items-center justify-between"><span class="font-table-header text-table-header uppercase tracking-wider text-on-surface-variant font-semibold">${label}</span>
+      <div class="${KPI_ICON}"><span class="material-symbols-outlined text-[20px]">${icon}</span></div></div>
+    <div class="font-label-numeric-lg text-[2.25rem] leading-none font-bold text-on-surface">${value}</div>
+    <div class="${SUB}">${subHtml}</div>
+    ${footHtml ? `<div class="pt-space-sm border-t border-outline-variant/30 font-label-numeric-sm text-label-numeric-sm text-outline">${footHtml}</div>` : ''}
+  </div>`;
+const soon = (kind, icon, title, body, prerequisite) => `<section class="${CARD}">${cardHead(icon, title, '', statusChip(kind))}
+    <div class="p-space-lg flex flex-col gap-space-sm"><p class="${SUB}">${esc(body)}</p>
+      <p class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Prerequisite: ${esc(prerequisite)}</p></div></section>`;
 
 /* ==========================================================================
    SCREEN
    ========================================================================== */
 export async function renderFounderConsole(host) {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this console
-     appends, and NOT on the host element, because a class set there would
-     outlive this render and restyle whatever is drawn into it next. A wrapper
-     cannot leak — it is removed with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
 
   resetReads();
@@ -180,60 +229,170 @@ export async function renderFounderConsole(host) {
 
   const load = () => readTenants();
 
-  /* Filled in once the tenants table (P4) and the invite dropdown (P3) exist
-     below, so P2's onboarding form can ask both to catch up on the dealer it
-     just created without this screen re-rendering itself wholesale. Declared
-     here, ahead of P2, so P2's own submit handler -- which only ever runs
-     later, on a click -- closes over whichever functions end up assigned. */
+  /* Filled in once the tenants table and the invite / payment dropdowns exist
+     below, so the onboarding form can ask them to catch up on the dealer it
+     just created without this screen re-rendering itself wholesale. */
   let reloadTenantsTable = async () => {};
   let reloadInviteList = async () => {};
+  let reloadPaidList = async () => {};
 
   /* ------------------------------------------------------------------------
-     P1 · Every dealership, counted
+     Banner
      ------------------------------------------------------------------------ */
-  panel(root, {
-    title: 'Every dealership on NEXUS',
-    sub: 'Counted from nexus_founder_list_tenants() -- real and test tenants both, told apart below rather than mixed into one figure.',
-    load,
-    render: rows => {
-      const all = Array.isArray(rows) ? rows : [];
-      const real = all.filter(r => !r.is_test);
-      const test = all.filter(r => r.is_test);
-      const active = real.filter(r => str(r.status) === 'active');
-      const suspended = real.filter(r => str(r.status) === 'suspended');
+  const banner = el('div', 'relative overflow-hidden rounded-xl bg-gradient-to-r from-primary to-[#032860] text-on-primary p-space-lg shadow-md');
+  banner.innerHTML = `<div class="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-space-md">
+      <div class="flex items-start gap-space-md">
+        <div class="w-12 h-12 rounded-lg bg-surface-container-lowest/15 flex items-center justify-center shrink-0 border border-white/20"><span class="material-symbols-outlined text-[28px] text-tertiary-fixed">shield_with_heart</span></div>
+        <div class="space-y-0.5">
+          <div class="flex items-center gap-space-sm flex-wrap"><span class="font-headline-md text-headline-md font-bold tracking-tight text-white">NEXUS Founder Console</span>
+            <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-tertiary-fixed/20 text-tertiary-fixed font-semibold tracking-wider uppercase border border-tertiary-fixed/40">PLATFORM ADMIN</span></div>
+          <p class="font-body-md text-body-sm text-on-primary-container max-w-3xl">Every dealership on NEXUS, and the controls that act across them. Each action below is re-checked by the database against the platform-admin rule before it runs — this page only decides what is drawn.</p>
+        </div>
+      </div>
+    </div>`;
+  root.appendChild(banner);
 
-      const totalTile = kpi('Dealerships', count(real.length),
-        `<div class="ds-cell-sub">${esc(count(test.length))} more ${test.length === 1 ? 'is' : 'are'} test ${test.length === 1 ? 'fixture' : 'fixtures'} (slug starting <span class="mono">test-</span>) and counted separately below.</div>`);
-      const activeTile = kpi('Active', count(active.length), '', active.length ? 't-ok' : '');
-      const suspendedTile = kpi('Suspended', count(suspended.length), '', suspended.length ? 't-hot' : '');
-      const testTile = kpi('Test tenants', count(test.length),
-        `<div class="ds-cell-sub">${test.length ? 'Never a real dealership’s activity -- see the labelled list further down.' : 'None on this platform right now.'}</div>`,
-        test.length ? 't-warm' : '');
-
-      return `<div class="grid g4">${totalTile}${activeTile}${suspendedTile}${testTile}</div>`;
-    },
+  /* ------------------------------------------------------------------------
+     Four KPI tiles, separate on purpose: each answers a different question
+     and none is derived from another.
+     ------------------------------------------------------------------------ */
+  panelBare(root, load, rows => {
+    const all = Array.isArray(rows) ? rows : [];
+    const real = all.filter(r => !r.is_test);
+    const test = all.filter(r => r.is_test);
+    const active = real.filter(r => str(r.status) === 'active');
+    const activated = real.filter(r => (n0(r.member_count) || 0) > 0);
+    const paying = real.filter(r => str(r.subscription_status) === 'ACTIVE');
+    const pastDue = real.filter(r => str(r.subscription_status) === 'PAST_DUE');
+    const trial = real.filter(r => str(r.subscription_status) === 'TRIAL');
+    return `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+      ${kpiTile('Downloads & installs', 'download', '—', 'NEXUS records no download or install count. The dealer app is a web page, so there is nothing installed to count.', 'No source')}
+      ${kpiTile('Activated', 'how_to_reg', count(activated.length), `Real dealerships with at least one member account (member_count above 0), of ${count(real.length)} real.`, `${count(test.length)} test ${test.length === 1 ? 'tenant' : 'tenants'} not counted`)}
+      ${kpiTile('Active dealerships', 'storefront', count(active.length), `Real dealerships whose status is active. ${count(real.length - active.length)} suspended or archived.`, 'tenants.status')}
+      ${kpiTile('Paying subscriptions', 'payments', count(paying.length), `Subscription state ACTIVE. ${count(trial.length)} in trial, ${count(pastDue.length)} past due — neither is counted as paying.`, 'tenant_subscription.state')}
+    </div>`;
   });
 
   /* ------------------------------------------------------------------------
-     P2 · Onboard a dealer
+     Ops controls — jumps to the real actions further down.
      ------------------------------------------------------------------------ */
-  const onboard = el('div', 'card');
-  onboard.style.marginTop = '16px';
-  root.appendChild(onboard);
+  const ops = el('section', `${CARD} px-space-lg py-space-md flex flex-wrap items-center gap-space-sm`);
+  ops.innerHTML = `<span class="flex items-center gap-1.5 font-table-header text-table-header uppercase tracking-wider text-on-surface font-semibold mr-space-sm"><span class="material-symbols-outlined text-[18px] text-primary">terminal</span>Ops controls:</span>
+    <button type="button" class="${BTN.primary}" data-jump="fcOnboard"><span class="material-symbols-outlined text-[18px]">add_business</span>Onboard a dealer</button>
+    <button type="button" class="${BTN.secondary}" data-jump="fcInvite"><span class="material-symbols-outlined text-[18px]">person_add</span>Invite staff to a dealership</button>
+    <button type="button" class="${BTN.secondary}" data-jump="fcPay"><span class="material-symbols-outlined text-[18px]">link</span>Pay now link</button>
+    <button type="button" class="${BTN.secondary}" data-jump="fcPaid"><span class="material-symbols-outlined text-[18px]">receipt_long</span>Record a payment</button>
+    <span class="flex-1"></span>
+    <button type="button" class="${BTN.secondary}" data-jump="fcTest">Test tenants</button>
+    <button type="button" class="${BTN.secondary}" data-jump="fcQuarantine"><span class="material-symbols-outlined text-[18px]">shield</span>Quarantine census</button>`;
+  root.appendChild(ops);
+  ops.querySelectorAll('[data-jump]').forEach(b => b.addEventListener('click', () => {
+    $(b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+
+  /* ------------------------------------------------------------------------
+     Every dealership, with suspend / activate controls
+
+     Built as a self-contained load/draw pair rather than through panel(), on
+     purpose: panel() re-renders from ITS OWN retry button and replays wiring
+     closures registered via `.then()`, which is exactly right for a card that
+     only ever reads (see channels.js) and awkward for one that must re-fetch
+     and redraw itself in response to a save made from inside its own rows --
+     the same reason screens/team.js's "who has access" card is hand-rolled.
+     ------------------------------------------------------------------------ */
+  const tenants = el('section', CARD); tenants.id = 'fcTenants';
+  root.appendChild(tenants);
+  {
+    let rows = null, rowsErr = null, saveMsg = '', saveTone = 'hot', savingId = null;
+
+    const tDraw = () => {
+      const n = rows ? rows.filter(r => !r.is_test).length : null;
+      const head = cardHead('domain', 'Every dealership on NEXUS',
+        'Status is read and written here exactly as nexus_founder_set_tenant_status() enforces it: active, suspended or archived. The quarantine tenant is not a dealership and is never listed or offered a control.',
+        n == null ? '' : `<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface font-semibold">${esc(count(n))} REAL · ${esc(count(rows.length - n))} TEST</span>`);
+      let body;
+      if (!rows && !rowsErr) body = `<div class="p-space-md">${stateLoading(4)}</div>`;
+      else if (rowsErr) body = `<div class="p-space-md">${stateError('dealerships', rowsErr, 'treload')}</div>`;
+      else {
+        const list = rows.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        body = (saveMsg ? `<div class="px-space-md pt-space-md">${msgBox(saveMsg, saveTone)}</div>` : '')
+          + table(
+            [
+              { label: 'Dealership', strong: true, render: r => `<div class="flex items-center gap-2"><span>${esc(r.name || r.slug)}</span>${r.is_test ? statusChip('pending', 'test') : ''}</div><div class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(r.slug)}</div>` },
+              { label: 'Status', render: r => statusOf(r) },
+              { label: 'Members', align: 'r', render: r => count(r.member_count) },
+              { label: 'Leads', align: 'r', render: r => count(r.leads_count) },
+              { label: 'Subscription', render: r => esc(str(r.subscription_status) || 'none on record') },
+              { label: 'Last activity', render: r => `<span title="${esc(dubaiStamp(r.last_activity_at))}">${esc(ago(r.last_activity_at))}</span>` },
+              { label: 'Created', render: r => esc(dubaiStamp(r.created_at)) },
+              { label: 'Action', align: 'r', render: r => `<div class="flex items-center justify-end gap-1.5">
+                  <select class="${SEL_SM}" data-st="${esc(r.tenant_id)}" aria-label="Status for ${esc(r.name || r.slug)}"${savingId === r.tenant_id ? ' disabled' : ''}>
+                    ${['active', 'suspended', 'archived'].map(st => `<option value="${esc(st)}"${st === str(r.status) ? ' selected' : ''}>${esc(st)}</option>`).join('')}
+                  </select>
+                  <button type="button" class="${BTN.secondary}" data-savest="${esc(r.tenant_id)}"${savingId === r.tenant_id ? ' disabled' : ''}>${savingId === r.tenant_id ? 'Saving…' : 'Save'}</button></div>` },
+            ],
+            list,
+            { empty: stateEmpty('No dealerships yet', 'Onboard the first one below.') },
+          );
+      }
+      tenants.innerHTML = head + body;
+      tenants.querySelector('[data-retry]')?.addEventListener('click', tLoad);
+      tenants.querySelectorAll('[data-savest]').forEach(b => b.addEventListener('click', () => saveStatus(b.dataset.savest)));
+    };
+
+    const tLoad = async () => {
+      resetReads();
+      try { rows = await readTenants(); rowsErr = null; }
+      catch (e) { rows = null; rowsErr = e; }
+      tDraw();
+    };
+
+    async function saveStatus(id) {
+      if (savingId) return;
+      const sel = tenants.querySelector(`[data-st="${id}"]`);
+      if (!sel) return;
+      savingId = id; saveMsg = ''; tDraw();
+      try {
+        await dbWrite('POST', 'rpc/nexus_founder_set_tenant_status', { p_tenant: id, p_status: sel.value });
+        saveMsg = ''; saveTone = 'ok';
+        savingId = null;
+        await tLoad();
+        await reloadInviteList();
+        await reloadPaidList();
+      } catch (e) {
+        savingId = null;
+        saveMsg = errorText(e); saveTone = 'hot';
+        tDraw();
+      }
+    }
+
+    reloadTenantsTable = tLoad;
+    await tLoad();
+  }
+
+  /* ------------------------------------------------------------------------
+     Onboard a dealer · Invite someone — side by side, as in the design
+     ------------------------------------------------------------------------ */
+  const actionsRow = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg');
+  root.appendChild(actionsRow);
+
+  const onboard = el('section', CARD); onboard.id = 'fcOnboard';
+  actionsRow.appendChild(onboard);
   {
     let busy = false, msg = '', msgTone = 'ok';
     const draw = () => {
-      onboard.innerHTML = `<div class="card-title">Onboard a dealer</div>
-        <div class="card-sub" style="margin-bottom:14px">Calls nexus_founder_onboard_dealer(), which wraps the existing nexus_onboard_dealership() -- it does not create the tenant, the owner membership or the owner's login itself.</div>
-        ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        <div class="grid g2" style="gap:12px">
-          <div class="field"><label for="obName">Dealership name</label><input id="obName" placeholder="Al Reem Motors" /></div>
-          <div class="field"><label for="obSlug">Slug</label><input id="obSlug" placeholder="al-reem-motors" /></div>
-          <div class="field"><label for="obEmail">Owner's email</label><input id="obEmail" type="email" placeholder="owner@dealer.com" /></div>
-          <div class="field"><label for="obPhone">Owner's phone (optional)</label><input id="obPhone" placeholder="+971 5…" /></div>
-        </div>
-        <div class="ds-cell-sub" style="margin-top:10px">The owner's Supabase Auth login is not created by this button. Once the dealership exists it appears in the table below, and you invite the owner from the "Invite someone to a dealership" panel underneath -- that step is what actually sends them a way to sign in.</div>
-        <button class="btn primary" id="obGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Onboarding…' : 'Onboard dealer'}</button>`;
+      onboard.innerHTML = cardHead('add_business', 'Onboard a dealer', "Calls nexus_founder_onboard_dealer(), which wraps the existing nexus_onboard_dealership() -- it does not create the tenant, the owner membership or the owner's login itself.")
+        + `<div class="p-space-lg flex flex-col gap-space-md">
+          ${msgBox(msg, msgTone)}
+          <div class="${FORM_GRID2}">
+            <div class="${FIELD}"><label for="obName">Dealership name</label><input id="obName" placeholder="Al Reem Motors" /></div>
+            <div class="${FIELD}"><label for="obSlug">Slug</label><input id="obSlug" placeholder="al-reem-motors" /></div>
+            <div class="${FIELD}"><label for="obEmail">Owner's email</label><input id="obEmail" type="email" placeholder="owner@dealer.com" /></div>
+            <div class="${FIELD}"><label for="obPhone">Owner's phone (optional)</label><input id="obPhone" placeholder="+971 5…" /></div>
+          </div>
+          <p class="${SUB}">The owner's Supabase Auth login is not created by this button. Once the dealership exists it appears in the table above, and you invite the owner from "Invite someone to a dealership" -- that step is what actually sends them a way to sign in.</p>
+          <div><button type="button" class="${BTN.primary}" id="obGo"${busy ? ' disabled' : ''}>${busy ? 'Onboarding…' : 'Onboard dealer'}</button></div>
+        </div>`;
       $('obGo')?.addEventListener('click', submit);
     };
     const submit = async () => {
@@ -250,10 +409,10 @@ export async function renderFounderConsole(host) {
         const tenantId = await dbWrite('POST', 'rpc/nexus_founder_onboard_dealer', {
           p_name: name, p_slug: slug, p_owner_email: email, p_phone: phone,
         });
-        msg = `"${name}" was onboarded (id ${str(tenantId)}). It now appears in the table below -- invite ${email} to it from the panel above to give them a login.`;
+        msg = `"${name}" was onboarded (id ${str(tenantId)}). It now appears in the table above -- invite ${email} to it from the panel beside this one to give them a login.`;
         msgTone = 'ok';
         resetReads();
-        await Promise.all([reloadTenantsTable(), reloadInviteList()]);
+        await Promise.all([reloadTenantsTable(), reloadInviteList(), reloadPaidList()]);
       } catch (e) {
         msg = errorText(e); msgTone = 'hot';
       } finally {
@@ -263,30 +422,26 @@ export async function renderFounderConsole(host) {
     draw();
   }
 
-  /* ------------------------------------------------------------------------
-     P3 · Invite somebody into a dealership
-     ------------------------------------------------------------------------ */
-  const invite = el('div', 'card');
-  invite.style.marginTop = '16px';
-  root.appendChild(invite);
+  const invite = el('section', CARD); invite.id = 'fcInvite';
+  actionsRow.appendChild(invite);
   {
     let busy = false, msg = '', msgTone = 'ok', rows = null, rowsErr = null;
     const draw = () => {
       const opts = rows
         ? rows.map(r => `<option value="${esc(r.tenant_id)}">${esc(r.name || r.slug)}${r.is_test ? ' (test)' : ''}</option>`).join('')
         : '';
-      invite.innerHTML = `<div class="card-title">Invite someone to a dealership</div>
-        <div class="card-sub" style="margin-bottom:14px">Calls the founder-invite Edge Function -- the one place in NEXUS that holds a service-role key, and it never leaves that function. This sends a real Supabase Auth invite email.</div>
-        ${!rows && !rowsErr ? stateLoading(2) : ''}
-        ${rowsErr ? `<div class="ds-cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
-        ${rows ? `
-        ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        <div class="grid g3" style="gap:12px">
-          <div class="field"><label for="ivTenant">Dealership</label><select id="ivTenant">${opts}</select></div>
-          <div class="field"><label for="ivEmail">Email</label><input id="ivEmail" type="email" placeholder="person@example.com" /></div>
-          <div class="field"><label for="ivRole">Role</label><select id="ivRole">${ROLES.map(r => `<option value="${esc(r)}"${r === 'sales' ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
-        </div>
-        <button class="btn primary" id="ivGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Sending…' : 'Send invite'}</button>` : ''}`;
+      invite.innerHTML = cardHead('person_add', 'Invite someone to a dealership', 'Calls the founder-invite Edge Function -- the one place in NEXUS that holds a service-role key, and it never leaves that function. This sends a real Supabase Auth invite email.')
+        + `<div class="p-space-lg flex flex-col gap-space-md">
+          ${!rows && !rowsErr ? stateLoading(2) : ''}
+          ${rowsErr ? `<p class="font-body-sm text-body-sm text-red-700">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</p>` : ''}
+          ${rows ? `${msgBox(msg, msgTone)}
+          <div class="${FORM_GRID3}">
+            <div class="${FIELD}"><label for="ivTenant">Dealership</label><select id="ivTenant">${opts}</select></div>
+            <div class="${FIELD}"><label for="ivEmail">Email</label><input id="ivEmail" type="email" placeholder="person@example.com" /></div>
+            <div class="${FIELD}"><label for="ivRole">Role</label><select id="ivRole">${ROLES.map(r => `<option value="${esc(r)}"${r === 'sales' ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
+          </div>
+          <div><button type="button" class="${BTN.primary}" id="ivGo"${busy ? ' disabled' : ''}>${busy ? 'Sending…' : 'Send invite'}</button></div>` : ''}
+        </div>`;
       $('ivGo')?.addEventListener('click', send);
     };
     const send = async () => {
@@ -319,130 +474,12 @@ export async function renderFounderConsole(host) {
   }
 
   /* ------------------------------------------------------------------------
-     P4 · Every dealership, with suspend / activate controls
-
-     Built as a self-contained load/draw pair rather than through lib/ui.js's
-     panel(), on purpose: panel() re-renders from ITS OWN retry button and
-     replays wiring closures registered via `.then()`, which is exactly right
-     for a card that only ever reads (see channels.js) and awkward for one
-     that must re-fetch and redraw itself in response to a save made from
-     inside its own rows -- the same reason screens/team.js's "who has
-     access" card (acLoad/acDraw/acCall) is hand-rolled instead of going
-     through panel() too. This is that same shape, applied to dealerships
-     instead of teammates.
+     Pay now link · Record a payment
      ------------------------------------------------------------------------ */
-  const tenants = el('div', 'card flush');
-  tenants.style.marginTop = '16px';
-  root.appendChild(tenants);
-  {
-    let rows = null, rowsErr = null, saveMsg = '', saveTone = 'hot', savingId = null;
+  const moneyRow = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg');
+  root.appendChild(moneyRow);
 
-    const tDraw = () => {
-      const head = `<div class="card-head"><div><div class="card-title">Dealerships</div>
-          <div class="card-sub">Status is read and written here exactly as nexus_founder_set_tenant_status() enforces it: active, suspended or archived. The quarantine tenant is not a dealership and is never listed or offered a control.</div></div></div>`;
-      let body;
-      if (!rows && !rowsErr) body = stateLoading(4);
-      else if (rowsErr) body = stateError('dealerships', rowsErr, 'treload');
-      else {
-        const list = rows.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        body = (saveMsg ? `<div class="banner ${saveTone === 'ok' ? 'info' : 'hot'}" style="margin:12px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">${saveTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(saveMsg)}</div></div>` : '')
-          + table(
-            [
-              { label: 'Dealership', render: r => `${esc(r.name || r.slug)}${r.is_test ? ' <span class="chip">test</span>' : ''}<div class="ds-cell-sub">${esc(r.slug)}</div>` },
-              { label: 'Status', render: r => pill(str(r.status) || 'unknown', STATUS_TONE[str(r.status)] || 'unknown') },
-              { label: 'Members', render: r => count(r.member_count), align: 'r' },
-              { label: 'Leads', render: r => count(r.leads_count), align: 'r' },
-              { label: 'Subscription', render: r => esc(str(r.subscription_status) || 'none on record') },
-              { label: 'Last activity', render: r => `<span title="${esc(dubaiStamp(r.last_activity_at))}">${esc(ago(r.last_activity_at))}</span>` },
-              { label: 'Created', render: r => esc(dubaiStamp(r.created_at)) },
-              { label: '', align: 'r', render: r => `
-                  <select data-st="${esc(r.tenant_id)}" aria-label="Status for ${esc(r.name || r.slug)}"${savingId === r.tenant_id ? ' disabled' : ''}>
-                    ${['active', 'suspended', 'archived'].map(s => `<option value="${esc(s)}"${s === str(r.status) ? ' selected' : ''}>${esc(s)}</option>`).join('')}
-                  </select>
-                  <button class="btn sm" data-savest="${esc(r.tenant_id)}"${savingId === r.tenant_id ? ' disabled' : ''}>${savingId === r.tenant_id ? 'Saving…' : 'Save'}</button>` },
-            ],
-            list,
-            { empty: stateEmpty('No dealerships yet', 'Onboard the first one above.') },
-          );
-      }
-      tenants.innerHTML = head + `<div class="pbody">${body}</div>`;
-      tenants.querySelector('[data-retry]')?.addEventListener('click', tLoad);
-      tenants.querySelectorAll('[data-savest]').forEach(b => b.addEventListener('click', () => saveStatus(b.dataset.savest)));
-    };
-
-    const tLoad = async () => {
-      resetReads();
-      try { rows = await readTenants(); rowsErr = null; }
-      catch (e) { rows = null; rowsErr = e; }
-      tDraw();
-    };
-
-    async function saveStatus(id) {
-      if (savingId) return;
-      const sel = tenants.querySelector(`[data-st="${id}"]`);
-      if (!sel) return;
-      savingId = id; saveMsg = ''; tDraw();
-      try {
-        await dbWrite('POST', 'rpc/nexus_founder_set_tenant_status', { p_tenant: id, p_status: sel.value });
-        saveMsg = ''; saveTone = 'ok';
-        savingId = null;
-        await tLoad();
-        await reloadInviteList();
-      } catch (e) {
-        savingId = null;
-        saveMsg = errorText(e); saveTone = 'hot';
-        tDraw();
-      }
-    }
-
-    reloadTenantsTable = tLoad;
-    await tLoad();
-  }
-
-  /* ------------------------------------------------------------------------
-     P5 · Test tenants, named separately
-     ------------------------------------------------------------------------ */
-  panel(root, {
-    title: 'Test tenants',
-    sub: 'Every dealership whose slug starts "test-" -- nexus_founder_list_tenants()’s own is_test flag, not a second guess at the same rule. Fixtures, not customers; never counted in the real-dealership tile above.',
-    cols: '1 / -1',
-    load,
-    render: rows => {
-      const test = (Array.isArray(rows) ? rows : []).filter(r => r.is_test);
-      return table(
-        [
-          { label: 'Slug', render: r => `<span class="mono">${esc(r.slug)}</span>` },
-          { label: 'Name', render: r => esc(r.name) },
-          { label: 'Status', render: r => pill(str(r.status) || 'unknown', STATUS_TONE[str(r.status)] || 'unknown') },
-          { label: 'Created', render: r => esc(dubaiStamp(r.created_at)) },
-        ],
-        test,
-        { empty: stateEmpty('No test tenants', 'Nothing on this platform has a slug starting "test-" right now.') },
-      );
-    },
-  });
-
-  /* ------------------------------------------------------------------------
-     P6 · Quarantine census
-     ------------------------------------------------------------------------ */
-  panel(root, {
-    title: 'Quarantine census',
-    sub: 'nexus_founder_quarantine_census(), wrapping nexus_quarantine_census(): rows sitting in the UNATTRIBUTED tenant, by table, because they arrived with no dealership NEXUS could attribute them to.',
-    cols: '1 / -1',
-    load: () => dbWrite('POST', 'rpc/nexus_founder_quarantine_census', {}),
-    render: rows => table(
-      [
-        { label: 'Table', render: r => `<span class="mono">${esc(r.tbl)}</span>` },
-        { label: 'Rows', render: r => count(r.rows), align: 'r' },
-        { label: 'Newest', render: r => r.newest ? esc(dubaiStamp(r.newest)) : '—' },
-      ],
-      Array.isArray(rows) ? rows : [],
-      { empty: stateEmpty('Quarantine is empty', 'Nothing is sitting unattributed right now.') },
-    ),
-  });
-
-  /* ------------------------------------------------------------------------
-     P7 . Pay now link -- what a dealer's Subscription screen shows and opens
+  /* Pay now link -- what a dealer's Subscription screen shows and opens.
 
      NX1010 (owner decision, 21 Sep 2026): a dealer must never see a bank
      name, an account holder name or an IBAN. NEXUS is paid through a
@@ -453,26 +490,25 @@ export async function renderFounderConsole(host) {
      every dealership on the platform. There is no founder-facing READ of
      the stored row on load, same as NX1008's payment form: this card
      shows nothing until a successful save, then shows exactly what was
-     just saved, from that save's own response.
-     ------------------------------------------------------------------------ */
-  const payment = el('div', 'card');
-  payment.style.marginTop = '16px';
-  root.appendChild(payment);
+     just saved, from that save's own response. */
+  const payment = el('section', CARD); payment.id = 'fcPay';
+  moneyRow.appendChild(payment);
   {
     let busy = false, msg = '', msgTone = 'ok', saved = null;
     const draw = () => {
-      payment.innerHTML = `<div class="card-title">Pay now link</div>
-        <div class="card-sub" style="margin-bottom:14px">What every dealer's Subscription screen shows and opens: "NEXUS by {display name} -- AED 399/month -- Pay now". No card processor integration, no API keys -- the link IS the integration. Stored in platform_payment_details (RLS on, no policies) and read back by dealers only through nexus_payment_instructions().</div>
-        ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        ${saved ? `<div class="ds-cell-sub" style="margin-bottom:14px">On file now: "${esc(saved.displayName)}", link ending <span class="mono">…${esc(saved.linkTail)}</span>.</div>` : ''}
-        <div class="grid g2" style="gap:12px">
-          <div class="field"><label for="plUrl">Payment link (Ziina)</label><input id="plUrl" placeholder="https://pay.ziina.com/..." class="mono" /></div>
-          <div class="field"><label for="plName">Display name</label><input id="plName" value="Adqonic" /></div>
-        </div>
-        <div class="ds-cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, ziina.me, or a subdomain of either -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
-        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn primary" id="plGo"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save'}</button>
-          <button class="btn ghost" id="plTest" type="button">Test link</button>
+      payment.innerHTML = cardHead('link', 'Pay now link', "What every dealer's Subscription screen shows and opens: \"NEXUS by {display name} -- AED 399/month -- Pay now\". No card processor integration, no API keys -- the link IS the integration. Stored in platform_payment_details (RLS on, no policies) and read back by dealers only through nexus_payment_instructions().")
+        + `<div class="p-space-lg flex flex-col gap-space-md">
+          ${msgBox(msg, msgTone)}
+          ${saved ? `<p class="${SUB}">On file now: "${esc(saved.displayName)}", link ending <span class="font-label-numeric-sm">…${esc(saved.linkTail)}</span>.</p>` : ''}
+          <div class="${FORM_GRID2}">
+            <div class="${FIELD}"><label for="plUrl">Payment link (Ziina)</label><input id="plUrl" placeholder="https://pay.ziina.com/..." class="font-label-numeric-sm" /></div>
+            <div class="${FIELD}"><label for="plName">Display name</label><input id="plName" value="Adqonic" /></div>
+          </div>
+          <p class="${SUB}">Must be an https:// link on ziina.com, ziina.me, or a subdomain of either -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</p>
+          <div class="flex gap-space-sm flex-wrap">
+            <button type="button" class="${BTN.primary}" id="plGo"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" class="${BTN.secondary}" id="plTest">Test link</button>
+          </div>
         </div>`;
       $('plGo')?.addEventListener('click', submit);
       $('plTest')?.addEventListener('click', () => {
@@ -483,8 +519,8 @@ export async function renderFounderConsole(host) {
     const sameHost = url => {
       const m = /^https:\/\/([a-zA-Z0-9.-]+)(?::[0-9]{1,5})?(?:\/[^\s]*)?$/.exec(url);
       if (!m) return false;
-      const host = m[1].toLowerCase();
-      return host === 'ziina.com' || host === 'pay.ziina.com' || host.slice(-10) === '.ziina.com' || host === 'ziina.me' || host.slice(-9) === '.ziina.me';
+      const h = m[1].toLowerCase();
+      return h === 'ziina.com' || h === 'pay.ziina.com' || h.slice(-10) === '.ziina.com' || h === 'ziina.me' || h.slice(-9) === '.ziina.me';
     };
     const submit = async () => {
       if (busy) return;
@@ -517,36 +553,33 @@ export async function renderFounderConsole(host) {
     draw();
   }
 
-  /* ------------------------------------------------------------------------
-     P8 . Record a payment -- moved here from screens/subscription.js on
-     22 Sep 2026, where it used to draw (for the founder only) at the bottom
-     of the dealer's own Subscription screen. Here the founder names the
-     dealership explicitly, from the same nexus_founder_list_tenants() list
-     every other card on this console reads. nexus_founder_mark_paid()
-     re-checks nexus_is_platform_admin() server-side and refuses without a
-     reference, whatever this form does.
-     ------------------------------------------------------------------------ */
-  const paid = el('div', 'card');
-  paid.style.marginTop = '16px';
-  root.appendChild(paid);
+  /* Record a payment -- moved here from screens/subscription.js on 22 Sep
+     2026, where it used to draw (for the founder only) at the bottom of the
+     dealer's own Subscription screen. Here the founder names the dealership
+     explicitly, from the same nexus_founder_list_tenants() list every other
+     card on this console reads. nexus_founder_mark_paid() re-checks
+     nexus_is_platform_admin() server-side and refuses without a reference,
+     whatever this form does. */
+  const paid = el('section', CARD); paid.id = 'fcPaid';
+  moneyRow.appendChild(paid);
   {
     let busy = false, msg = '', msgTone = 'ok', rows = null, rowsErr = null;
     const draw = () => {
       const opts = rows
         ? rows.map(r => `<option value="${esc(r.tenant_id)}">${esc(r.name || r.slug)}${r.is_test ? ' (test)' : ''}</option>`).join('')
         : '';
-      paid.innerHTML = `<div class="card-title">Record a payment</div>
-        <div class="card-sub" style="margin-bottom:14px">Marks a dealership paid by hand through nexus_founder_mark_paid(). Extends from the current paid-through date if there is time left on it, otherwise starts from today. The reference is kept forever in subscription_event.</div>
-        ${!rows && !rowsErr ? stateLoading(2) : ''}
-        ${rowsErr ? `<div class="ds-cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
-        ${rows ? `
-        ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        <div class="grid g3" style="gap:12px">
-          <div class="field"><label for="mpTenant">Dealership</label><select id="mpTenant">${opts}</select></div>
-          <div class="field"><label for="mpMonths">Months paid for</label><input type="number" id="mpMonths" min="1" max="12" value="1" /></div>
-          <div class="field"><label for="mpRef">Payment reference</label><input type="text" id="mpRef" placeholder="Ziina receipt, bank transfer id, etc." /></div>
-        </div>
-        <button class="btn primary" id="mpGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Recording…' : 'Record payment'}</button>` : ''}`;
+      paid.innerHTML = cardHead('receipt_long', 'Record a payment', 'Marks a dealership paid by hand through nexus_founder_mark_paid(). Extends from the current paid-through date if there is time left on it, otherwise starts from today. The reference is kept forever in subscription_event.')
+        + `<div class="p-space-lg flex flex-col gap-space-md">
+          ${!rows && !rowsErr ? stateLoading(2) : ''}
+          ${rowsErr ? `<p class="font-body-sm text-body-sm text-red-700">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</p>` : ''}
+          ${rows ? `${msgBox(msg, msgTone)}
+          <div class="${FORM_GRID3}">
+            <div class="${FIELD}"><label for="mpTenant">Dealership</label><select id="mpTenant">${opts}</select></div>
+            <div class="${FIELD}"><label for="mpMonths">Months paid for</label><input type="number" id="mpMonths" min="1" max="12" value="1" /></div>
+            <div class="${FIELD}"><label for="mpRef">Payment reference</label><input type="text" id="mpRef" placeholder="Ziina receipt, bank transfer id, etc." /></div>
+          </div>
+          <div><button type="button" class="${BTN.primary}" id="mpGo"${busy ? ' disabled' : ''}>${busy ? 'Recording…' : 'Record payment'}</button></div>` : ''}
+        </div>`;
       $('mpGo')?.addEventListener('click', submit);
     };
     const submit = async () => {
@@ -573,9 +606,125 @@ export async function renderFounderConsole(host) {
         busy = false; draw();
       }
     };
-    (async () => {
+    reloadPaidList = async () => {
       try { rows = await readTenants(); rowsErr = null; } catch (e) { rowsErr = e; }
       draw();
-    })();
+    };
+    reloadPaidList();
   }
+
+  /* ------------------------------------------------------------------------
+     Quarantine census · Notification gateway
+     ------------------------------------------------------------------------ */
+  const opsRow = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg items-start');
+  root.appendChild(opsRow);
+  const quarantine = el('div'); quarantine.id = 'fcQuarantine';
+  opsRow.appendChild(quarantine);
+  panel(quarantine, {
+    title: 'Quarantine census',
+    icon: 'gpp_maybe',
+    sub: 'nexus_founder_quarantine_census(), wrapping nexus_quarantine_census(): rows sitting in the UNATTRIBUTED tenant, by table, because they arrived with no dealership NEXUS could attribute them to.',
+    load: () => dbWrite('POST', 'rpc/nexus_founder_quarantine_census', {}),
+    render: rows => table(
+      [
+        { label: 'Table', render: r => `<span class="font-label-numeric-sm">${esc(r.tbl)}</span>` },
+        { label: 'Rows', align: 'r', render: r => count(r.rows) },
+        { label: 'Newest', render: r => (r.newest ? esc(dubaiStamp(r.newest)) : '—') },
+      ],
+      Array.isArray(rows) ? rows : [],
+      { empty: stateEmpty('Quarantine is empty', 'Nothing is sitting unattributed right now.') },
+    ),
+  });
+  const gateway = el('section', CARD);
+  gateway.innerHTML = cardHead('outgoing_mail', 'Platform notification gateway', 'What NEXUS has queued and sent to people, across dealerships.', statusChip('not-tested', 'Not readable here'))
+    + `<div class="p-space-md">${emptyState({ icon: 'lock', title: 'The outbox is not readable from this page',
+      body: 'nexus_notification_outbox is service-role only — its row policy refuses every signed-in account, the founder’s included — and no founder RPC reads it. So nothing is shown rather than counts this page cannot see. Delivered, failed and queued totals need a founder read of the outbox first.' })}</div>`;
+  opsRow.appendChild(gateway);
+
+  /* ------------------------------------------------------------------------
+     Infrastructure probes · Workflow health
+     ------------------------------------------------------------------------ */
+  const healthRow = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg items-start');
+  root.appendChild(healthRow);
+  const infra = el('section', CARD);
+  infra.innerHTML = cardHead('dns', 'Infrastructure health probes', 'Database, automation host, WhatsApp session and the rest of the stack.', statusChip('not-tested', 'No source'))
+    + `<div class="p-space-md">${emptyState({ icon: 'monitor_heart', title: 'No probe result is recorded anywhere this page can read',
+      body: 'The infrastructure probe runs as a workflow on the automation host and keeps its results in that host’s own execution history, not in the database. Until a probe writes its result to a table the founder can read, this panel shows nothing rather than a green light it has not measured.' })}</div>`;
+  healthRow.appendChild(infra);
+  const wfHost = el('div');
+  healthRow.appendChild(wfHost);
+  panel(wfHost, {
+    title: 'Workflow health',
+    icon: 'account_tree',
+    sub: 'v_workflow_health. The list of automations is NEXUS’s own register and the same for every dealership; the run counts and health beside them are read through THIS account’s own dealership, so they describe that dealership’s runs, not the platform’s.',
+    load: () => readWorkflows(),
+    render: rows => table(
+      [
+        { label: 'Workflow', strong: true, render: r => `${esc(str(r.name) || 'Unnamed workflow')}<div class="font-body-sm text-body-sm text-outline">${esc(str(r.category) || 'no category')}${r.is_active === false ? ' · switched off' : ''}</div>` },
+        /* The health word is lib/health.js's, the one place allowed to say
+           what a v_workflow_health state means; a word it does not know is
+           shown verbatim as unknown rather than guessed at. */
+        { label: 'Health', render: r => {
+          const k = str(r.health).toUpperCase();
+          if (!Object.prototype.hasOwnProperty.call(HEALTH_WORDS, k)) return pill(str(r.health) || 'unknown', 'unknown', { verbatim: true });
+          const h = healthWords(k);
+          return `<span title="${esc(h.blurb)}">${pill(h.label, h.tone, { verbatim: false })}</span>`;
+        } },
+        { label: 'Runs 30 d', align: 'r', render: r => (n0(r.runs_30d) == null ? '—' : count(r.runs_30d)) },
+        { label: 'Success 30 d', align: 'r', render: r => (n0(r.success_rate_30d) == null ? '—' : `${esc(String(n0(r.success_rate_30d)))}%`) },
+        { label: 'Last run', render: r => (r.last_run ? esc(ago(r.last_run)) : 'never') },
+      ],
+      Array.isArray(rows) ? rows : [],
+      { empty: stateEmpty('No workflow rows came back', 'This account reads the register through its own dealership membership; an account in no dealership gets no rows. That is a scope, not an empty register.') },
+    ),
+  });
+
+  /* ------------------------------------------------------------------------
+     Feature availability by dealership · Release readiness (a38ee6)
+     ------------------------------------------------------------------------ */
+  const roadRow = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg');
+  roadRow.innerHTML = soon('coming-soon', 'grid_view', 'Feature availability by dealership',
+      'Which capability is live, partial or missing for each dealership, side by side. Every dealership’s own Subscription screen already shows its own list (nexus_my_tenant_capabilities); the cross-dealership matrix has no founder read yet, so no cell is drawn.',
+      'A founder RPC that reads tenant_capability across dealerships under the platform-admin check.')
+    + soon('planned', 'rocket_launch', 'Release readiness',
+      'Which release is live, what is waiting to ship and what it was checked against. NEXUS records no release, version or deploy event in the database, so there is nothing to list.',
+      'A release record written by the deploy, with the checks it passed.');
+  root.appendChild(roadRow);
+
+  /* ------------------------------------------------------------------------
+     Test tenants, named separately
+     ------------------------------------------------------------------------ */
+  const testHost = el('div'); testHost.id = 'fcTest';
+  root.appendChild(testHost);
+  panel(testHost, {
+    title: 'Test tenants',
+    icon: 'science',
+    sub: 'Every dealership whose slug starts "test-" -- nexus_founder_list_tenants()’s own is_test flag, not a second guess at the same rule. Fixtures, not customers; never counted in the tiles above.',
+    load,
+    render: rows => {
+      const test = (Array.isArray(rows) ? rows : []).filter(r => r.is_test);
+      return table(
+        [
+          { label: 'Slug', render: r => `<span class="font-label-numeric-sm">${esc(r.slug)}</span>` },
+          { label: 'Name', render: r => esc(r.name) },
+          { label: 'Status', render: r => statusOf(r) },
+          { label: 'Created', render: r => esc(dubaiStamp(r.created_at)) },
+        ],
+        test,
+        { empty: stateEmpty('No test tenants', 'Nothing on this platform has a slug starting "test-" right now.') },
+      );
+    },
+  });
+
+  const foot = el('div');
+  foot.innerHTML = trustFooter({ source: 'nexus_founder_list_tenants · nexus_founder_quarantine_census · v_workflow_health', asOf: dubaiStamp(new Date().toISOString()), evidence: 'Platform-admin RPCs, re-checked server-side', actor: actor() });
+  root.appendChild(foot);
+}
+
+/* A KPI row that loads once with its own skeleton and error panel. */
+function panelBare(host, load, render) {
+  const box = el('div');
+  host.appendChild(box);
+  box.innerHTML = stateLoading(2);
+  load().then(v => { box.innerHTML = render(v); }, e => { box.innerHTML = stateError('the dealership counts', e); });
 }

@@ -6,7 +6,7 @@
 -- delete guards — a trigger cannot refuse a DROP.
 -- It is kept only as historical evidence of what was once run.
 -- DO NOT EXECUTE. DO NOT PASTE INTO A SQL EDITOR.
--- Production is dsvuoovivysszdoiorch (ALBA CARS). Staging is wwspuxrbiyagnrnzgate.
+-- Production is dsvuoovivysszdoiorch (Tenant A). Staging is wwspuxrbiyagnrnzgate.
 -- ============================================================
 -- ===== ENABLE EXTENSIONS =====
 create extension if not exists vector;

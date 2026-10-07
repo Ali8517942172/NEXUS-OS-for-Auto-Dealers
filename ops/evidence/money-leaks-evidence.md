@@ -7,7 +7,7 @@ database. No migration was applied. The n8n box was not touched.
 
 **Reading caveat on every number below.** They were read through the Supabase MCP
 SQL channel, which connects as a privileged role, not as a signed-in dealership
-session. ALBA is the only active dealership on this project today, so the row
+session. Tenant A is the only active dealership on this project today, so the row
 sets are the same; at two dealerships they would not be, and this file should be
 re-taken as a dealership user before it is quoted at anyone.
 

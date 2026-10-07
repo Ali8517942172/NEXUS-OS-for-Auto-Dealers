@@ -68,23 +68,22 @@
 
 import { db } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { aed, dubaiDate, dubaiStamp, esc, mins, num, pct, pill } from '../lib/format.js';
+import { aed, dubaiDate, dubaiStamp, esc, mins, num, pct } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { SX, BANNER, BANNER_ICON, kpi, panel, table, pill, stateEmpty, unknownPill, hotPill, linkBtn, wireGo, engineHeader, engineFooter, evidenceChain, STEP_TEXT, STEP_LIST } from './revenue.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold   = h => `<div style="font-weight:600">${h}</div>`;
-const wrap   = h => `<div style="white-space:normal">${h}</div>`;
+const muted  = h => `<div class="${SX.sub}">${h}</div>`;
+const hot    = h => `<div class="${SX.hot}">${h}</div>`;
+const bold   = h => `<div class="${SX.bold}">${h}</div>`;
+const wrap   = h => `<div class="${SX.wrap}">${h}</div>`;
 
 const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed `
@@ -94,7 +93,7 @@ const readFailed = (what, err) =>
    reason. Never a dash — a dash beside "What it could be worth" reads as zero,
    and zero is a claim this engine explicitly refuses to make. */
 const unknownCell = (state, reason) =>
-  `<span class="pill unknown"><span class="dot"></span>${esc(str(state) || 'UNKNOWN')}</span>`
+  `${unknownPill(str(state) || 'UNKNOWN')}`
   + muted(esc(str(reason)) || 'The engine records no reason for this state, which is itself a gap.');
 
 /* One clause out of the engine's own "what I cannot tell you" paragraph, which
@@ -126,30 +125,99 @@ const shared = make => {
 };
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
+/* linkBtn() and wireGo() come from the engine-desk kit in screens/revenue.js. */
+
+/* ── One desk item, as the evidence chain ─────────────────────────────────────
+   action-center--31efb6's five-step stepper, applied to a lead recovery action:
+   Recommendation → Reason → Evidence → Action → Result. Every step is read from
+   the queue row; nothing is composed here.
+
+   EVIDENCE is the engine's own `engine_evidence`, frozen onto the action when it
+   was raised. For this lane it is an object, not a list: the counts and
+   timestamps v_lead_recovery judged the lead on. N is `messages_resolved` — the
+   message events the identity rule attached to this lead — because those are
+   the source events; silence markers are listed but never counted as messages
+   (INV-004). A row whose evidence is missing says so; it is not shown as zero.
+
+   RESULT is "Pending" until outcome_state is something other than NONE_YET.
+   A sale on file is not a result of this action unless a person attributed it,
+   and the column that says which is outcome_state, so the stepper reads it and
+   nothing else. */
+const LIFE_WORD = {
+  PROPOSED: 'Waiting on a decision', APPROVED: 'Approved, not yet carried out', REJECTED: 'Rejected',
+  DEFERRED: 'Deferred', EXECUTED: 'Carried out', EXECUTION_FAILED: 'Not carried out', CANCELLED: 'Withdrawn',
 };
+function deskItem(a) {
+  const ev = (a.engine_evidence && typeof a.engine_evidence === 'object' && !Array.isArray(a.engine_evidence))
+    ? a.engine_evidence : null;
+  const msgs = ev ? n0(ev.messages_resolved) : null;
+  const facts = ev ? [
+    ['Messages', `${num(ev.messages_resolved)} resolved (${num(ev.messages_in)} in, ${num(ev.messages_out)} out)`],
+    ['Customer last wrote', ev.last_customer_message_at ? dubaiStamp(ev.last_customer_message_at) : 'never recorded'],
+    ['We last wrote', ev.last_dealership_message_at ? dubaiStamp(ev.last_dealership_message_at) : 'never recorded'],
+    ['First response', n0(ev.response_time_minutes) != null ? mins(ev.response_time_minutes) : 'not measured'],
+    ['Silence markers', `${num(ev.silence_markers_on_file)} on file — not messages`],
+  ] : [];
+  const evidence = ev
+    ? `<ul class="${STEP_LIST}">${facts.map(([k, v]) => `<li><span class="${SX.dim}">${esc(k)}:</span> ${esc(v)}</li>`).join('')}</ul>`
+    : `<p class="${STEP_TEXT}">No evidence was frozen onto this action. That is this row carrying none, not the lead having none.</p>`;
+  const st = up(a.status);
+  const action = `<p class="${STEP_TEXT}"><strong>${esc(LIFE_WORD[st] || str(a.status) || 'Status not recorded')}</strong></p>`
+    + (a.decided_at ? `<p class="${STEP_TEXT}">Decided by ${esc(str(a.decided_by_name) || 'an account with no staff record')} on ${esc(dubaiStamp(a.decided_at))}${a.decision_reason_label ? ` — ${esc(a.decision_reason_label)}` : ''}.</p>` : '')
+    + (a.executed_at ? `<p class="${STEP_TEXT}">Carried out by ${esc(str(a.executed_by_name) || 'somebody')} on ${esc(dubaiStamp(a.executed_at))}.</p>` : '')
+    + (a.execution_failure ? `<p class="${STEP_TEXT} ${SX.hotTx}">${esc(a.execution_failure)}</p>` : '')
+    + `<p class="${STEP_TEXT} ${SX.dim}">A person acts; NEXUS records it. No workflow executes a recovery action.</p>`;
+  const pending = !str(a.outcome_state) || up(a.outcome_state) === 'NONE_YET';
+  const outcomeLine = `<p class="${STEP_TEXT} ${SX.dim}">${esc(str(a.outcome_sentence) || 'No outcome linked.')}</p>`;
+  return `<article class="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/40 shadow-sm flex flex-col gap-3">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-low/70 p-3 rounded-lg">
+      <div class="flex items-center gap-3 flex-wrap min-w-0">
+        <span class="font-label-numeric-md text-label-numeric-md font-bold text-primary bg-primary-fixed/60 px-2 py-0.5 rounded">#${esc(str(a.lead_id))}</span>
+        <span class="font-body-md text-body-md font-semibold text-on-surface">${esc(maskText(str(a.lead_name) || ('Lead ' + str(a.lead_id))))}</span>
+        <span class="font-body-sm text-body-sm text-outline">${esc(str(a.lead_status) || 'no status')}</span>
+        ${a.proposed_at ? `<span class="font-label-numeric-sm text-[11px] text-outline">raised ${esc(dubaiStamp(a.proposed_at))}</span>` : ''}
+      </div>
+      <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        ${pill(str(a.status) || 'UNKNOWN', '', { verbatim: true })}
+        <span class="${SX.sub}">${a.engine_still_agrees === false
+          ? 'The engine no longer agrees with this recommendation.'
+          : a.engine_still_agrees === true ? 'The engine still agrees.' : 'Whether the engine still agrees is not recorded.'}</span>
+      </div>
+    </div>
+    ${evidenceChain({
+      recommendation: `<div class="${SX.row}">${pill(str(a.recommendation) || 'NONE', '', { verbatim: true })}</div>`
+        + `<p class="${STEP_TEXT} mt-1">Engine state ${esc(str(a.engine_state) || 'not recorded')}${a.engine_confidence ? ` · confidence ${esc(str(a.engine_confidence).toLowerCase())}` : ''}.</p>`,
+      reason: `<p class="${STEP_TEXT}">${esc(str(a.engine_reason) || 'The engine recorded no reason on this row.')}</p>`,
+      evidenceCount: msgs,
+      evidence,
+      action,
+      resultPending: pending,
+      result: pending ? outcomeLine
+        : `<div class="${SX.row}">${pill(str(a.outcome_state), '', { verbatim: true })}</div>` + outcomeLine,
+    })}
+    <div class="${SX.row}"><span class="${SX.caps}">What it could be worth</span>${unknownCell(a.opportunity_value_state,
+      str(a.opportunity_value_basis).replace(/^UNKNOWN\.\s*/i, ''))}</div>
+  </article>`;
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.leadrecovery = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto another screen and restyle one nobody converted. A wrapper
-     cannot leak — go() removes it with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen.
+     Design: design/stitch/lead-recovery-stalled-inquiries-engine--b14f62.html (primary), --c6f82d and --be9936. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Lead Recovery',
+    sub: 'Which enquiries are going quiet, why, who owns them, and what the engine can and cannot see while it answers.',
+    actionsHtml: linkBtn('leads', 'Open Leads') + linkBtn('actions', 'Open Action Center'),
+  }));
+  wireGo(root);
 
   const readLeads = shared(() => db('v_lead_recovery'
     + '?select=lead_id,lead_name,lead_status,lead_is_open,lead_created_at,state,state_basis,'
@@ -174,7 +242,8 @@ SCREENS.leadrecovery = async host => {
   const readQueue = shared(() => db('v_lead_recovery_queue'
     + '?select=id,lead_id,lead_name,lead_status,status,is_live,awaiting_decision,recommendation,engine_state,'
     + 'engine_reason,engine_still_agrees,outcome_state,outcome_sentence,opportunity_value_state,'
-    + 'opportunity_value_basis,proposed_at,days_open'
+    + 'opportunity_value_basis,proposed_at,days_open,engine_evidence,engine_confidence,decided_at,decided_by_name,'
+    + 'decision_reason_label,executed_at,executed_by_name,execution_failure'
     + '&order=proposed_at.desc&limit=200'));
 
   const readHealth = shared(() => db('v_lead_recovery_health'
@@ -282,7 +351,7 @@ SCREENS.leadrecovery = async host => {
       /* Two reads of one engine disagreeing is a fact worth saying out loud
          rather than quietly preferring one of them. */
       const mismatch = (C && F && Number(C.leads_total) !== F.leads.length)
-        ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">rule</span><div>
+        ? `<div class="${BANNER.warm}"><span class="${BANNER_ICON}">rule</span><div>
              The coverage view counts ${num(C.leads_total)} ${plural(C.leads_total, 'lead', 'leads')} and the lead
              list returned ${num(F.leads.length)}. Two reads of one engine disagree, so the counts above are the
              coverage view&rsquo;s and the rows below are the list&rsquo;s. Neither has been adjusted to agree with
@@ -291,7 +360,7 @@ SCREENS.leadrecovery = async host => {
         : '';
 
       const settings = (C && C.settings_are_defaults === true)
-        ? `<div class="banner info"><span class="material-symbols-outlined" style="font-size:20px">tune</span><div>
+        ? `<div class="${BANNER.info}"><span class="${BANNER_ICON}">tune</span><div>
              ${bold('These thresholds are this product&rsquo;s defaults, not this dealership&rsquo;s policy.')}
              ${muted(`The first-response SLA behind every judgement above is `
                + `${num(C.sla_first_response_minutes)} ${plural(C.sla_first_response_minutes, 'minute', 'minutes')}, `
@@ -304,7 +373,7 @@ SCREENS.leadrecovery = async host => {
            </div></div>`
         : '';
 
-      return `<div class="grid g5">${riskTile}${unknownTile}${ownerTile}${confirmedTile}${recoveredTile}</div>`
+      return `<div class="${SX.g5}">${riskTile}${unknownTile}${ownerTile}${confirmedTile}${recoveredTile}</div>`
         + mismatch + settings;
     },
   }).then(wireGo);
@@ -333,10 +402,10 @@ SCREENS.leadrecovery = async host => {
       }
       const clauses = cannotClauses(text);
       const split = clauses.length
-        ? `<div class="section" style="margin-top:16px">
-             <div class="label-caps">The same paragraph, clause by clause</div>
+        ? `<div class="${SX.note}">
+             <div class="${SX.caps}">The same paragraph, clause by clause</div>
              ${table([
-               { label: 'It cannot', strong: true, render: k => `<span class="mono">${esc(k.label)}</span>` },
+               { label: 'It cannot', strong: true, render: k => `<span class="${SX.mono}">${esc(k.label)}</span>` },
                { label: 'Because', render: k => wrap(muted(esc(k.body))) },
              ], clauses)}
              ${muted('Split on the engine&rsquo;s own labels, so a limitation it records tomorrow appears here without '
@@ -345,7 +414,7 @@ SCREENS.leadrecovery = async host => {
         : muted('This screen could not find the engine&rsquo;s own clause labels inside that paragraph, so it is shown '
             + 'whole and unsplit rather than cut in a way the engine did not intend.');
 
-      return `<div class="quote">${esc(text)}</div>` + split;
+      return `<div class="${SX.quote}">${esc(text)}</div>` + split;
     },
   }).then(wireGo);
 
@@ -369,13 +438,13 @@ SCREENS.leadrecovery = async host => {
       const events = n0(C.message_events);
       const unresolved = (resolved != null && events != null) ? events - resolved : null;
 
-      const head = `<div class="grid g4">
+      const head = `<div class="${SX.g4}">
           ${kpi('Message events that resolve to a lead', (resolved != null && events != null)
             ? `${num(resolved)} / ${num(events)}`
             /* The row came back and the count did not. That is not a failed
                read and must not be worded as one, and it is not a zero either:
                the engine holds no number here, so none is shown. */
-            : '<span class="pill unknown"><span class="dot"></span>NOT COUNTED</span>',
+            : unknownPill('NOT COUNTED'),
             (resolved != null && events != null)
               ? muted(`The engine&rsquo;s own identity resolution rate is ${esc(pct(C.identity_resolution_pct))}. `
                   + `The other ${num(unresolved)} message ${plural(unresolved, 'event resolves', 'events resolve')} to `
@@ -414,9 +483,9 @@ SCREENS.leadrecovery = async host => {
             up(C.silence_detector_state) === 'STALE' ? 't-hot' : '')}
         </div>`;
 
-      const detail = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">The raw denominators, as the engine counted them</div>
-          <dl class="kv">
+      const detail = `<div class="${SX.note}">
+          <div class="${SX.caps}">The raw denominators, as the engine counted them</div>
+          <dl class="${SX.kv}">
             <dt>Communication log rows</dt><dd>${num(C.communication_log_rows)}</dd>
             <dt>Of which message events</dt><dd>${num(C.message_events)}
               ${muted('The remainder are silence markers, which are not messages and are never counted as '
@@ -438,146 +507,6 @@ SCREENS.leadrecovery = async host => {
         </div>`;
 
       return head + detail;
-    },
-  }).then(wireGo);
-
-  /* ══════════════════════════════════════════════════════════════════════
-     P4 · Every lead, and the reason it is not leaking
-     ══════════════════════════════════════════════════════════════════════ */
-  panel(root, {
-    title: 'Every lead the engine scored',
-    sub: 'One deterministic row per lead. The Why column is the engine&rsquo;s own basis, not a summary of it',
-    actions: linkBtn('leads', 'Open Leads'),
-    load: () => readLeads(),
-    render: rows => {
-      const F = leadFacts(rows);
-      if (!F.leads.length) {
-        return stateEmpty('This engine scored no leads',
-          'No lead row reached it. That is an empty pipeline or a read that matched nothing, and this screen cannot '
-          + 'tell those two apart — so nothing is claimed about whether anything is leaking.', 'person_search');
-      }
-
-      const body = table([
-        { label: 'Lead', strong: true, render: d =>
-            `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
-            + muted(`#${esc(str(d.lead_id))} &middot; ${esc(str(d.lead_status) || 'no status')} &middot; `
-              + (d.lead_is_open === true ? 'open' : d.lead_is_open === false ? 'closed' : 'open/closed not stated')) },
-        { label: 'State', render: d =>
-            pill(str(d.state) || 'UNKNOWN', '', { verbatim: true })
-            + muted(esc(str(d.state_basis)) || 'The engine records no basis for this state.') },
-        { label: 'Risk', render: d =>
-            pill(str(d.risk_level) || 'UNKNOWN', '', { verbatim: true }) },
-        { label: 'Why', render: d => wrap(muted(esc(str(d.risk_basis))
-            || 'The engine records no basis for this risk level, which is itself a gap.')) },
-        { label: 'Response', render: d => (up(d.response_time_state) === 'MEASURED'
-            ? `<div>${esc(mins(d.response_time_minutes))}</div>`
-              + muted(`${esc(str(d.sla_state) || 'SLA not stated')} against a `
-                + `${num(d.sla_first_response_minutes)}-minute target`)
-            : unknownCell(d.response_time_state, d.response_time_note)) },
-        { label: 'Silence', render: d =>
-            pill(str(d.silence_state) || 'UNKNOWN', '', { verbatim: true })
-            + muted(up(d.silence_detector_state) === 'STALE'
-                ? `Detector ${esc(str(d.silence_detector_state))} — computed from message timestamps only`
-                : `${num(d.silence_markers_on_file)} ${plural(d.silence_markers_on_file, 'marker', 'markers')} on file, `
-                  + `threshold ${num(d.silence_threshold_hours)} h`) },
-        { label: 'Owner', render: d => (up(d.owner_state) === 'ASSIGNED'
-            ? `<div>${esc(str(d.owner_name) || 'assigned, unnamed')}</div>`
-              + muted(esc(str(d.owner_state)))
-            : unknownCell(d.owner_state, d.owner_note)) },
-        { label: 'What it could be worth', render: d => (n0(d.opportunity_value_aed) != null
-            ? aed(d.opportunity_value_aed)
-            : unknownCell(d.opportunity_value_state,
-                str(d.opportunity_value_basis).replace(/^UNKNOWN\.\s*/i, ''))) },
-        { label: 'Next action', render: d =>
-            pill(str(d.recommended_action) || 'NONE', '', { verbatim: true })
-            + muted(esc(str(d.action_reason)) || 'The engine records no reason for this recommendation.') },
-      ], F.leads);
-
-      /* ── The sentence this product must never be allowed to blur ─────────
-         One lead converted. The engine says, in its own words, that NEXUS had
-         nothing to do with it. Printed as its own block because inside a table
-         cell it would be skimmed, and this is the claim a buyer would most like
-         to hear overstated. */
-      const disclaimers = F.unattributedSales.map(d => `<div class="banner warm" style="margin-top:12px">
-          <span class="material-symbols-outlined" style="font-size:20px">handshake</span>
-          <div>
-            ${bold(`${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))} converted — and NEXUS is not claiming it.`)}
-            ${muted(esc(str(d.recovery_attribution_basis))
-              || 'The engine records this state with no basis, which is itself a gap.')}
-            ${muted(`Confirmed: ${aed(d.confirmed_revenue_aed)}`
-              + (d.confirmed_outcome_date ? ` on ${esc(dubaiDate(d.confirmed_outcome_date))}` : '')
-              + '. ' + esc(str(d.confirmed_outcome_basis) || 'No basis is recorded for the confirmed outcome.'))}
-            ${muted('<span class="mono">' + esc(str(d.recovery_attribution_state)) + '</span> is a different column '
-              + 'from the confirmed outcome, and answering the second has never been allowed to answer the first.')}
-          </div></div>`).join('');
-
-      const notes = [];
-      notes.push(`${num(F.sized.length)} of ${num(F.leads.length)} `
-        + `${plural(F.leads.length, 'lead carries', 'leads carry')} a monetary opportunity figure. `
-        + (F.sized.length
-            ? 'The rest are excluded from any total on this page.'
-            : 'Not one does, so there is no estimated pipeline on this screen and there will not be one until a lead '
-              + 'can be sized. The engine says a figure here would be invented, and it is right.'));
-      notes.push(`${num(F.owned.length)} of ${num(F.leads.length)} `
-        + `${plural(F.leads.length, 'lead names', 'leads name')} an owner, and `
-        + `${num(F.timed.length)} ${plural(F.timed.length, 'carries', 'carry')} a measured first response.`);
-      notes.push(`${num(F.withSale.length)} ${plural(F.withSale.length, 'lead has', 'leads have')} a confirmed sale on `
-        + `file and ${num(F.attributed.length)} ${plural(F.attributed.length, 'has', 'have')} that sale attributed to `
-        + 'a recovery action. Confirmed and attributed are different words and they are never interchanged here.');
-      if (F.defaults) {
-        notes.push('The SLA and silence thresholds behind every judgement in this table are this product&rsquo;s '
-          + 'defaults rather than thresholds this dealership has set.');
-      }
-      if (F.computedAt) notes.push(`Scored ${esc(dubaiStamp(F.computedAt))}.`);
-
-      return body + disclaimers + `<div class="section" style="margin-top:16px">${notes.map(t => muted(t)).join('')}</div>`;
-    },
-  }).then(wireGo);
-
-  /* ══════════════════════════════════════════════════════════════════════
-     P5 · What the engine can say, and what it is saying today
-     ══════════════════════════════════════════════════════════════════════ */
-  panel(root, {
-    title: 'Every state this engine can reach',
-    sub: 'A branch that exists and is empty, and a branch that does not exist, are two different findings. Do not read '
-       + 'a zero as evidence a branch is broken, or a branch as evidence of data',
-    load: () => readStates(),
-    render: rows => {
-      const states = rows || [];
-      if (!states.length) {
-        return stateEmpty('The state model returned no rows',
-          'The engine publishes its own vocabulary and none came back, so this screen cannot say which states are '
-          + 'reachable. That is a missing reference table, not a finding about leads.', 'checklist');
-      }
-      const blocked = states.filter(s => s.engine_can_produce === false);
-      const observed = states.filter(s => n0(s.leads_in_state_now));
-
-      const body = table([
-        { label: 'State', strong: true, render: s =>
-            pill(str(s.state), s.engine_can_produce === false ? 'hot' : 'ok', { verbatim: true })
-            + muted(wrap(esc(str(s.meaning)) || 'No meaning is recorded for this state.')) },
-        { label: 'Observation', render: s =>
-            pill(str(s.observation) || 'UNKNOWN', '', { verbatim: true }) },
-        { label: 'Leads in it now', align: 'r', render: s => (n0(s.leads_in_state_now) != null
-            ? num(s.leads_in_state_now)
-            : '<span class="t-muted">not counted</span>') },
-        { label: 'What it takes to be in it', render: s => wrap(muted(esc(str(s.requires))
-            || 'The engine records no requirement for this state.')) },
-        { label: 'Blocked by', render: s => (s.engine_can_produce === false
-            ? `<span class="pill hot"><span class="dot"></span>${esc(str(s.blocked_by) || 'BLOCKED')}</span>`
-              + muted('No branch of the engine can return this state, and none may be written until this is cleared. '
-                + 'Adding one before then would be fabrication.')
-            : muted('A branch exists for this state.')) },
-      ], states);
-
-      const note = muted(`${num(states.length)} ${plural(states.length, 'state is', 'states are')} defined. `
-        + `${num(blocked.length)} ${plural(blocked.length, 'is', 'are')} structurally unreachable — no code path can `
-        + `produce ${plural(blocked.length, 'it', 'them')} — and `
-        + `${num(observed.length)} ${plural(observed.length, 'has', 'have')} a lead in `
-        + `${plural(observed.length, 'it', 'them')} right now. Everything in between is a branch that works and that `
-        + 'nothing has landed in, which is an observation about this dealership rather than about the software.');
-
-      return body + `<div class="section" style="margin-top:16px">${note}</div>`;
     },
   }).then(wireGo);
 
@@ -606,7 +535,7 @@ SCREENS.leadrecovery = async host => {
          and it is said that way. The counts underneath come from the coverage
          view, which counts the same lane and does return a row. */
       const head = H
-        ? `<div class="grid g4">
+        ? `<div class="${SX.g4}">
              ${kpi('Actions raised', num(H.actions_total),
                muted(`${num(H.awaiting_decision)} awaiting a decision, ${num(H.approved_not_executed)} approved and `
                  + `not carried out, ${num(H.executed)} carried out.`))}
@@ -616,7 +545,7 @@ SCREENS.leadrecovery = async host => {
                  : 'No completed sale has been linked to any action in this lane.'))}
              ${kpi('Revenue this product may call recovered', n0(H.attributed_revenue_aed) != null
                ? aed(H.attributed_revenue_aed)
-               : '<span class="pill unknown"><span class="dot"></span>NOT ATTRIBUTED</span>',
+               : unknownPill('NOT ATTRIBUTED'),
                muted(n0(H.attributed_revenue_aed) != null
                  ? 'Attributed by a named person to an executed action, against a confirmed sale.'
                  : 'Null until a person attributes a confirmed sale to an executed action. Null, not zero: nothing '
@@ -630,8 +559,8 @@ SCREENS.leadrecovery = async host => {
                  + (H.last_audit_at ? ` Last audit ${esc(dubaiStamp(H.last_audit_at))}.` : ' No audit row on record.')))}
            </div>`
         : h.err
-          ? `<div class="section">${readFailed('The desk health view', h.err)}</div>`
-          : `<div class="banner info"><span class="material-symbols-outlined" style="font-size:20px">inbox</span><div>
+          ? `<div class="${SX.note}">${readFailed('The desk health view', h.err)}</div>`
+          : `<div class="${BANNER.info}"><span class="${BANNER_ICON}">inbox</span><div>
                ${bold('The desk summary returned no row at all.')}
                ${muted('That is an absent summary rather than a row of zeroes, and the difference matters: it means '
                  + 'there is nothing in this lane to summarise, not that the lane was measured and found empty.'
@@ -644,27 +573,12 @@ SCREENS.leadrecovery = async host => {
              </div></div>`;
 
       const list = rows == null
-        ? `<div class="section">${readFailed('The recovery queue', q.err)}</div>`
-        : table([
-            { label: 'Lead', strong: true, render: a =>
-                `<div>${esc(maskText(str(a.lead_name) || ('Lead ' + str(a.lead_id))))}</div>`
-                + muted(`#${esc(str(a.lead_id))} &middot; ${esc(str(a.lead_status) || 'no status')}`) },
-            { label: 'Recommended', render: a => pill(str(a.recommendation) || 'NONE', '', { verbatim: true }) },
-            { label: 'Status', render: a => pill(str(a.status) || 'UNKNOWN', '', { verbatim: true })
-                + muted(a.engine_still_agrees === false
-                    ? 'The engine no longer agrees with the recommendation this was approved on.'
-                    : a.engine_still_agrees === true
-                      ? 'The engine still agrees with the recommendation this was approved on.'
-                      : 'Whether the engine still agrees is not recorded.') },
-            { label: 'What it could be worth', render: a => unknownCell(a.opportunity_value_state,
-                str(a.opportunity_value_basis).replace(/^UNKNOWN\.\s*/i, '')) },
-            { label: 'Outcome', render: a => wrap(muted(esc(str(a.outcome_sentence))
-                || 'The database records no outcome sentence against this action.')) },
-          ], rows, {
-            empty: stateEmpty('No recovery action has ever been raised',
+        ? `<div class="${SX.note}">${readFailed('The recovery queue', q.err)}</div>`
+        : rows.length
+          ? `<div class="${SX.stack}">${rows.map(deskItem).join('')}</div>`
+          : stateEmpty('No recovery action has ever been raised',
               'The engine has scored every lead and nobody has been asked to do anything about any of them, so this '
-              + 'desk is unopened rather than cleared. Nobody is late, and nothing has been rejected.', 'task_alt'),
-          });
+              + 'desk is unopened rather than cleared. Nobody is late, and nothing has been rejected.', 'task_alt');
 
       /* The engine writes this note per lead, so it is only printed as a
          statement about the lane when every lead agrees on it. Where they do
@@ -734,14 +648,249 @@ SCREENS.leadrecovery = async host => {
           : 'Not established on this render.'],
       ];
 
-      const stripHtml = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">Where this page stands</div>
-          <dl class="kv">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
+      const stripHtml = `<div class="${SX.note}">
+          <div class="${SX.caps}">Where this page stands</div>
+          <dl class="${SX.kv}">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
         </div>`;
 
       return head + list
-        + (automation ? `<div class="section" style="margin-top:16px">${automation}</div>` : '')
+        + (automation ? `<div class="${SX.note}">${automation}</div>` : '')
         + stripHtml;
     },
   }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P4 · Every lead, and the reason it is not leaking
+     ══════════════════════════════════════════════════════════════════════ */
+  panel(root, {
+    title: 'Every lead the engine scored',
+    sub: 'One deterministic row per lead. The Why column is the engine&rsquo;s own basis, not a summary of it',
+    actions: linkBtn('leads', 'Open Leads'),
+    load: () => readLeads(),
+    render: rows => {
+      const F = leadFacts(rows);
+      if (!F.leads.length) {
+        return stateEmpty('This engine scored no leads',
+          'No lead row reached it. That is an empty pipeline or a read that matched nothing, and this screen cannot '
+          + 'tell those two apart — so nothing is claimed about whether anything is leaking.', 'person_search');
+      }
+
+      const body = table([
+        { label: 'Lead', strong: true, render: d =>
+            `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
+            + muted(`#${esc(str(d.lead_id))} &middot; ${esc(str(d.lead_status) || 'no status')} &middot; `
+              + (d.lead_is_open === true ? 'open' : d.lead_is_open === false ? 'closed' : 'open/closed not stated')) },
+        { label: 'State', render: d =>
+            pill(str(d.state) || 'UNKNOWN', '', { verbatim: true })
+            + muted(esc(str(d.state_basis)) || 'The engine records no basis for this state.') },
+        { label: 'Risk', render: d =>
+            pill(str(d.risk_level) || 'UNKNOWN', '', { verbatim: true }) },
+        { label: 'Why', render: d => wrap(muted(esc(str(d.risk_basis))
+            || 'The engine records no basis for this risk level, which is itself a gap.')) },
+        { label: 'Response', render: d => (up(d.response_time_state) === 'MEASURED'
+            ? `<div>${esc(mins(d.response_time_minutes))}</div>`
+              + muted(`${esc(str(d.sla_state) || 'SLA not stated')} against a `
+                + `${num(d.sla_first_response_minutes)}-minute target`)
+            : unknownCell(d.response_time_state, d.response_time_note)) },
+        { label: 'Silence', render: d =>
+            pill(str(d.silence_state) || 'UNKNOWN', '', { verbatim: true })
+            + muted(up(d.silence_detector_state) === 'STALE'
+                ? `Detector ${esc(str(d.silence_detector_state))} — computed from message timestamps only`
+                : `${num(d.silence_markers_on_file)} ${plural(d.silence_markers_on_file, 'marker', 'markers')} on file, `
+                  + `threshold ${num(d.silence_threshold_hours)} h`) },
+        { label: 'Owner', render: d => (up(d.owner_state) === 'ASSIGNED'
+            ? `<div>${esc(str(d.owner_name) || 'assigned, unnamed')}</div>`
+              + muted(esc(str(d.owner_state)))
+            : unknownCell(d.owner_state, d.owner_note)) },
+        { label: 'What it could be worth', render: d => (n0(d.opportunity_value_aed) != null
+            ? aed(d.opportunity_value_aed)
+            : unknownCell(d.opportunity_value_state,
+                str(d.opportunity_value_basis).replace(/^UNKNOWN\.\s*/i, ''))) },
+        { label: 'Next action', render: d =>
+            pill(str(d.recommended_action) || 'NONE', '', { verbatim: true })
+            + muted(esc(str(d.action_reason)) || 'The engine records no reason for this recommendation.') },
+      ], F.leads);
+
+      /* ── The sentence this product must never be allowed to blur ─────────
+         One lead converted. The engine says, in its own words, that NEXUS had
+         nothing to do with it. Printed as its own block because inside a table
+         cell it would be skimmed, and this is the claim a buyer would most like
+         to hear overstated. */
+      const disclaimers = F.unattributedSales.map(d => `<div class="${BANNER.warm}">
+          <span class="${BANNER_ICON}">handshake</span>
+          <div>
+            ${bold(`${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))} converted — and NEXUS is not claiming it.`)}
+            ${muted(esc(str(d.recovery_attribution_basis))
+              || 'The engine records this state with no basis, which is itself a gap.')}
+            ${muted(`Confirmed: ${aed(d.confirmed_revenue_aed)}`
+              + (d.confirmed_outcome_date ? ` on ${esc(dubaiDate(d.confirmed_outcome_date))}` : '')
+              + '. ' + esc(str(d.confirmed_outcome_basis) || 'No basis is recorded for the confirmed outcome.'))}
+            ${muted(`<span class="${SX.mono}">` + esc(str(d.recovery_attribution_state)) + '</span> is a different column '
+              + 'from the confirmed outcome, and answering the second has never been allowed to answer the first.')}
+          </div></div>`).join('');
+
+      const notes = [];
+      notes.push(`${num(F.sized.length)} of ${num(F.leads.length)} `
+        + `${plural(F.leads.length, 'lead carries', 'leads carry')} a monetary opportunity figure. `
+        + (F.sized.length
+            ? 'The rest are excluded from any total on this page.'
+            : 'Not one does, so there is no estimated pipeline on this screen and there will not be one until a lead '
+              + 'can be sized. The engine says a figure here would be invented, and it is right.'));
+      notes.push(`${num(F.owned.length)} of ${num(F.leads.length)} `
+        + `${plural(F.leads.length, 'lead names', 'leads name')} an owner, and `
+        + `${num(F.timed.length)} ${plural(F.timed.length, 'carries', 'carry')} a measured first response.`);
+      notes.push(`${num(F.withSale.length)} ${plural(F.withSale.length, 'lead has', 'leads have')} a confirmed sale on `
+        + `file and ${num(F.attributed.length)} ${plural(F.attributed.length, 'has', 'have')} that sale attributed to `
+        + 'a recovery action. Confirmed and attributed are different words and they are never interchanged here.');
+      if (F.defaults) {
+        notes.push('The SLA and silence thresholds behind every judgement in this table are this product&rsquo;s '
+          + 'defaults rather than thresholds this dealership has set.');
+      }
+      if (F.computedAt) notes.push(`Scored ${esc(dubaiStamp(F.computedAt))}.`);
+
+      return body + disclaimers + `<div class="${SX.note}">${notes.map(t => muted(t)).join('')}</div>`;
+    },
+  }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P5 · What the engine can say, and what it is saying today
+     ══════════════════════════════════════════════════════════════════════ */
+  panel(root, {
+    title: 'Every state this engine can reach',
+    sub: 'A branch that exists and is empty, and a branch that does not exist, are two different findings. Do not read '
+       + 'a zero as evidence a branch is broken, or a branch as evidence of data',
+    load: () => readStates(),
+    render: rows => {
+      const states = rows || [];
+      if (!states.length) {
+        return stateEmpty('The state model returned no rows',
+          'The engine publishes its own vocabulary and none came back, so this screen cannot say which states are '
+          + 'reachable. That is a missing reference table, not a finding about leads.', 'checklist');
+      }
+      const blocked = states.filter(s => s.engine_can_produce === false);
+      const observed = states.filter(s => n0(s.leads_in_state_now));
+
+      const body = table([
+        { label: 'State', strong: true, render: s =>
+            pill(str(s.state), s.engine_can_produce === false ? 'hot' : 'ok', { verbatim: true })
+            + muted(wrap(esc(str(s.meaning)) || 'No meaning is recorded for this state.')) },
+        { label: 'Observation', render: s =>
+            pill(str(s.observation) || 'UNKNOWN', '', { verbatim: true }) },
+        { label: 'Leads in it now', align: 'r', render: s => (n0(s.leads_in_state_now) != null
+            ? num(s.leads_in_state_now)
+            : `<span class="${SX.dim}">not counted</span>`) },
+        { label: 'What it takes to be in it', render: s => wrap(muted(esc(str(s.requires))
+            || 'The engine records no requirement for this state.')) },
+        { label: 'Blocked by', render: s => (s.engine_can_produce === false
+            ? `${hotPill(str(s.blocked_by) || 'BLOCKED')}`
+              + muted('No branch of the engine can return this state, and none may be written until this is cleared. '
+                + 'Adding one before then would be fabrication.')
+            : muted('A branch exists for this state.')) },
+      ], states);
+
+      const note = muted(`${num(states.length)} ${plural(states.length, 'state is', 'states are')} defined. `
+        + `${num(blocked.length)} ${plural(blocked.length, 'is', 'are')} structurally unreachable — no code path can `
+        + `produce ${plural(blocked.length, 'it', 'them')} — and `
+        + `${num(observed.length)} ${plural(observed.length, 'has', 'have')} a lead in `
+        + `${plural(observed.length, 'it', 'them')} right now. Everything in between is a branch that works and that `
+        + 'nothing has landed in, which is an observation about this dealership rather than about the software.');
+
+      return body + `<div class="${SX.note}">${note}</div>`;
+    },
+  }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P7 · Recovery settings — read only, and why
+     ══════════════════════════════════════════════════════════════════════
+     Added 7 Oct 2026. public.lead_recovery_settings holds this dealership's
+     thresholds. `authenticated` may SELECT it (tenant-scoped policy) and there
+     is NO write path: no grant and no RPC, measured against the live catalogue
+     the same day. So this panel shows the numbers and says where a change has
+     to go, rather than offering a Save button the database would refuse. An
+     empty table is the engine running on its defaults, which every row of
+     v_lead_recovery already reports as settings_are_defaults.
+     Laid out beside Scoring health, as lead-recovery--b14f62 §7–8 does. */
+  const bento = el('div', 'grid grid-cols-1 xl:grid-cols-2 gap-space-lg items-start');
+  root.appendChild(bento);
+  panel(bento, {
+    title: 'Recovery settings',
+    sub: 'The thresholds this engine judges your leads against. Shown here so they can be checked; they are not '
+       + 'editable from this dashboard',
+    load: async () => {
+      const [s, l] = await Promise.all([
+        settle(db('lead_recovery_settings?select=sla_first_response_minutes,silence_hours,stale_silence_hours,'
+          + 'engagement_window_days,detector_max_age_hours,reproposal_cooldown_days,set_by,set_at,note&limit=5')),
+        settle(readLeads()),
+      ]);
+      if (s.err) throw s.err;
+      return { s: s.v || [], l };
+    },
+    render: ({ s, l }) => {
+      const row = s[0] || null;
+      const onDefaults = l.err ? null : (l.v || []).some(d => d.settings_are_defaults === true);
+      const editNote = muted('There is no screen or function a dealership account can change these through. A '
+        + 'change is made by NEXUS on your behalf, and the SLA figure here is a copy of one used elsewhere in the '
+        + 'product, so changing it on its own would make NEXUS quote two different response-time rules.');
+      if (!row) {
+        return stateEmpty('No settings have been stated for this dealership',
+          'The engine is running on its built-in defaults. '
+          + (onDefaults === true
+              ? 'Every lead row says so (settings_are_defaults).'
+              : onDefaults === false
+                ? 'The lead rows read on this visit do not say they are on defaults, which disagrees with this empty table and is worth reporting.'
+                : 'The lead rows could not be read, so that could not be cross-checked.'),
+          'tune') + `<div class="${SX.note}">${editNote}</div>`;
+      }
+      const v = (n, unit) => (n0(n) == null ? `<span class="${SX.dim}">not stated</span>` : `${esc(num(n))} ${esc(unit)}`);
+      const kv = [
+        ['First reply expected within', v(row.sla_first_response_minutes, 'minutes')],
+        ['Silent after', v(row.silence_hours, 'hours')],
+        ['Stale silence after', v(row.stale_silence_hours, 'hours')],
+        ['Engagement window', v(row.engagement_window_days, 'days')],
+        ['Silence detector counted as stale after', v(row.detector_max_age_hours, 'hours')],
+        ['Wait before re-raising a lead', v(row.reproposal_cooldown_days, 'days')],
+        ['Set by', esc(str(row.set_by) || 'nobody named')
+          + (row.set_at ? ` on ${esc(dubaiStamp(row.set_at))}` : '')],
+      ];
+      return `<dl class="${SX.kv}">${kv.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join('')}</dl>`
+        + (str(row.note) ? `<div class="${SX.note}"><div class="${SX.quote}">${esc(str(row.note))}</div></div>` : '')
+        + `<div class="${SX.note}">${editNote}</div>`;
+    },
+  });
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P8 · Scoring health — rpc/nexus_scoring_health
+     ══════════════════════════════════════════════════════════════════════
+     Added 7 Oct 2026. Which scorer stands behind the lead scores this engine
+     ranks on. AI_SCORE_FALLBACK is NOT a model verdict and AI_SCORE_UNKNOWN is
+     unrecorded provenance — the function's own note says both, and is printed
+     verbatim, so nobody reads the average beside them as AI accuracy. */
+  panel(bento, {
+    title: 'Scoring health',
+    sub: 'How the scores on your leads were produced. An average is only meaningful beside the scorer that produced it',
+    load: () => db('rpc/nexus_scoring_health'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('No lead has been scored',
+          'The scoring breakdown returned nothing, which means this dealership has no leads on file yet.', 'insights');
+      }
+      const total = list.reduce((a, r) => a + (n0(r.leads) || 0), 0);
+      return table([
+        { label: 'Scored by', strong: true, render: r => pill(str(r.score_source) || 'NOT RECORDED',
+            up(r.score_source) === 'AI_SCORE_FALLBACK' || up(r.score_source) === 'AI_SCORE_UNKNOWN' ? 'warm' : '',
+            { verbatim: true }) },
+        { label: 'Leads', align: 'r', render: r => esc(num(r.leads)) },
+        { label: 'Average score', align: 'r', render: r => (n0(r.avg_score) == null
+            ? `<span class="${SX.dim}">no score recorded</span>` : esc(String(r.avg_score))) },
+        { label: 'What this means', render: r => wrap(esc(str(r.note) || 'No note recorded for this scorer.')) },
+      ], list) + `<div class="${SX.note}">${muted(`${esc(num(total))} ${plural(total, 'lead', 'leads')} in total. `
+        + 'A fallback score was produced without a model answer and is not evidence of how accurate AI scoring is.')}</div>`;
+    },
+  });
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'v_lead_recovery · v_lead_recovery_coverage · v_lead_recovery_queue · lead_recovery_settings · rpc/nexus_scoring_health',
+    evidence: 'Every state derived from rows in this database; no judgement is a model output',
+  }));
 };

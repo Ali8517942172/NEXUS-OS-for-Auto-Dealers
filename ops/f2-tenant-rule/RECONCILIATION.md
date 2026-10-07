@@ -51,7 +51,7 @@ select coalesce(match_quality,'(null)') q, count(*) from competitors group by 1;
 
 ```sql
 select tenant_id, accepted_market_match_quality from inventory_profit_settings;
---  fff6a2b5-… (ALBA)   {exact,strong}
+--  fff6a2b5-… (Tenant A)   {exact,strong}
 ```
 
 How many of the 22 rows pass, under each candidate accepted set:

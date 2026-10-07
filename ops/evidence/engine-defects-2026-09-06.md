@@ -216,7 +216,7 @@ are platform vocabulary.
 
 `evidence_today` was the odd one out and it was doing two jobs. Some of it is a
 platform fact (*"No appointment table, no column, no event type"*). The rest is
-ALBA CARS' measurement, frozen on 3 September: *"purchase_history holds 1 row"*,
+Tenant A' measurement, frozen on 3 September: *"purchase_history holds 1 row"*,
 *"all 12 units"*, *"leads = 3 (2 of them quarantined wrong-number junk)"*,
 *"0 live rows (18 inserts, 15 deletes)"*, *"Last successful run 26 Aug 2026
 19:03 UTC"*. Onboard a second dealership and their screen prints those as theirs.
@@ -239,7 +239,7 @@ rendered on the Deal Rescue screen:
 
 | column | row | what it stored |
 |---|---|---|
-| `deal_rescue_prerequisites.evidence_today` | 9 rows | ALBA's leads, sales, units, quotes, detector time |
+| `deal_rescue_prerequisites.evidence_today` | 9 rows | Tenant A's leads, sales, units, quotes, detector time |
 | `deal_rescue_prerequisites.unlocks` | `VOLUME` | *"Thresholds picked against 3 leads and 1 sale are guesses."* |
 | `deal_rescue_states.requires` | `FINANCE_BLOCKED` | *"…and the table holds 0 live rows."* |
 | `deal_rescue_states.requires` | `CUSTOMER_GHOSTED` | *"the 12-Hour Silence Detector last succeeded 26 Aug 2026 19:03 UTC and is stale"* |
@@ -247,7 +247,7 @@ rendered on the Deal Rescue screen:
 | `deal_rescue_evidence_sources.verdict_basis` | `KYC_DOCUMENT_VALID` | *"All 3 rows on file today are NOT_A_DOCUMENT, REJECTED and voided."* |
 | `deal_rescue_evidence_sources.verdict_basis` | `APPROVED_UNEXECUTED_INVENTORY_ACTION` | **"1 such row exists today (NX-1010, REPRICE, approved 02 Sep 2026, never executed)"** |
 
-The last is the sharpest: a second dealership's screen would have printed ALBA's
+The last is the sharpest: a second dealership's screen would have printed Tenant A's
 **stock number** and the date somebody approved an action on it.
 
 ## What changed
@@ -288,7 +288,7 @@ The last is the sharpest: a second dealership's screen would have printed ALBA's
   subquery and projected twice. The deployed dashboard bundle still selects that
   name and a 400 would have broken the Deal Rescue screen the moment the
   migration landed. A screen that has not been rebuilt now shows **that
-  dealership's own live measurement** where it used to show ALBA's frozen one.
+  dealership's own live measurement** where it used to show Tenant A's frozen one.
   Drop the alias once the dashboard is redeployed.
 
 ## Proofs
@@ -322,7 +322,7 @@ Production after the change, outside any transaction:
 
 ```
 rows still matching the guard : 0 prereq rows, 0 state rows, 0 evidence-source rows
-residual ALBA specifics (NX-…, 26 Aug 2026, 02 Sep 2026, "leads = ", …) : (none)
+residual Tenant A specifics (NX-…, 26 Aug 2026, 02 Sep 2026, "leads = ", …) : (none)
 ```
 
 Row counts unchanged: 9 prerequisites, 7 states, 9 evidence sources, 9 view rows.

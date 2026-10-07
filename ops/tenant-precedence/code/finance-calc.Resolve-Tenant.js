@@ -42,7 +42,7 @@
 // 'Calculate Equity & Tier' by name rather than from $input, because the HTTP
 // node before it replaced the item with the tenant lookup's response. No figure
 // is recomputed here, so INV-001's one-figure-one-derivation rule is untouched.
-const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS
+const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // Tenant A
 const NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let nexusMap = {};
 try { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }

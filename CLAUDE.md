@@ -108,7 +108,7 @@ read it before proposing any feature.
 **Who it is for: every dealership, not this one.** NEXUS is a multi-tenant
 product **by design and by intent**, sold to auto dealerships on a subscription
 — the UAE market first, then worldwide. It was not commissioned by, and is not
-being built for, any single dealership. **ALBA CARS is tenant #1 and the pilot**
+being built for, any single dealership. **Tenant A is tenant #1 and the pilot**
 — the proving ground the product is measured on, not the customer it exists to
 serve. That is what NEXUS is *for*; it is not a claim that it is safe to put a
 second dealership on today, which the next two sections answer, and answer with
@@ -160,7 +160,7 @@ recovered revenue until a real business outcome occurs.
 
 ~~Production holds **one active dealership plus a quarantine tenant**.~~
 **Production holds THREE active dealerships plus a quarantine tenant.** A figure
-taken "as the ALBA owner", "on production" or "on ALBA's real data" is still a
+taken "as the Tenant A owner", "on production" or "on Tenant A's real data" is still a
 one-tenant figure — it says nothing about what another dealership sees, and it
 now says nothing about the other two that are already there.
 
@@ -176,7 +176,7 @@ yet.** Whoever reads this next: check the project's status before citing any
 staging measurement, and say what you found rather than what this line hoped
 for.
 
-**Do not let a reader — or yourself — upgrade "works for ALBA" into "works for
+**Do not let a reader — or yourself — upgrade "works for Tenant A" into "works for
 any dealership".** Those are two claims with two different pieces of evidence.
 When quoting a production figure, say which tenant it was scoped to. When a
 check could only run at one tenant, record it as NOT RUN for the multi-tenant
@@ -323,17 +323,17 @@ the time it was written to buy.
   (`tenants_unattributed_default_must_be_quarantine`) makes re-pointing it at a
   real dealership impossible without dropping that constraint by name. A backend
   write that omits `tenant_id` is now **retained** under quarantine rather than
-  filed under ALBA: unreadable by any dealership session (no `tenant_members`
+  filed under Tenant A: unreadable by any dealership session (no `tenant_members`
   row, and `nexus_current_tenant_ids()` requires `status='active'` — both locks
   measured, including against a forged membership row plus a forged JWT claim),
   excluded from all 29 tenant-carrying views **in their own definitions**, and
   findable by `service_role` via `nexus_quarantine_census()`.
-  `nexus_scoped_tenant_id()` was decoupled from the flag and still returns ALBA,
+  `nexus_scoped_tenant_id()` was decoupled from the flag and still returns Tenant A,
   so Customer 360 did not go silent. **What this does not fix:** the four n8n
   workflows that still omit `tenant_id` are not identified anywhere — the repo's
   `n8n-workflows/*.json` is a 30 Aug export containing zero occurrences of
   `tenant_id` and cannot answer it. Their rows now land in quarantine instead of
-  ALBA, which is visible and recoverable rather than silent. **Run
+  Tenant A, which is visible and recoverable rather than silent. **Run
   `select * from public.nexus_quarantine_census();` as `service_role` daily until
   it is stable** — that census is the only measurement of which writers are
   broken, and this is the cheapest moment to take it. **It is NOT stable.
@@ -343,7 +343,7 @@ the time it was written to buy.
   fault nothing else in this repository can see. Nobody has yet used it to
   identify the writer, which is the next step and is a repo-and-box reading job,
   not a database one. Also: disabling
-  `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
+  `Resolve Tenant` in n8n, the documented rollback, no longer falls back to Tenant A;
   see `ops/evidence/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
 - ~~**`workflow_registry` is readable by every signed-in user and is not
   tenant-scoped.**~~ **Closed 6 September 2026** — migration
@@ -362,7 +362,7 @@ the time it was written to buy.
   nothing while reading like a scope. The table left the dealer data plane
   instead: **no table grant, no column grant, no `authenticated` policy**
   (`workflow_registry_read` dropped; the anon-deny and service_role policies
-  untouched). Measured on production as the ALBA owner with a real JWT claim:
+  untouched). Measured on production as the Tenant A owner with a real JWT claim:
   `count(*)`, `select name`, `select *` and `select id` on the table all return
   **42501**; as `anon` over the live REST API, `42501 permission denied for
   schema public`.
@@ -629,7 +629,7 @@ pass.
 
 The two Meta rows are registered and **deliberately `disabled`**. They were
 created active, and `nexus_lead_source_readiness()` immediately reported Facebook
-and Instagram as `CONNECTED` to an ALBA session — while Meta is subscribed to
+and Instagram as `CONNECTED` to an Tenant A session — while Meta is subscribed to
 nothing, no Page or lead form exists, and `META_APP_SECRET` is unset. That is the
 **same defect this function was written to kill**, one layer up: the first
 version derived connectedness from `integration_status`, a fact about the
@@ -637,7 +637,7 @@ provider; the fix derived it from whether an endpoint row exists; and an endpoin
 row is *still* not the same fact as "a delivery can arrive". Disabling them is
 the honest state until the subscription exists. Re-enable in one statement then.
 
-Read as the ALBA owner today: **2 CONNECTED** (`walk_in`, `phone_call` — the two
+Read as the Tenant A owner today: **2 CONNECTED** (`walk_in`, `phone_call` — the two
 a salesperson can use with no integration at all), **1 NOT_CONNECTABLE**
 (Dubizzle), **6 NOT_CONNECTED**.
 
@@ -655,7 +655,7 @@ ahead (`NX001`), and `google_key` nested three deep inside `payload_raw`
 (`23514`). **Positive control held**: the same body redacted, with `gcl_id`
 preserved, still inserted and reached `HYDRATED` — so the guard is not too wide.
 
-Dealer read path as a real ALBA session: `v_lead_origin` **1 row**;
+Dealer read path as a real Tenant A session: `v_lead_origin` **1 row**;
 `payload_raw`, `lead_event.endpoint_id`, `lead_ingest_endpoint.public_key` and
 `secret_ref` all refused **`42501` — by grant, not by a row filter**.
 
@@ -1296,7 +1296,7 @@ reconstructable. `lead_owner_events` starts empty on both projects and says so.
 ### CONNECTED meant a row exists, and nobody could type into it
 
 7 September 2026. `nexus_lead_source_readiness()` reported **2 CONNECTED** to
-the ALBA owner — `walk_in` and `phone_call` — and those were the *only* two
+the Tenant A owner — `walk_in` and `phone_call` — and those were the *only* two
 sources reading connected, so the entire positive half of the Lead Sources
 screen was this. Both endpoints are registered, active and production.
 
@@ -2516,7 +2516,7 @@ established that no other writer does. **That check is now owed retroactively**,
 since the revoke happened without it being recorded anywhere.
 
 So `20260907230000` was applied to production. Two manual sources now carry
-`manual_entry_surface`, zero provider-delivered sources do, and as a real ALBA
+`manual_entry_surface`, zero provider-delivered sources do, and as a real Tenant A
 session the readiness reads **CONNECTED 2 (`phone_call`, `walk_in`) ·
 NOT_CONNECTABLE 1 · NOT_CONNECTED 6**.
 
@@ -2528,7 +2528,7 @@ of nobody's dealership.
 
 ### And the RPC was proved on production, in a transaction that rolled back
 
-As a real `authenticated` ALBA member, sequenced through a temp table because
+As a real `authenticated` Tenant A member, sequenced through a temp table because
 **UNION ALL branches are not evaluated in the order they are written** — a first
 attempt read `before = 5` after the insert and looked like a silent failure:
 
@@ -2616,8 +2616,8 @@ is **no Bitrix24 credential in n8n**, by design: every Bitrix call is an
 `httpRequest` to `{{ $env.BITRIX24_WEBHOOK_URL }}`.
 
 **One thing unchanged and load-bearing for dealer #2:** that env var is a
-**single shared webhook — ALBA's**. Every tenant's ERP sync would write into the
-same Bitrix24 account, which is why only ALBA may sync (enforced by NX1001). A
+**single shared webhook — Tenant A's**. Every tenant's ERP sync would write into the
+same Bitrix24 account, which is why only Tenant A may sync (enforced by NX1001). A
 single-tenant sink is a per-tenant configuration problem wearing an integration's
 clothes.
 
@@ -2976,7 +2976,7 @@ of a ban is the dealership's own business line.
 
 ### A dealership could legislate as Meta, until 4 Sep
 
-An adversarial pass proved this on production, as the ALBA CARS owner acting
+An adversarial pass proved this on production, as the Tenant A owner acting
 as role `authenticated` — a signed-in dashboard user, no `service_role`, no
 n8n — using only functions that carry EXECUTE for `authenticated`:
 

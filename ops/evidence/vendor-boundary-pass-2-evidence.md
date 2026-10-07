@@ -508,7 +508,7 @@ Two further self-inflicted faults, both caught and both worth naming:
 **No browser was available against the live site.** Everything above is measured
 against a hand-written stub. Stated plainly:
 
-- **Nothing here is evidence about what a real signed-in ALBA CARS session
+- **Nothing here is evidence about what a real signed-in Tenant A session
   renders today.** The stub's rows are fabricated from the gate's schema
   snapshot; live rows may carry vendor strings in shapes neither the redactors
   nor my probe's patterns match.

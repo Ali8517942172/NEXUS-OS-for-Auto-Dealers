@@ -84,9 +84,9 @@ it are unproven regardless of what they appear to show.
   it is a gate proven.
 - **REAL TRAFFIC PROVEN → END-TO-END VERIFIED**: every hop 1-13 with a named
   artefact, and a human confirming hop 11 or hop 12 with their eyes.
-- **END-TO-END VERIFIED → COMMERCIALLY VALIDATED**: a dealership that is not ALBA
-  relied on the channel in the ordinary course of business and it held. ALBA is
-  tenant #1, not the customer — ALBA succeeding proves the software runs, not
+- **END-TO-END VERIFIED → COMMERCIALLY VALIDATED**: a dealership that is not Tenant A
+  relied on the channel in the ordinary course of business and it held. Tenant A is
+  tenant #1, not the customer — Tenant A succeeding proves the software runs, not
   that the product works for the market it is sold to.
 
 ---

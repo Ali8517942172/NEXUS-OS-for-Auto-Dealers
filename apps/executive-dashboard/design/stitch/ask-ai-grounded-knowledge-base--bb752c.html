@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed-variant":"#34466e","on-secondary":"#ffffff","error":"#ba1a1a","on-error":"#ffffff","surface-container-highest":"#dbe2fb","secondary-fixed":"#d9e2ff","on-secondary-fixed":"#041a40","secondary-fixed-dim":"#b4c6f5","background":"#faf8ff","primary":"#004ba8","on-primary-container":"#dee6ff","tertiary-fixed":"#a0efff","surface-dim":"#d2d9f3","on-primary":"#ffffff","on-secondary-container":"#465780","on-tertiary-fixed-variant":"#004e59","inverse-primary":"#afc6ff","primary-fixed-dim":"#afc6ff","on-tertiary":"#ffffff","surface-tint":"#155ac0","on-tertiary-container":"#b1f1ff","on-primary-fixed":"#001a43","inverse-surface":"#283043","surface-container":"#e9edff","surface-container-low":"#f2f3ff","on-surface":"#131b2d","primary-container":"#2563c9","tertiary-fixed-dim":"#44d8f0","outline-variant":"#c2c6d5","secondary-container":"#bccefe","secondary":"#4c5e87","tertiary-container":"#007281","on-error-container":"#93000a","inverse-on-surface":"#edf0ff","surface-bright":"#faf8ff","surface":"#faf8ff","on-tertiary-fixed":"#001f25","on-surface-variant":"#424753","on-primary-fixed-variant":"#004398","tertiary":"#005864","surface-container-high":"#e1e8ff","surface-variant":"#dbe2fb","outline":"#737784","error-container":"#ffdad6","surface-container-lowest":"#ffffff","primary-fixed":"#d9e2ff"},"borderRadius":{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},"spacing":{"space-xl":"2rem","space-lg":"1.5rem","space-sm":"0.5rem","space-xs":"0.25rem","margin":"1.5rem","space-md":"1rem","gutter":"1rem"},"fontFamily":{"label-numeric-sm":["JetBrains Mono"],"headline-md":["Inter"],"label-numeric-lg":["JetBrains Mono"],"table-header":["Inter"],"headline-lg":["Inter"],"label-numeric-md":["JetBrains Mono"],"body-md":["Inter"],"body-sm":["Inter"],"body-lg":["Inter"],"headline-xl":["Inter"]},"fontSize":{"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}]}}}}</script></head><body class="bg-[#F7F8FA] font-body-md text-on-surface min-h-screen antialiased"><aside class="fixed left-0 top-0 h-screen w-[240px] bg-[#16294F] text-[#C7D3EA] z-50 flex flex-col font-body-md select-none border-r border-[#1E3566]"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="font-headline-md text-white font-bold tracking-tight text-[15px]">NEXUS OS</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold bg-[#0A3D4D] text-[#38D0E8] border border-[#13667E]">PRO</span></div><div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#38D0E8] animate-pulse"></span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-1 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Work</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="todays-money-leaks" href="#">Today's Money Leaks</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="overview" href="#">Overview</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="leads" href="#">Leads</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="record-a-lead" href="#">Record a Lead</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-sources" href="#">Lead Sources</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="channels" href="#">Channels</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="integrations" href="#">Integrations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="conversations" href="#">Conversations</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="appointments" href="#">Appointments</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="compliance" href="#">Compliance</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Revenue Recovery</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="revenue-recovery" href="#">Revenue Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="lead-recovery" href="#">Lead Recovery</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deal-rescue" href="#">Deal Rescue</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="attribution" href="#">Attribution</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="policy" href="#">Policy</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Assets</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="inventory" href="#">Inventory</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="competitors" href="#">Competitors</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Intelligence</div><a aria-current="page" class="flex items-center px-[14px] py-1.5 rounded-[6px] transition-colors bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]" data-path="ask-ai" href="#">Ask AI</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="finance-desk" href="#">Finance Desk</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="customer-360" href="#">Customer 360</a></nav><nav class="space-y-1" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><div class="px-2.5 pb-1 pt-2 text-[11px] font-semibold tracking-wider uppercase text-[#8598BA]">Operations</div><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="action-center" href="#">Action Center</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="campaigns" href="#">Campaigns</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="deals" href="#">Deals</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="automation" href="#">Automation</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="team" href="#">Team</a></nav><nav class="space-y-1 pt-2 border-t border-[#1E3566]" data-active-classes="bg-[#24428A] text-white font-semibold border-l-[3px] border-[#38D0E8] pl-[11px]"><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="setup" href="#">Setup</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="subscription" href="#">Subscription</a><a class="flex items-center px-[14px] py-1.5 rounded-[6px] text-[13px] font-medium text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors" data-path="settings" href="#">Settings</a></nav></div><div class="p-3 border-t border-[#1E3566] shrink-0"><div class="flex items-center justify-between gap-2 p-1.5 rounded-[6px] bg-[#11203E] border border-[#1E3566]"><div class="flex items-center gap-2.5 min-w-0"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-white text-[16px]">person</span></div><div class="min-w-0 text-left leading-tight"><div class="text-[12px] font-semibold text-white truncate">Faris M.</div><div class="text-[10px] text-[#8598BA] truncate">GM / Sales Director</div></div></div><button class="p-1 text-[#8598BA] hover:text-[#38D0E8] hover:bg-[#1E3566] rounded transition-colors shrink-0" title="Sign out"><span class="material-symbols-outlined text-[18px]">logout</span></button></div></div></aside><div class="pl-[240px]"><header class="fixed top-0 left-[240px] right-0 h-14 bg-surface-container-lowest border-b border-[#E8EAEF] z-40 flex items-center justify-between px-5 font-body-md"><div class="flex items-center gap-4 flex-1"><div class="flex items-center gap-2.5 shrink-0 pr-4 border-r border-[#E8EAEF]"><span class="font-headline-md font-bold text-[#0F1729] text-[14px] tracking-tight">Demo Motors</span><span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-label-numeric-sm text-[10px] uppercase font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-[#157A5B]"></span>Dubai Showroom</span></div><div class="relative max-w-md w-full"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span><input class="w-full h-8 pl-8 pr-12 text-[13px] bg-surface-container-lowest border border-[#E8EAEF] rounded-[6px] text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary" placeholder="Search leads, chassis / VIN, stock #..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm text-outline border border-[#E8EAEF] rounded bg-[#F7F8FA]">⌘K</kbd></div></div><div class="flex items-center gap-4 shrink-0"><div class="flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-[#F7F8FA] border border-[#E8EAEF]"><span class="text-[11px] font-label-numeric-sm font-semibold text-secondary">AED</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span class="text-[11px] font-label-numeric-sm text-on-surface">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-1 text-[11px] font-label-numeric-sm text-secondary"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="">LIVE SYNC</span></div><button class="relative p-1 text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error"></span></button><div class="h-6 w-[1px] bg-[#E8EAEF]"></div><div class="flex items-center gap-2.5"><div class="text-right leading-none"><div class="text-[13px] font-semibold text-[#0F1729]">Faris M.</div><div class="text-[11px] text-secondary mt-0.5">GM / Sales Director</div></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 bg-[#F7F8FA] min-h-screen"><div class="flex flex-col w-full">
+<!-- Telemetry Bar & Context Header -->
+<div class="px-6 py-5 bg-surface-container-lowest">
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+<div class="space-y-1">
+<div class="flex items-center gap-3">
+<span class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Ask AI — Grounded Operational Intelligence</span>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container text-primary font-label-numeric-sm text-label-numeric-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+            STRICT ZERO-HALLUCINATION DESK
+          </span>
+</div>
+<p class="font-body-md text-body-md text-secondary max-w-4xl">
+          Query Dubai showroom documentation, RTA transfer policies, bank underwriting rules, and inventory specs with verified citation trails.
+        </p>
+</div>
+<!-- Telemetry Pills -->
+<div class="flex flex-wrap items-center gap-2">
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low text-secondary">
+<span class="material-symbols-outlined text-[16px] text-tertiary">speed</span>
+<span class="font-body-sm text-body-sm">Avg Latency:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">820ms</span>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low text-secondary">
+<span class="material-symbols-outlined text-[16px] text-primary">tune</span>
+<span class="font-body-sm text-body-sm">Model Temp:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">0.10 (Deterministic)</span>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container text-secondary">
+<span class="material-symbols-outlined text-[16px] text-primary">database</span>
+<span class="font-body-sm text-body-sm">Index:</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">3/4 Mounted</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Operational Alert Strip -->
+<div class="px-6 py-3 bg-surface-container-low">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+<!-- Sync Status -->
+<div class="lg:col-span-8 flex items-center gap-3 bg-surface-container-lowest px-4 py-2.5 rounded-lg">
+<span class="material-symbols-outlined text-primary text-[20px] shrink-0">sync_saved_locally</span>
+<div class="min-w-0 flex-1">
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary uppercase font-bold tracking-wider">Active Vector Repositories</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">
+              (Dubai RTA Handbook v2024, Emirates NBD F&amp;I Matrices, Internal Showroom Price Guides)
+            </span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary truncate">
+            CRM Policy Manual (2024 Q2) awaiting vectorization pipeline re-indexing. Scheduled for 02:00 GST sync.
+          </p>
+</div>
+</div>
+<!-- Warning Queue Strip -->
+<div class="lg:col-span-4 flex items-center justify-between gap-3 bg-error-container/40 px-4 py-2.5 rounded-lg">
+<div class="flex items-center gap-2 min-w-0">
+<span class="material-symbols-outlined text-error text-[18px] shrink-0">hourglass_top</span>
+<span class="font-body-sm text-body-sm text-on-surface truncate">
+<strong class="font-semibold text-error">Queue Delay:</strong> 1 query &gt; 4.2s awaiting vector lookup
+          </span>
+</div>
+<button class="shrink-0 px-2.5 py-1 rounded bg-surface-container-lowest text-error font-label-numeric-sm text-label-numeric-sm hover:bg-error-container transition-colors">
+          Inspect Node
+        </button>
+</div>
+</div>
+</div>
+<!-- Main Cockpit Area: 2-Column Split -->
+<div class="p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+<!-- Left Column: The Grounded AI Dialog Engine (7 Cols) -->
+<div class="xl:col-span-7 flex flex-col gap-5">
+<!-- Query Omnibar Card -->
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-sm">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">psychology</span>
+<span class="font-headline-md text-headline-md text-on-surface">Ask Showroom Knowledge Base</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary bg-surface-container px-2 py-0.5 rounded">
+            VECTOR SEARCH: EMBED-3-LARGE
+          </span>
+</div>
+<!-- Filter Chips -->
+<div class="flex flex-wrap items-center gap-2 mb-3">
+<button class="px-3 py-1 rounded bg-primary text-on-primary font-body-sm text-body-sm font-medium transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">done</span> All Sources
+          </button>
+<button class="px-3 py-1 rounded bg-surface-container text-secondary hover:text-on-surface font-body-sm text-body-sm transition-colors">
+            RTA &amp; Gov Transfer
+          </button>
+<button class="px-3 py-1 rounded bg-surface-container text-secondary hover:text-on-surface font-body-sm text-body-sm transition-colors">
+            Bank Underwriting &amp; F&amp;I
+          </button>
+<button class="px-3 py-1 rounded bg-surface-container text-secondary hover:text-on-surface font-body-sm text-body-sm transition-colors">
+            Stock Specs &amp; Margin Rules
+          </button>
+</div>
+<!-- Input Omnibar -->
+<div class="relative flex items-center bg-surface-container-low rounded-lg p-1.5">
+<span class="material-symbols-outlined text-secondary ml-2 shrink-0">manage_search</span>
+<input class="w-full px-3 py-2 bg-transparent text-body-md font-body-md text-on-surface placeholder:text-secondary focus:outline-none" placeholder="Ask a question regarding dealership SOPs, bank loan limits, RTA customs clearance, or commission splits..." type="text"/>
+<button class="shrink-0 px-4 py-2 bg-primary-container text-on-primary rounded-lg font-headline-md text-body-md hover:bg-primary transition-all flex items-center gap-1.5 shadow-sm">
+<span>Query Corpus</span>
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest/20 font-label-numeric-sm text-label-numeric-sm">↵</kbd>
+</button>
+</div>
+</div>
+<!-- Grounded Interaction History -->
+<div class="space-y-4">
+<!-- Interaction 1: ENBD Porsche Down Payment -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm space-y-4">
+<!-- Question Header -->
+<div class="flex items-start justify-between gap-4">
+<div class="flex items-start gap-3">
+<div class="w-7 h-7 rounded bg-secondary/15 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-secondary text-[16px]">account_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md text-on-surface font-semibold">Faris M. (GM)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">Today 11:34:02 GST</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface font-medium mt-1">
+                  “What is the maximum financing tenor and minimum down payment for an expat buying a 2023 Porsche 911 GT3 through Emirates NBD?”
+                </p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-secondary shrink-0">
+              #QR-4091
+            </span>
+</div>
+<!-- AI Response -->
+<div class="ml-10 p-4 rounded-lg bg-surface-container-low space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]">verified</span>
+<span class="font-headline-md text-body-sm text-primary font-semibold">NEXUS Grounded Answer</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container-lowest text-tertiary">
+                MATCH: 99.1%
+              </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+              Under <strong class="font-semibold text-primary">Emirates NBD Auto Finance Policy (Matrix Q3-2024)</strong>, luxury vehicle loans exceeding <span class="font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">AED 500,000</span> require a minimum <strong class="font-semibold text-on-surface">20% down payment</strong> with a maximum financing tenor of <strong class="font-semibold text-on-surface">60 months</strong>. Expat borrowers must present:
+            </p>
+<ul class="list-disc list-inside font-body-sm text-body-sm text-secondary space-y-1 ml-1">
+<li>UAE Residence Visa with at least 6 months remaining validity</li>
+<li>Verified minimum monthly salary of <span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">AED 25,000</span></li>
+<li>3 consecutive months of attested UAE bank statements showing regular payroll credit</li>
+</ul>
+<!-- Citation Card Component -->
+<div class="mt-3 p-3 rounded bg-surface-container-lowest flex items-start justify-between gap-3 shadow-sm">
+<div class="flex items-start gap-2.5 min-w-0">
+<span class="material-symbols-outlined text-secondary text-[20px] shrink-0 mt-0.5">description</span>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">ENBD_Auto_Lending_Policy_2024.pdf §4.2</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">• p. 18</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary truncate mt-0.5">
+                    Indexed: 12 Oct 2024 • Vector Chunk ID: <span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">#vec-9921-enbd</span>
+</p>
+</div>
+</div>
+<button class="shrink-0 px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+<span>Open PDF Source</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Interaction 2: RTA Fee Waiver GCC -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm space-y-4">
+<!-- Question Header -->
+<div class="flex items-start justify-between gap-4">
+<div class="flex items-start gap-3">
+<div class="w-7 h-7 rounded bg-secondary/15 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-secondary text-[16px]">account_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md text-on-surface font-semibold">Faris M. (GM)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">Today 10:18:44 GST</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface font-medium mt-1">
+                  “Can we waive the RTA export inspection fee for a GCC vehicle transferring directly to Saudi Arabia?”
+                </p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-secondary shrink-0">
+              #QR-4087
+            </span>
+</div>
+<!-- AI Response -->
+<div class="ml-10 p-4 rounded-lg bg-surface-container-low space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]">verified</span>
+<span class="font-headline-md text-body-sm text-primary font-semibold">NEXUS Grounded Answer</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container-lowest text-tertiary">
+                MATCH: 98.4%
+              </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+              Under <strong class="font-semibold text-primary">UAE Federal Traffic Law &amp; RTA Dubai Circular 14/2023</strong>, technical passing and export certificate fees <strong class="text-error font-semibold">cannot be waived or bypassed</strong> at dealer level under any bilateral trade protocol. Vehicles departing Dubai via UAE land borders require:
+            </p>
+<ul class="list-disc list-inside font-body-sm text-body-sm text-secondary space-y-1 ml-1">
+<li>Mandatory RTA physical export technical inspection fee: <span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">AED 420.00</span></li>
+<li>Official Dubai Customs inspection declaration stamp and clearance bill</li>
+<li>Temporary export registration blue plates (AED 170.00 + plate deposit)</li>
+</ul>
+<!-- Citation Card Component -->
+<div class="mt-3 p-3 rounded bg-surface-container-lowest flex items-start justify-between gap-3 shadow-sm">
+<div class="flex items-start gap-2.5 min-w-0">
+<span class="material-symbols-outlined text-secondary text-[20px] shrink-0 mt-0.5">description</span>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface">RTA_Commercial_Vehicle_Export_SOP_v3.pdf §2.1</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">• p. 4</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary truncate mt-0.5">
+                    Indexed: 01 Sep 2024 • Vector Chunk ID: <span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">#vec-7102-rta</span>
+</p>
+</div>
+</div>
+<button class="shrink-0 px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary font-label-numeric-sm text-label-numeric-sm flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+<span>Open PDF Source</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Interaction 3: Negative Grounding Guarantee (Hallucination Refusal) -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm space-y-4">
+<!-- Question Header -->
+<div class="flex items-start justify-between gap-4">
+<div class="flex items-start gap-3">
+<div class="w-7 h-7 rounded bg-secondary/15 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-secondary text-[16px]">account_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md text-on-surface font-semibold">Tariq S. (Sales Desk)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">Today 09:41:12 GST</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface font-medium mt-1">
+                  “What is the secret promotional discount approved by Al Tayer Motors for competing 2024 Defenders?”
+                </p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-secondary shrink-0">
+              #QR-4079
+            </span>
+</div>
+<!-- AI Response: Strict Grounding Refusal -->
+<div class="ml-10 p-4 rounded-lg bg-surface-container-low space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">security</span>
+<span class="font-headline-md text-body-sm text-on-surface font-semibold">Grounded Refusal Protocol</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-error-container text-error font-semibold">
+                NOT IN REPOSITORY
+              </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+<strong class="font-semibold text-on-surface">Not found in your verified showroom documents.</strong> NEXUS Ask-AI enforces strict retrieval bounds and will not hallucinate or approximate. No competitor internal promotional files, dealer-to-dealer discount schedules, or unofficial Al Tayer records exist in your indexed knowledge base.
+            </p>
+<!-- Grounding Refusal Chip -->
+<div class="p-2.5 rounded bg-surface-container flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">warning</span>
+<span class="font-body-sm text-body-sm text-secondary">Status: Unverified in Connected Knowledge Base</span>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">Cos-Sim &lt; 0.42 threshold</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Document Vault Status & Corpus Health (5 Cols) -->
+<div class="xl:col-span-5 flex flex-col gap-5">
+<!-- Corpus Health Panel -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm space-y-4">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">library_books</span>
+<span class="font-headline-md text-headline-md text-on-surface">Mounted Knowledge Vaults</span>
+</div>
+<button class="font-label-numeric-sm text-label-numeric-sm text-primary hover:underline font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">refresh</span> Re-Sync All
+          </button>
+</div>
+<div class="space-y-3">
+<!-- Vault 1 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[18px]">account_balance</span>
+</div>
+<div class="min-w-0">
+<p class="font-body-md text-body-md font-semibold text-on-surface truncate">Emirates NBD Auto Underwriting Matrix</p>
+<p class="font-label-numeric-sm text-label-numeric-sm text-secondary truncate">v2024.Q3 • 84 chunks • Last sync 3h ago</p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-tertiary font-semibold shrink-0">
+              MOUNTED
+            </span>
+</div>
+<!-- Vault 2 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[18px]">commute</span>
+</div>
+<div class="min-w-0">
+<p class="font-body-md text-body-md font-semibold text-on-surface truncate">Dubai RTA Registration &amp; Export Handbook</p>
+<p class="font-label-numeric-sm text-label-numeric-sm text-secondary truncate">v2024.09 • 212 chunks • Last sync 1d ago</p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-tertiary font-semibold shrink-0">
+              MOUNTED
+            </span>
+</div>
+<!-- Vault 3 -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[18px]">price_change</span>
+</div>
+<div class="min-w-0">
+<p class="font-body-md text-body-md font-semibold text-on-surface truncate">Internal Showroom Floor Matrix &amp; Commission SOP</p>
+<p class="font-label-numeric-sm text-label-numeric-sm text-secondary truncate">Signed GM Faris M. • 46 chunks • Live sync</p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-surface-container text-tertiary font-semibold shrink-0">
+              MOUNTED
+            </span>
+</div>
+<!-- Vault 4: Queued/Syncing -->
+<div class="p-3 rounded-lg bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-surface-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-secondary text-[18px]">sync_problem</span>
+</div>
+<div class="min-w-0">
+<p class="font-body-md text-body-md font-semibold text-on-surface truncate">CRM Sales Floor Policy &amp; SLA Manual</p>
+<p class="font-label-numeric-sm text-label-numeric-sm text-secondary truncate">PDF parsed • 14 vector chunks pending embedding</p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm bg-error-container text-error font-semibold shrink-0">
+              QUEUED
+            </span>
+</div>
+</div>
+<button class="w-full py-2 bg-surface-container hover:bg-surface-container-high rounded text-on-surface font-body-sm text-body-sm font-semibold transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">upload_file</span>
+<span>Upload PDF Policy / Document to Index</span>
+</button>
+</div>
+<!-- Live Grounding Confidence Visualizer -->
+<div class="bg-surface-container-lowest rounded-xl p-5 shadow-sm space-y-4">
+<div class="flex items-center justify-between">
+<span class="font-headline-md text-headline-md text-on-surface">Vector Chunk Similarity Trace</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">Last Execution</span>
+</div>
+<!-- Metric Bars -->
+<div class="space-y-3">
+<div>
+<div class="flex justify-between font-body-sm text-body-sm mb-1">
+<span class="text-on-surface font-medium">Cosine Vector Match — Bank Underwriting Matrix</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">0.991 (99.1%)</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 99.1%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-body-sm text-body-sm mb-1">
+<span class="text-on-surface font-medium">Cosine Vector Match — RTA Export Fees SOP</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">0.984 (98.4%)</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+<div class="h-full bg-tertiary rounded-full" style="width: 98.4%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-body-sm text-body-sm mb-1">
+<span class="text-on-surface font-medium">Rejection Threshold Guardrail</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-secondary">0.750 Hard Floor</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+<div class="h-full bg-secondary rounded-full" style="width: 75%"></div>
+</div>
+</div>
+</div>
+<div class="p-3 rounded bg-surface-container-low text-secondary text-body-sm font-body-sm flex items-start gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">verified_user</span>
+<span>Zero-extrapolation rule active: If confidence drops below 0.75, Ask-AI strictly outputs the Grounded Refusal Protocol without synthesis.</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Full-Width Execution Trace Table: Ask-AI Run History -->
+<div class="px-6 pb-6">
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<!-- Table Header Bar -->
+<div class="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-lowest">
+<div>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-on-surface">Ask-AI Execution &amp; Trace History</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-secondary">
+              LAST 24 HOURS
+            </span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary mt-0.5">
+            Audit logs for executive desk queries, semantic retrieval scores, and verified grounding trails.
+          </p>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded bg-surface-container-low hover:bg-surface-container text-secondary font-label-numeric-sm text-label-numeric-sm transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+<span>Filter Status</span>
+</button>
+<button class="px-3 py-1.5 rounded bg-surface-container-low hover:bg-surface-container text-secondary font-label-numeric-sm text-label-numeric-sm transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">download</span>
+<span>Export Audit CSV</span>
+</button>
+</div>
+</div>
+<!-- The Audit Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-secondary font-table-header text-table-header uppercase tracking-wider">
+<th class="py-3 px-4">Run ID</th>
+<th class="py-3 px-4">Timestamp</th>
+<th class="py-3 px-4">Queried By</th>
+<th class="py-3 px-4 min-w-[280px]">Question Snippet</th>
+<th class="py-3 px-4">Grounding Status</th>
+<th class="py-3 px-4 text-right">Latency</th>
+<th class="py-3 px-4 text-center">Citations</th>
+<th class="py-3 px-4 text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container text-body-sm font-body-sm">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                #QR-4091
+              </td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-secondary">
+                11:34:02 GST
+              </td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px]">FM</span>
+<span class="font-medium text-on-surface">Faris M.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-on-surface truncate max-w-xs font-medium">
+                Max financing tenor and down payment for expat 911 GT3?
+              </td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm font-semibold bg-surface-container text-tertiary">
+                  VERIFIED CITATION
+                </span>
+</td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-right text-on-surface">
+                680ms
+              </td>
+<td class="py-3.5 px-4 text-center font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">
+                1 Doc (p.18)
+              </td>
+<td class="py-3.5 px-4 text-right">
+<button class="text-primary hover:underline font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  Inspect Trace
+                </button>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                #QR-4087
+              </td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-secondary">
+                10:18:44 GST
+              </td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px]">FM</span>
+<span class="font-medium text-on-surface">Faris M.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-on-surface truncate max-w-xs font-medium">
+                Waive RTA export inspection fee for GCC KSA direct transfer?
+              </td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm font-semibold bg-surface-container text-tertiary">
+                  VERIFIED CITATION
+                </span>
+</td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-right text-on-surface">
+                840ms
+              </td>
+<td class="py-3.5 px-4 text-center font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">
+                1 Doc (p.4)
+              </td>
+<td class="py-3.5 px-4 text-right">
+<button class="text-primary hover:underline font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  Inspect Trace
+                </button>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                #QR-4079
+              </td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-secondary">
+                09:41:12 GST
+              </td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-secondary/20 text-secondary flex items-center justify-center font-bold text-[10px]">TS</span>
+<span class="font-medium text-on-surface">Tariq S.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-on-surface truncate max-w-xs font-medium">
+                Secret promotional discount approved by Al Tayer for 2024 Defenders?
+              </td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm font-semibold bg-surface-container-highest text-secondary">
+                  NOT FOUND IN DOCS
+                </span>
+</td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-right text-on-surface">
+                410ms
+              </td>
+<td class="py-3.5 px-4 text-center font-label-numeric-sm text-label-numeric-sm text-secondary">
+                0
+              </td>
+<td class="py-3.5 px-4 text-right">
+<button class="text-secondary hover:text-on-surface font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  Inspect Refusal
+                </button>
+</td>
+</tr>
+<!-- Row 4: Running Long Alert Row -->
+<tr class="bg-error-container/20 hover:bg-error-container/30 transition-colors">
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-error">
+                #QR-4074
+              </td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-secondary">
+                09:12:05 GST
+              </td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px]">RK</span>
+<span class="font-medium text-on-surface">Rashid K.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-on-surface truncate max-w-xs font-medium">
+                Cross-index comparison of Abu Dhabi vs Dubai trade-in VAT adjustments...
+              </td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm font-semibold bg-error-container text-error">
+                  RUNNING LONG (&gt;4.2s)
+                </span>
+</td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-right text-error font-bold">
+                4,210ms
+              </td>
+<td class="py-3.5 px-4 text-center font-label-numeric-sm text-label-numeric-sm text-secondary">
+                Awaiting
+              </td>
+<td class="py-3.5 px-4 text-right">
+<button class="text-error hover:underline font-label-numeric-sm text-label-numeric-sm font-bold">
+                  Cancel / Trace
+                </button>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-low/60 transition-colors">
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm font-bold text-primary">
+                #QR-4062
+              </td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-secondary">
+                08:44:19 GST
+              </td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-1.5">
+<span class="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[10px]">FM</span>
+<span class="font-medium text-on-surface">Faris M.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-on-surface truncate max-w-xs font-medium">
+                Maximum gross margin allowable for consignment Ferrari 296 GTB?
+              </td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-label-numeric-sm font-semibold bg-surface-container text-tertiary">
+                  VERIFIED CITATION
+                </span>
+</td>
+<td class="py-3.5 px-4 font-label-numeric-sm text-label-numeric-sm text-right text-on-surface">
+                710ms
+              </td>
+<td class="py-3.5 px-4 text-center font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">
+                1 Doc (p.2)
+              </td>
+<td class="py-3.5 px-4 text-right">
+<button class="text-primary hover:underline font-label-numeric-sm text-label-numeric-sm font-semibold">
+                  Inspect Trace
+                </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Operational Guardrails Callout / Deterministic Boundary -->
+<div class="px-6 pb-8">
+<div class="bg-surface-container-low p-5 rounded-xl space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">policy</span>
+<span class="font-headline-md text-body-lg font-bold text-on-surface">
+          Deterministic Boundary — What this engine cannot answer
+        </span>
+</div>
+<p class="font-body-md text-body-md text-secondary leading-relaxed">
+<strong class="text-on-surface font-semibold">Deterministic Policy Enforced:</strong> Ask-AI strictly refuses speculation, market hearsay, and probabilistic extrapolation. It cannot invent manufacturer factory allocations, unwritten GM verbal discounts, or external bank underwriter exceptions unless explicitly filed and indexed inside verified PDF or document repositories. If a policy clause does not exist in the connected library, the engine returns an immediate, logged refusal to prevent floor errors and compliance risks.
+      </p>
+<div class="flex flex-wrap items-center gap-4 pt-1 font-label-numeric-sm text-label-numeric-sm text-secondary">
+<span>• Strict Temp: 0.1</span>
+<span>• Reranker: Cohere-Rerank-v3</span>
+<span>• UAE Compliance Check: Passed</span>
+<span>• Dubai Data Protection Act Compliant</span>
+</div>
+</div>
+</div>
+</div></main></div></body></html>

@@ -84,7 +84,7 @@ active dealerships                          = 2
 nexus_scoped_tenant_id()                    = NULL
 v_inventory_sales to service_role           = 0     (control: inventory = 12 rows)
 v_customer_directory to service_role        = 0     (control: leads = 3 rows)
-search_rag_documents(q,limit) 2-arg         = 0     (control: 3-arg explicit ALBA = 5)
+search_rag_documents(q,limit) 2-arg         = 0     (control: 3-arg explicit Tenant A = 5)
 ```
 
 `select count(*) ... from tenants` afterwards: 2 rows, 1 active dealership,
@@ -278,7 +278,7 @@ definitions:
 
 | | staging (2 dealerships) | production (1 dealership) |
 |---|---|---|
-| `nexus_scoped_tenant_id()` as `service_role` | NULL | ALBA |
+| `nexus_scoped_tenant_id()` as `service_role` | NULL | Tenant A |
 | `v_customer_directory` to `service_role` | **0** | **2** |
 | `v_inventory_sales` to `service_role` | **0** | **12** |
 | control: `inventory` base table | 3 | 12 |

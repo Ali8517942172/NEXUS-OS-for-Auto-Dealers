@@ -117,12 +117,20 @@
    does not hide them. */
 
 import { db, dbWrite, onIdentityChange, canManageAccess } from '../lib/data.js';
-import { openModal } from '../lib/modal.js';
 import { el } from '../lib/dom.js';
-import { ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
+import { ago, dubaiStamp, esc, n0, num } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { closeDrawer } from '../lib/ui.js';
+/* The Stitch migration (7 Oct 2026, design/stitch/MAP.md: primary
+   lead-sources-ingestion-readiness-desk--c3ca1e, also --1ce809). Every renderer
+   below — kpi, table, panel, pill, the state panels, openModal — keeps its old
+   signature and now answers in the Stitch anatomy; lib/ops-kit.js says why the
+   logic was left exactly where it was. */
+import {
+  actor, B, C, banner, bold, chip, hot, kpi, muted, openModal, panel, pill, readinessChecklist, readinessVerdict,
+  stateEmpty, stateError, stateLoading, table, unreadPanel, wrap, openDrawer, DRAWER,
+} from '../lib/ops-kit.js';
+import { sectionHeader, statusChip, trustFooter } from '../lib/stitch-ui.js';
 import {
   CONNECTION_IS_ABOUT_THIS_DEALERSHIP, CONNECTION_STATE_MISSING, CONNECTION_STATE_NOT_KNOWN,
   CONNECTION_STATE_UNREAD, LOSS_IS_NOT_ABSENCE, NO_MONEY_ON_LEAD_SOURCES, NO_REASON_RECORDED,
@@ -136,11 +144,6 @@ import {
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold  = h => `<div style="font-weight:600">${h}</div>`;
-const wrap  = h => `<div style="white-space:normal">${h}</div>`;
-const chip  = (t, title) => `<span class="chip"${title ? ` title="${esc(title)}"` : ''}>${esc(t)}</span>`;
 
 /* A read that failed, said where the figure would have been. Never a bare dash:
    a dash beside "Enquiries that arrived" reads as zero, and zero is a finding
@@ -175,8 +178,8 @@ onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
 const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
+  ? `<button class="${B.secondary}" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button class="${B.ghost}" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
 const wireGo = card => {
   card.querySelectorAll('[data-go]').forEach(b => {
     if (b.disabled) return;
@@ -303,7 +306,7 @@ const sourceLabel = a => a.name || a.key || 'A source that arrived without a nam
    ══════════════════════════════════════════════════════════════════════════ */
 function attestationCell(a) {
   if (!a.strengths.length) {
-    return '<span class="pill unknown"><span class="dot"></span>Not stated</span>'
+    return pill('Not stated', 'unknown', { verbatim: false })
       + muted(esc(ORIGIN_STRENGTH_NOT_STATED))
       + (a.events > 1 ? muted(`None of the ${num(a.events)} arrivals from this source records one.`) : '');
   }
@@ -328,9 +331,9 @@ function attestationCell(a) {
               ? `, and ${num(a.verifyUnknown)} ${plural(a.verifyUnknown, 'does', 'do')} not record whether one was checked.`
               : '.');
 
-  return `<div style="font-weight:600" title="${esc(why || band.blurb)}">${esc(String(min))}/100`
-    + `${min !== max ? ` <span class="ds-cell-sub" style="font-weight:400">weakest, up to ${esc(String(max))}/100</span>` : ''}</div>`
-    + `<div>${pill(band.label, band.tone, { verbatim: false })}</div>`
+  return `<div class="font-semibold font-label-numeric-sm" title="${esc(why || band.blurb)}">${esc(String(min))}/100`
+    + `${min !== max ? ` <span class="font-body-sm text-body-sm text-on-surface-variant font-normal">weakest, up to ${esc(String(max))}/100</span>` : ''}</div>`
+    + `<div class="mt-1">${pill(band.label, band.tone, { verbatim: false })}</div>`
     + muted(esc(why || band.blurb))
     + (min !== max
         ? muted(`Arrivals from this source were not all attested the same way. ${esc(SOURCE_IS_AS_ATTESTED_AS_ITS_WEAKEST)}`)
@@ -346,7 +349,7 @@ function attestationCell(a) {
 function attestationInline(r) {
   const s = n0(r.origin_strength);
   const band = originBand(s);
-  if (!band) return '<span class="pill unknown"><span class="dot"></span>Attestation not stated</span>';
+  if (!band) return pill('Attestation not stated', 'unknown', { verbatim: false });
   const why = str(r.origin_explanation) || band.blurb;
   return `<span title="${esc(why)}">${pill(`${band.label} · ${s}/100`, band.tone, { verbatim: false })}</span>`;
 }
@@ -365,7 +368,7 @@ function phaseCells(a) {
     else unknown.push('<span title="This screen has no wording for that stage, so it is shown exactly as recorded and counted as nothing.">'
       + `${pill(`${k} · ${c}`, 'unknown', { verbatim: true })}</span>`);
   });
-  return `<div style="display:flex;gap:6px;flex-wrap:wrap">${known.concat(unknown).join('')}</div>`
+  return `<div class="flex flex-wrap gap-1.5">${known.concat(unknown).join('')}</div>`
     + (a.unknownPhase
         ? hot(`${num(a.unknownPhase)} ${plural(a.unknownPhase, 'arrival is', 'arrivals are')} at a stage this screen `
             + `does not know. ${plural(a.unknownPhase, 'It is', 'They are')} counted as ${plural(a.unknownPhase, 'an arrival', 'arrivals')} `
@@ -434,7 +437,7 @@ function connectionCell(rd) {
 function providerLine(rd) {
   const sentence = providerRoute(rd.route);
   if (!sentence) return '';
-  return muted(`<span style="font-weight:600">${esc(PROVIDER_ROUTE_LABEL)}</span> ${esc(sentence)}`);
+  return muted(`<span class="font-semibold">${esc(PROVIDER_ROUTE_LABEL)}</span> ${esc(sentence)}`);
 }
 
 /* `evidence_note` IS READ AND DELIBERATELY NOT RENDERED, and that is a decision
@@ -513,7 +516,7 @@ const lsErrorText = e => {
   const code = Object.keys(LS_ERRORS).sort((x, y) => y.length - x.length).find(c => blob.includes(c));
   return code ? LS_ERRORS[code] : (str(e && e.message) || 'Something went wrong. Nothing was changed.');
 };
-const lsFail = (m, e) => m.msg(`<span class="t-hot">${esc(lsErrorText(e))}</span>`);
+const lsFail = (m, e) => m.msg(`<span class="${C.hot}">${esc(lsErrorText(e))}</span>`);
 const LS_STATUS = {
   NOT_CONNECTED: ['Not connected', 'unknown'],
   DISABLED: ['Disabled', 'cold'],
@@ -530,11 +533,18 @@ const lsStatus = r => {
   }
   return pill(label + extra, t, { verbatim: true });
 };
+/* The glyph on a source card (lead-sources-ingestion-connectivity--1ce809). A
+   picture of the kind of door, chosen from the source key; never a state. */
+const LS_ICON = {
+  walk_in: 'storefront', phone_call: 'call', meta_lead_ads_facebook: 'campaign', meta_lead_ads_instagram: 'photo_camera',
+  google_ads_lead_form: 'ads_click', website_form: 'language', whatsapp: 'chat', dubizzle: 'directions_car',
+};
+const lsIcon = r => LS_ICON[str(r && r.source_key)] || (str(r && r.connect_kind) === 'manual' ? 'edit_note' : 'hub');
 const copyBtn = (value, label = 'Copy') =>
-  `<button class="btn sm" type="button" data-copy="${esc(value)}">${esc(label)}</button>`;
-const copyField = (label, value, copyLabel) => `<div class="field"><label>${esc(label)}</label>
-    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-      <code style="flex:1 1 220px;min-width:0;word-break:break-all;white-space:pre-wrap;padding:8px;border:1px solid var(--line, #ddd);border-radius:6px;font-size:12px">${esc(value)}</code>
+  `<button class="${B.secondary}" type="button" data-copy="${esc(value)}">${esc(label)}</button>`;
+const copyField = (label, value, copyLabel) => `<div class="${C.field}"><label class="${C.label}">${esc(label)}</label>
+    <div class="flex flex-wrap items-start gap-2">
+      <code class="${C.code} flex-1 min-w-[220px]">${esc(value)}</code>
       ${copyBtn(value, copyLabel)}</div></div>`;
 const wireCopy = root => root.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
   const v = b.dataset.copy;
@@ -547,57 +557,60 @@ const wireCopy = root => root.querySelectorAll('[data-copy]').forEach(b => b.add
 }));
 const embedSnippet = key => `<script src="${EMBED_SCRIPT_URL}" data-nexus-key="${key}" async></script>\n<div id="nexus-lead-form"></div>`;
 const plainFormSnippet = url => `<form method="POST" action="${url}">\n  <input type="hidden" name="submission_id">\n  <input name="name" placeholder="Name" required>\n  <input name="phone" placeholder="Phone" required>\n  <input name="email" type="email" placeholder="Email">\n  <textarea name="message" placeholder="Which car are you interested in?"></textarea>\n  <button type="submit">Send</button>\n</form>\n<script>document.currentScript.previousElementSibling.submission_id.value = crypto.randomUUID();</script>`;
-const GOOGLE_STEPS = `<ol style="margin:8px 0 0 18px;padding:0">
+const GOOGLE_STEPS = `<ol class="list-decimal ml-5 mt-2 space-y-1 font-body-sm text-body-sm text-on-surface">
     <li>In Google Ads open <b>Assets → Lead form</b> and edit your lead form.</li>
     <li>Go to <b>Lead delivery → Webhook integration</b>.</li>
     <li>Paste the <b>Webhook URL</b> and the <b>Key</b> shown here.</li>
     <li>Click <b>Send test data</b> — this card switches to “Receiving” when it lands.</li></ol>`;
-const META_HELP = `<div class="ds-cell-sub" style="margin-bottom:12px;white-space:normal">
+const META_HELP = `<div class="font-body-sm text-body-sm text-on-surface-variant mb-3 whitespace-normal">
     Get the token in <b>Meta Business Settings → System users → Generate token</b> with the permissions
     <code>pages_manage_metadata</code>, <code>leads_retrieval</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>.
     The Page must also be subscribed to the NEXUS app (webhook <code>${esc(META_WEBHOOK_URL)}</code>, field <code>leadgen</code>).
     Test with Meta’s Lead Ads Testing Tool:
     <a href="${esc(META_TEST_TOOL)}" target="_blank" rel="noopener noreferrer">${esc(META_TEST_TOOL)}</a></div>`;
 
-function mountSourceConnections(host) {
-  const card = el('div', 'card');
+function mountSourceConnections(host, onChange) {
+  const card = el('section', C.card);
+  card.id = 'lsConnect';
   host.appendChild(card);
   const canConnect = canManageAccess();
   const NO_ROLE = ' disabled title="Connecting lead sources is an owner/admin decision at this dealership."';
   const gate = canConnect ? '' : NO_ROLE;
   let rows = null, loadErr = null;
-  const head = `<div class="card-head"><div><div class="card-title">Connect your lead sources</div>
-      <div class="card-sub">Owner/admin only. Connect each place your enquiries come from — leads then arrive in
-      NEXUS on their own. Keys and tokens are shown once, or never.</div></div></div>`;
+  const head = `<div class="${C.head}"><div class="flex items-start gap-2.5 min-w-0">
+      <span class="material-symbols-outlined text-primary text-xl mt-0.5">add_link</span>
+      <div class="min-w-0"><h2 class="${C.title}">Connect your lead sources</h2>
+      <p class="${C.sub}">Owner/admin only. Connect each place your enquiries come from — leads then arrive in
+      NEXUS on their own. Keys and tokens are shown once, or never.</p></div></div></div>`;
 
   const actions = r => {
     const s = up(r.status), k = str(r.connect_kind), key = esc(r.source_key);
     const connected = s && s !== 'NOT_CONNECTED';
     if (k === 'manual') return '';
     const b = [];
-    if (!connected || s === 'DISABLED') b.push(`<button class="btn primary sm" data-ls-connect="${key}"${gate}>Connect</button>`);
-    if (connected && k === 'webhook_key') b.push(`<button class="btn sm" data-ls-rotate="${key}"${gate}>Rotate key</button>`);
-    if (connected && k === 'meta_page') b.push(`<button class="btn sm" data-ls-connect="${key}"${gate}>Replace token</button>`);
-    if (connected && k === 'embed') b.push(`<button class="btn sm" data-ls-connect="${key}"${gate}>Edit domains</button>`);
-    if (connected && s !== 'DISABLED') b.push(`<button class="btn sm" data-ls-disconnect="${key}"${gate}>Disconnect</button>`);
-    return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.join('')}</div>`;
+    if (!connected || s === 'DISABLED') b.push(`<button class="${B.primary}" data-ls-connect="${key}"${gate}>Connect source</button>`);
+    if (connected && k === 'webhook_key') b.push(`<button class="${B.secondary}" data-ls-rotate="${key}"${gate}>Rotate key</button>`);
+    if (connected && k === 'meta_page') b.push(`<button class="${B.secondary}" data-ls-connect="${key}"${gate}>Replace token</button>`);
+    if (connected && k === 'embed') b.push(`<button class="${B.secondary}" data-ls-connect="${key}"${gate}>Edit domains</button>`);
+    if (connected && s !== 'DISABLED') b.push(`<button class="${B.ghost}" data-ls-disconnect="${key}"${gate}>Disconnect</button>`);
+    return `<div class="flex flex-wrap items-center gap-2 pt-3 mt-3 border-t border-outline-variant/30">${b.join('')}</div>`;
   };
 
   const details = r => {
     const s = up(r.status), k = str(r.connect_kind);
     const connected = s && s !== 'NOT_CONNECTED' && s !== 'DISABLED';
-    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="ds-cell-sub" style="margin-bottom:6px">${esc(IG_NOTE)}</div>` : '';
+    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="font-body-sm text-body-sm text-on-surface-variant mb-1.5">${esc(IG_NOTE)}</div>` : '';
     if (k === 'manual') return muted(`Record phone and walk-in enquiries from ${SCREENS.recordlead
-      ? '<a href="#recordlead" data-go="recordlead">Record a Lead</a>' : 'Record a Lead'}.`);
+      ? '<a class="font-semibold text-primary hover:underline" href="#recordlead" data-go="recordlead">Record a Lead</a>' : 'Record a Lead'}.`);
     if (k === 'email') return muted('Forwarding instructions for marketplace emails come from NEXUS support after you connect.');
     if (!connected) return igNote;
     if (k === 'webhook_key') return (str(r.ingest_url) ? copyField('Webhook URL', str(r.ingest_url)) : '')
       + muted(r.has_secret ? 'A key is installed. It cannot be shown again — use “Rotate key” to issue a new one.' : 'No key is installed.')
-      + `<details style="margin-top:6px"><summary class="ds-cell-sub">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
+      + `<details class="mt-1.5"><summary class="font-body-sm text-body-sm text-primary cursor-pointer">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
     if (k === 'embed') return (str(r.public_key) ? copyField('Embed on your website', embedSnippet(str(r.public_key)), 'Copy snippet') : '')
       + (Array.isArray(r.origin_allowlist) && r.origin_allowlist.length
           ? muted(`Allowed domains: ${esc(r.origin_allowlist.join(', '))}`) : '')
-      + (str(r.ingest_url) ? `<details style="margin-top:6px"><summary class="ds-cell-sub">Alternative: plain HTML form</summary>
+      + (str(r.ingest_url) ? `<details class="mt-1.5"><summary class="font-body-sm text-body-sm text-primary cursor-pointer">Alternative: plain HTML form</summary>
           ${copyField('Form posting to NEXUS', plainFormSnippet(str(r.ingest_url)), 'Copy form')}</details>` : '');
     if (k === 'meta_page') return igNote + muted(`Page ID ${esc(str(r.identity_value) || 'not recorded')} · `
       + (r.has_secret ? 'Page access token installed (never displayed).' : 'No Page access token installed.'));
@@ -606,19 +619,22 @@ function mountSourceConnections(host) {
 
   const paint = () => {
     if (loadErr) {
-      card.innerHTML = head + `<div class="pbody">${stateError('this dealership’s lead source connections', loadErr, null,
+      card.innerHTML = head + `<div class="${C.body}">${stateError('this dealership’s lead source connections', loadErr, null,
         'Connecting a lead source is disabled until this can be read.')}</div>`;
       return;
     }
     const list = Array.isArray(rows) ? rows : [];
     const body = list.length
-      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px">${list.map(r => `
-          <div class="card" style="margin:0;padding:14px;min-width:0">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between">
-              ${bold(esc(str(r.label) || str(r.source_key)))}${lsStatus(r)}</div>
-            <div style="margin-top:8px">${details(r)}</div>${actions(r)}</div>`).join('')}</div>`
+      ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">${list.map(r => `
+          <div class="p-space-md rounded-lg border border-outline-variant/60 bg-surface-container-lowest flex flex-col min-w-0">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">${esc(lsIcon(r))}</span></span>
+                ${bold(esc(str(r.label) || str(r.source_key)))}</div>
+              ${lsStatus(r)}</div>
+            <div class="mt-2 flex-1">${details(r)}</div>${actions(r)}</div>`).join('')}</div>`
       : stateEmpty('No lead sources are available to connect yet', 'Contact NEXUS support.', 'link_off');
-    card.innerHTML = head + `<div class="pbody">${body}</div>`;
+    card.innerHTML = head + `<div class="${C.body}">${body}</div>`;
     wireCopy(card);
     card.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); go(a.dataset.go); }));
     const find = k => list.find(r => str(r.source_key) === k);
@@ -627,11 +643,15 @@ function mountSourceConnections(host) {
     card.querySelectorAll('[data-ls-disconnect]').forEach(b => b.addEventListener('click', () => disconnect(find(b.dataset.lsDisconnect))));
   };
 
-  const reload = async () => {
-    card.innerHTML = head + `<div class="pbody">${stateLoading(3)}</div>`;
+  /* `changed` is true after a write: the feeds table above reads the same
+     register, so it is told to re-read rather than go on showing the state
+     from before the write. */
+  const reload = async (changed = false) => {
+    card.innerHTML = head + `<div class="${C.body}">${stateLoading(3)}</div>`;
     try { rows = await db('rpc/nexus_lead_source_connections'); loadErr = null; }
     catch (e) { rows = null; loadErr = e; }
     paint();
+    if (changed && onChange) onChange();
   };
 
   const showSecret = (title, r, res, intro) => {
@@ -639,8 +659,8 @@ function mountSourceConnections(host) {
     const url = str(res && res.ingest_url) || str(r.ingest_url);
     const m = openModal(title, `${intro || ''}
       ${url ? copyField('Webhook URL', url) : ''}
-      ${secret ? copyField('Key', secret) + `<div class="t-hot" style="font-weight:600;margin:4px 0 8px">Copy the key now — it won’t be shown again.</div>` : ''}
-      ${GOOGLE_STEPS}`, `<button class="btn primary" id="lsDone">Done</button>`);
+      ${secret ? copyField('Key', secret) + `<div class="${C.hot} font-semibold my-1">Copy the key now — it won’t be shown again.</div>` : ''}
+      ${GOOGLE_STEPS}`, `<button class="${B.primary}" id="lsDone">Done</button>`);
     wireCopy(m.wrap);
     m.wrap.querySelector('#lsDone').addEventListener('click', m.close);
   };
@@ -649,31 +669,31 @@ function mountSourceConnections(host) {
     if (!r) return;
     const k = str(r.connect_kind), name = str(r.label) || str(r.source_key);
     let body = '';
-    if (k === 'embed') body = `<div class="field"><label for="lsDomains">Allowed website domain(s)</label>
-        <input id="lsDomains" placeholder="example.ae, www.example.ae" value="${esc(Array.isArray(r.origin_allowlist) ? r.origin_allowlist.join(', ') : '')}" />
-        <div class="ds-cell-sub">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
-    else if (k === 'meta_page') body = (str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="banner warm" style="margin-bottom:12px">${esc(IG_NOTE)} If your Page is already connected on the Facebook card, you do not need to connect it here.</div>` : '') + META_HELP + `<div class="field"><label for="lsPage">Facebook Page ID</label>
-        <input id="lsPage" inputmode="numeric" placeholder="123456789012345" value="${esc(str(r.identity_value))}" /></div>
-        <div class="field"><label for="lsToken">Page access token</label>
-        <input id="lsToken" type="password" autocomplete="off" placeholder="Paste the system user token" />
-        <div class="ds-cell-sub">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
+    if (k === 'embed') body = `<div class="${C.field}"><label class="${C.label}" for="lsDomains">Allowed website domain(s)</label>
+        <input class="${C.input}" id="lsDomains" placeholder="example.ae, www.example.ae" value="${esc(Array.isArray(r.origin_allowlist) ? r.origin_allowlist.join(', ') : '')}" />
+        <div class="${C.hint}">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
+    else if (k === 'meta_page') body = (str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="mb-3">${banner('warm', 'info', `${esc(IG_NOTE)} If your Page is already connected on the Facebook card, you do not need to connect it here.`)}</div>` : '') + META_HELP + `<div class="${C.field}"><label class="${C.label}" for="lsPage">Facebook Page ID</label>
+        <input class="${C.input}" id="lsPage" inputmode="numeric" placeholder="123456789012345" value="${esc(str(r.identity_value))}" /></div>
+        <div class="${C.field}"><label class="${C.label}" for="lsToken">Page access token</label>
+        <input class="${C.input}" id="lsToken" type="password" autocomplete="off" placeholder="Paste the system user token" />
+        <div class="${C.hint}">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
     else if (k === 'email') body = muted('Connecting turns this source on. NEXUS support will send you the forwarding address and instructions.');
     else if (k === 'webhook_key') body = muted('NEXUS will create a Webhook URL and a Key for Google Ads. The key is shown once, right after you connect.');
     const m = openModal(`Connect ${name}`, body,
-      `<button class="btn primary" id="lsSave">Connect</button><button class="btn" id="lsCancel">Cancel</button>`);
+      `<button class="${B.secondary}" id="lsCancel">Cancel</button><button class="${B.primary}" id="lsSave">Connect</button>`);
     m.wrap.querySelector('#lsCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#lsSave').addEventListener('click', async () => {
       let identity = null, secret = null;
       if (k === 'embed') {
         identity = m.wrap.querySelector('#lsDomains').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join(',');
-        if (!identity) return m.msg('<span class="t-hot">Enter at least one domain.</span>');
+        if (!identity) return m.msg(`<span class="${C.hot}">Enter at least one domain.</span>`);
       } else if (k === 'meta_page') {
         identity = m.wrap.querySelector('#lsPage').value.replace(/\s/g, '');
         secret = m.wrap.querySelector('#lsToken').value.trim();
-        if (!identity) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_PAGE_ID_REQUIRED)}</span>`);
-        if (!/^\d+$/.test(identity)) return m.msg('<span class="t-hot">A Page ID is numbers only.</span>');
-        if (!secret && !r.has_secret) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_TOKEN_REQUIRED)}</span>`);
-        if (secret && secret.length < 20) return m.msg('<span class="t-hot">Paste the full Page access token — that is too short to be one.</span>');
+        if (!identity) return m.msg(`<span class="${C.hot}">${esc(LS_ERRORS.NX_LS_PAGE_ID_REQUIRED)}</span>`);
+        if (!/^\d+$/.test(identity)) return m.msg(`<span class="${C.hot}">A Page ID is numbers only.</span>`);
+        if (!secret && !r.has_secret) return m.msg(`<span class="${C.hot}">${esc(LS_ERRORS.NX_LS_TOKEN_REQUIRED)}</span>`);
+        if (secret && secret.length < 20) return m.msg(`<span class="${C.hot}">Paste the full Page access token — that is too short to be one.</span>`);
         if (!secret) secret = null;
       }
       const btn = m.wrap.querySelector('#lsSave');
@@ -688,11 +708,11 @@ function mountSourceConnections(host) {
           muted('Connected. Paste these into Google Ads now.'));
         else if (k === 'embed' && row && str(row.public_key)) {
           const m2 = openModal(`${name} connected`, copyField('Paste this into your website', embedSnippet(str(row.public_key)), 'Copy snippet')
-            + (str(row.ingest_url) ? `<details><summary class="ds-cell-sub">Alternative: plain HTML form</summary>${copyField('Form posting to NEXUS', plainFormSnippet(str(row.ingest_url)), 'Copy form')}</details>` : ''),
-            '<button class="btn primary" id="lsDone">Done</button>');
+            + (str(row.ingest_url) ? `<details><summary class="font-body-sm text-body-sm text-primary cursor-pointer">Alternative: plain HTML form</summary>${copyField('Form posting to NEXUS', plainFormSnippet(str(row.ingest_url)), 'Copy form')}</details>` : ''),
+            `<button class="${B.primary}" id="lsDone">Done</button>`);
           wireCopy(m2.wrap); m2.wrap.querySelector('#lsDone').addEventListener('click', m2.close);
         }
-        reload();
+        reload(true);
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Connect';
         lsFail(m, e);
@@ -702,7 +722,7 @@ function mountSourceConnections(host) {
 
   const confirmAct = (title, text, label, run) => {
     const m = openModal(title, muted(esc(text)),
-      `<button class="btn primary" id="lsYes">${esc(label)}</button><button class="btn" id="lsNo">Cancel</button>`);
+      `<button class="${B.secondary}" id="lsNo">Cancel</button><button class="${B.primary}" id="lsYes">${esc(label)}</button>`);
     m.wrap.querySelector('#lsNo').addEventListener('click', m.close);
     m.wrap.querySelector('#lsYes').addEventListener('click', async () => {
       const b = m.wrap.querySelector('#lsYes'); b.disabled = true;
@@ -716,16 +736,242 @@ function mountSourceConnections(host) {
     m.close();
     showSecret('New key issued', r, { secret_once: typeof secret === 'string' ? secret : str(secret && (secret.secret_once || secret.nexus_lead_source_rotate_secret)) },
       muted('The old key no longer works. Replace it in Google Ads.'));
-    reload();
+    reload(true);
   });
 
   const disconnect = r => r && confirmAct(`Disconnect ${str(r.label) || str(r.source_key)}`, 'NEXUS will stop accepting leads from this source until you connect it again.', 'Disconnect', async m => {
     await dbWrite('POST', 'rpc/nexus_lead_source_disconnect', { p_source_key: str(r.source_key) });
     m.close();
-    reload();
+    reload(true);
   });
 
   reload();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Configured lead feeds, the ingestion states, and the readiness drawer
+   ══════════════════════════════════════════════════════════════════════════
+   lead-sources-ingestion-readiness-desk--c3ca1e: a legend of ingestion states, a
+   filter, one row per source set up for this dealership, and a drawer with a
+   five-gate checklist and a verdict. Nothing here is a new read: the rows are
+   the readiness answer, joined to the connection register and to the arrivals
+   this screen already reads. What the export shows that NEXUS does not record
+   is left out rather than imitated — there is no gateway latency, no parsing
+   reliability percentage and no payload sample on this screen (the rule at the
+   top of the file: no endpoint, no key, no raw payload).
+
+   THE CHECKLIST. Each gate is PASSED, FAILED or NOT TESTED from a fact this
+   dealership's records hold, and the rule the export prints is the rule here:
+   one NOT TESTED keeps the verdict at PARTIAL; it is never green on
+   configuration alone. A registered endpoint is a fact about setup, not about
+   delivery — the gates that ask "does it work" pass only on an arrival. */
+const readConnections = shared(() => db('rpc/nexus_lead_source_connections'));
+const resetConnections = () => { MEMOS.forEach(reset => reset()); };
+
+/* Status chip for a feed row, by connection state. RECEIVING (the export's
+   "event < 24h") is earned only by a real arrival in the last 24 hours on a
+   source that is CONNECTED; everything else is the state's own word. A state
+   this screen does not know never borrows a healthy colour. */
+const DAY_MS = 24 * 3600 * 1000;
+function feedChip(rd, agg, cn) {
+  const st = connectionState(rd.state);
+  if (!st) return statusChip('degraded', 'State not recognised');
+  if (rd.state === 'CONNECTED') {
+    const recent = agg && agg.lastAt && (Date.now() - Date.parse(agg.lastAt)) < DAY_MS;
+    if (recent) return statusChip('receiving', 'Receiving');
+    return statusChip('connected', str(cn && cn.connect_kind) === 'manual' ? 'Manual · connected' : 'Connected');
+  }
+  if (rd.state === 'NOT_CONNECTABLE') return statusChip('planned', 'Roadmap');
+  if (rd.state === 'NOT_CONNECTED') return statusChip('not-tested', 'Not connected');
+  return statusChip('partial', st.label);
+}
+
+const LEGEND = [
+  ['receiving', 'Receiving', 'Connected, and a real enquiry arrived in the last 24 hours'],
+  ['connected', 'Connected', 'Registered and switched on; nothing in the last 24 hours'],
+  ['partial', 'Set up, not usable', 'Registered, but nothing real can arrive through it yet'],
+  ['not-tested', 'Not connected', 'Nothing registered for this dealership — not a fault'],
+  ['planned', 'Roadmap', 'No feed exists to connect to'],
+];
+
+function sourceGates(rd, cn, agg, testAgg) {
+  const kind = str(cn && cn.connect_kind);
+  const manual = kind === 'manual';
+  const cs = up(cn && cn.status);
+  const arrivals = (agg ? agg.events : 0);
+  const tests = (testAgg ? testAgg.events : 0);
+  const any = arrivals + tests;
+  const gates = [];
+
+  /* 1 · Authentication — proven by an accepted delivery, never by a stored key. */
+  if (any) {
+    const signed = (agg ? agg.verified : 0) + (testAgg ? testAgg.verified : 0);
+    gates.push({ gate: 'Authentication', state: 'passed', detail: esc(manual
+      ? `${num(any)} ${plural(any, 'arrival was', 'arrivals were')} recorded by a signed-in member of this dealership — the session is the authentication.`
+      : `${num(any)} ${plural(any, 'delivery was', 'deliveries were')} accepted from this source; ${num(signed)} carried a signature that was checked.`) });
+  } else if (!manual && cn && (kind === 'webhook_key' || kind === 'meta_page') && cs && cs !== 'NOT_CONNECTED' && cs !== 'DISABLED' && !cn.has_secret) {
+    gates.push({ gate: 'Authentication', state: 'failed', detail: esc('Connected, but no key or token is installed, so a delivery cannot be authenticated. Connect it again to install one.') });
+  } else {
+    gates.push({ gate: 'Authentication', state: 'not-tested', detail: esc(cn && cn.has_secret
+      ? 'A key or token is installed. No delivery has used it yet, so it is not proven to work.'
+      : 'Nothing has arrived from this source, so no authentication has been exercised.') });
+  }
+
+  /* 2 · Dealership mapping — the readiness answer is scoped to this dealership. */
+  const ep = n0(rd.endpoints);
+  if (!connectionState(rd.state)) {
+    gates.push({ gate: 'Dealership mapping', state: 'not-tested', detail: esc(CONNECTION_STATE_NOT_KNOWN) });
+  } else if (ep && ep > 0) {
+    gates.push({ gate: 'Dealership mapping', state: 'passed', detail: esc(`${num(ep)} live ${plural(ep, 'endpoint is', 'endpoints are')} registered to this dealership for this source.`) });
+  } else {
+    gates.push({ gate: 'Dealership mapping', state: 'not-tested', detail: esc('Nothing live is registered to this dealership for this source yet.') });
+  }
+
+  /* 3 · Webhook — for a manual source there is none; the entry path is a screen. */
+  if (manual) {
+    gates.push(rd.state === 'REGISTERED_NO_ENTRY_PATH'
+      ? { gate: 'Webhook', state: 'failed', detail: esc('No webhook by design, and no screen to enter one by hand either — nothing can arrive through this source.') }
+      : { gate: 'Webhook', state: 'n/a', detail: esc('No webhook by design: a person enters these on the Record a Lead screen.') });
+  } else if (rd.state === 'NOT_CONNECTABLE') {
+    gates.push({ gate: 'Webhook', state: 'n/a', detail: esc(noLeadFeedSentence(rd.name || rd.key)) });
+  } else if (cs === 'DISABLED') {
+    gates.push({ gate: 'Webhook', state: 'failed', detail: esc('Switched off — a delivery today would be refused at the door.') });
+  } else if (any) {
+    gates.push({ gate: 'Webhook', state: 'passed', detail: esc(`The endpoint accepted ${num(any)} ${plural(any, 'delivery', 'deliveries')}${agg && agg.lastAt ? `, the newest ${ago(agg.lastAt)}` : ''}.`) });
+  } else {
+    gates.push({ gate: 'Webhook', state: 'not-tested', detail: esc(rd.state === 'CONNECTED'
+      ? 'Registered and switched on. No delivery has reached it, so it is not proven to accept one.'
+      : 'No endpoint is accepting deliveries for this source yet.') });
+  }
+
+  /* 4 · Inbound test — something actually arrived and reached a stage. */
+  if (agg && agg.promoted) {
+    gates.push({ gate: 'Inbound test', state: 'passed', detail: esc(`${num(agg.promoted)} real ${plural(agg.promoted, 'enquiry', 'enquiries')} arrived and became ${plural(agg.promoted, 'a lead', 'leads')}.`) });
+  } else if (tests) {
+    gates.push({ gate: 'Inbound test', state: 'passed', detail: esc(`${num(tests)} test ${plural(tests, 'delivery', 'deliveries')} arrived. Test traffic proves the door; it is counted nowhere as business.`) });
+  } else if (arrivals && agg && agg.lost === arrivals) {
+    gates.push({ gate: 'Inbound test', state: 'failed', detail: esc(`${num(arrivals)} ${plural(arrivals, 'enquiry', 'enquiries')} arrived and every one was lost — see the list below for the reasons.`) });
+  } else if (arrivals) {
+    gates.push({ gate: 'Inbound test', state: 'passed', detail: esc(`${num(arrivals)} ${plural(arrivals, 'enquiry', 'enquiries')} arrived; none has become a new lead yet (already held, or still in progress).`) });
+  } else {
+    gates.push({ gate: 'Inbound test', state: 'not-tested', detail: esc('No delivery, real or test, has arrived from this source in what was read.') });
+  }
+
+  /* 5 · Outbound test — nothing in NEXUS records one for a lead source. */
+  gates.push({ gate: 'Outbound test', state: 'not-tested', detail: esc('NEXUS records no reply or acknowledgement test for this source, so this gate cannot pass yet.') });
+  return gates;
+}
+
+function openSourceDrawer(row) {
+  const { rd, cn, agg, testAgg } = row;
+  const gates = sourceGates(rd, cn, agg, testAgg);
+  const metric = (k, v, sub) => `<div class="p-3 rounded-lg border border-outline-variant/40 bg-surface-container-lowest">
+      <div class="${C.caps}">${esc(k)}</div><div class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface mt-1">${v}</div>
+      ${sub ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${sub}</div>` : ''}</div>`;
+  const signedOf = agg && agg.events ? `${num(agg.verified)} of ${num(agg.events)}` : '—';
+  openDrawer(`<div class="${DRAWER.head}">
+      <div class="flex items-start gap-3 min-w-0">
+        <span class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined">${esc(lsIcon(cn || { source_key: rd.key }))}</span></span>
+        <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><h2 class="font-headline-md text-headline-md font-bold text-on-surface">${esc(rd.name || rd.key)}</h2>${feedChip(rd, agg, cn)}</div>
+          <div class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(rd.key)}${rd.channel ? ` · ${esc(rd.channel)}` : ''}</div></div>
+      </div>
+      <button type="button" aria-label="Close" data-ls-close class="${B.icon}"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <div class="${DRAWER.body}">
+      ${readinessChecklist(gates)}
+      <div class="mt-space-md"><div class="${C.caps} mb-2">Recorded so far, in the window read</div>
+        <div class="grid grid-cols-2 gap-2">
+          ${metric('Newest arrival', agg && agg.lastAt ? esc(ago(agg.lastAt)) : '—', agg && agg.lastAt ? esc(dubaiStamp(agg.lastAt)) : 'No real enquiry has arrived')}
+          ${metric('Real enquiries', agg ? num(agg.events) : '0', agg ? `${num(agg.promoted)} became leads` : 'None in what was read')}
+          ${metric('Lost after arriving', agg ? num(agg.lost) : '0', 'Each is listed with its reason below')}
+          ${metric('Signed at source', signedOf, 'Checked signatures over real arrivals')}
+          ${metric('Test arrivals', testAgg ? num(testAgg.events) : '0', 'Counted nowhere as business')}
+          ${metric('Live endpoints', rd.endpoints == null ? '—' : num(rd.endpoints), 'Registered to this dealership')}
+        </div></div>
+      <div class="mt-space-md"><div class="${C.caps} mb-2">Whether NEXUS is receiving from it</div>${connectionCell(rd)}</div>
+    </div>
+    <div class="${DRAWER.foot}">
+      ${str(cn && cn.connect_kind) === 'manual' && SCREENS.recordlead
+        ? `<button class="${B.primary}" data-ls-go="recordlead"><span class="material-symbols-outlined text-[18px]">edit_note</span>Record a lead</button>` : ''}
+      <button class="${B.secondary}" data-ls-connectcard><span class="material-symbols-outlined text-[18px]">settings</span>Connection settings</button>
+    </div>`);
+  const d = document.getElementById('drawer');
+  if (!d) return;
+  d.querySelector('[data-ls-close]')?.addEventListener('click', closeDrawer);
+  d.querySelector('[data-ls-go]')?.addEventListener('click', () => { closeDrawer(); go('recordlead'); });
+  d.querySelector('[data-ls-connectcard]')?.addEventListener('click', () => {
+    closeDrawer();
+    document.getElementById('lsConnect')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+function mountFeeds(host) {
+  host.innerHTML = '';
+  let family = '';
+  const box = el('div', 'flex flex-col gap-space-md');
+  host.appendChild(box);
+  box.innerHTML = stateLoading(4);
+  Promise.all([settle(readOrigin()), settle(readReadiness()), settle(readConnections())]).then(([o, d, c]) => {
+    const legend = `<div class="bg-surface-container-low border border-outline-variant/40 rounded-xl px-space-md py-3 flex flex-col gap-2">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2"><span class="${C.caps}">Ingestion states:</span>
+          ${LEGEND.map(([k, label, why]) => `<span class="inline-flex items-center gap-1.5" title="${esc(why)}">${statusChip(k, label)}<span class="font-label-numeric-sm text-[11px] text-outline">${esc(why)}</span></span>`).join('')}</div>
+      </div>`;
+    if (d.err) {
+      box.innerHTML = legend + unreadPanel('Couldn’t load which sources are set up for this dealership',
+        [esc(CONNECTION_STATE_UNREAD), 'Without it no source can be listed as configured, and none is being listed from anywhere else.']);
+      return;
+    }
+    const R = readinessRows(d.v);
+    const T = o.err ? null : splitTraffic(o.v);
+    const aggs = new Map((T ? bySource(T.business) : []).map(a => [a.key, a]));
+    const tests = new Map((T ? bySource(T.test) : []).map(a => [a.key, a]));
+    const conns = new Map((c.err || !Array.isArray(c.v) ? [] : c.v).map(r => [str(r.source_key), r]));
+    const rows = R.usable.map(rd => ({ rd, cn: conns.get(rd.key) || null, agg: aggs.get(rd.key) || null, testAgg: tests.get(rd.key) || null }));
+    const families = [...new Set(rows.map(r => r.rd.channel).filter(Boolean))].sort();
+
+    const paint = () => {
+      const shown = family ? rows.filter(r => r.rd.channel === family) : rows;
+      const filter = `<label class="inline-flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant">Filter:
+          <select data-ls-family class="px-2 py-1 rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface font-body-sm text-body-sm">
+            <option value="">All sources (${num(rows.length)})</option>
+            ${families.map(f => `<option value="${esc(f)}"${f === family ? ' selected' : ''}>${esc(f)} (${num(rows.filter(r => r.rd.channel === f).length)})</option>`).join('')}
+          </select></label>`;
+      const tbl = table([
+        { label: 'Lead source & type', strong: true, render: r => `<div class="flex items-center gap-3 min-w-[220px]">
+            <span class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">${esc(lsIcon(r.cn || { source_key: r.rd.key }))}</span></span>
+            <div class="min-w-0">${bold(esc(r.rd.name || r.rd.key))}<div class="mt-0.5 flex flex-wrap items-center gap-1.5"><span class="font-label-numeric-sm text-[11px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">${esc(r.rd.key)}</span>${r.rd.channel ? `<span class="font-body-sm text-body-sm text-outline">${esc(r.rd.channel)}</span>` : ''}</div></div></div>` },
+        { label: 'Status', render: r => feedChip(r.rd, r.agg, r.cn) },
+        { label: 'Last received', render: r => (r.agg && r.agg.lastAt
+            ? `<div class="font-label-numeric-sm">${esc(ago(r.agg.lastAt))}</div>${muted(esc(dubaiStamp(r.agg.lastAt)))}`
+            : muted(T ? 'Never, in what was read' : 'Arrivals unread')) },
+        { label: 'Arrivals', align: 'r', render: r => (T ? num(r.agg ? r.agg.events : 0) : '—') },
+        { label: 'Lost', align: 'r', render: r => (T ? (r.agg && r.agg.lost ? `<span class="${C.hot}">${num(r.agg.lost)}</span>` : '0') : '—') },
+        { label: 'Readiness', render: r => {
+            const v = readinessVerdict(sourceGates(r.rd, r.cn, r.agg, r.testAgg));
+            const chipKind = v.key === 'failed' ? 'failed' : v.key === 'partial' ? 'partial' : 'live';
+            return `<div class="flex items-center gap-2 whitespace-nowrap">${statusChip(chipKind, `${v.passed}/${v.applicable}`)}<button type="button" class="${B.ghost}" data-ls-inspect="${esc(r.rd.key)}">Inspect<span class="material-symbols-outlined text-[16px]">chevron_right</span></button></div>`;
+          } },
+      ], shown, { empty: stateEmpty('No source is set up for this dealership yet',
+        'The readiness answer was read and lists no source for this filter. Use “Connect your lead sources” below to set one up.', 'hub') });
+      box.innerHTML = legend + `<section class="${C.card}">
+          <div class="${C.head}">
+            <div class="flex items-start gap-2.5 min-w-0"><span class="material-symbols-outlined text-primary text-xl mt-0.5">hub</span>
+              <div class="min-w-0"><h2 class="${C.title}">Configured lead feeds & connectors</h2>
+                <p class="${C.sub}">${num(rows.length)} ${plural(rows.length, 'source', 'sources')} set up for this dealership. Inspect a row for its five-gate readiness check.</p></div></div>
+            ${filter}
+          </div>
+          ${o.err ? `<div class="px-space-md pt-3">${banner('warm', 'warning', 'The arrivals record could not be read, so the last-received, arrivals and lost columns are unread rather than empty, and every readiness check below is missing its delivery evidence.')}</div>` : ''}
+          ${c.err ? `<div class="px-space-md pt-3">${banner('warm', 'warning', 'The connection register could not be read, so whether a key is installed is unknown and the authentication gate cannot fail or pass on it.')}</div>` : ''}
+          ${tbl}
+        </section>`;
+      box.querySelector('[data-ls-family]')?.addEventListener('change', e => { family = e.target.value; paint(); });
+      box.querySelectorAll('[data-ls-inspect]').forEach(b => b.addEventListener('click', () => {
+        const r = rows.find(x => x.rd.key === b.dataset.lsInspect);
+        if (r) openSourceDrawer(r);
+      }));
+    };
+    paint();
+  });
 }
 
 SCREENS.leadsources = async host => {
@@ -737,13 +983,39 @@ SCREENS.leadsources = async host => {
      cannot leak — go() removes it with the rest of the subtree. Same pattern as
      screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* Since 7 Oct 2026 the wrapper is the Stitch root: `nx-stitch` turns on the
+     scoped reset the Stitch classes were designed against, and it is still a
+     wrapper this screen appends, for the reason above. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
   /* Every visit re-reads. See the note on `shared` above for what this repairs
      and why a stale source register is worse than a slow one. */
   resetReads();
-  mountSourceConnections(root);
+
+  /* The page order is the Stitch order (c3ca1e, then the sections only --1ce809
+     carries): header, the four figures, the ingestion states and the feeds
+     table, the connect cards, then the per-source panels. Each region gets its
+     own slot so the panels below can be declared in the order they always were. */
+  const slot = () => { const d = el('div', 'flex flex-col gap-space-md'); root.appendChild(d); return d; };
+  const headSlot = slot(), kpiSlot = slot(), feedSlot = slot(), connectSlot = slot(), restSlot = slot(), footSlot = slot();
+
+  headSlot.innerHTML = sectionHeader({
+    eyebrow: 'Operations / Lead Sources',
+    title: 'Lead Sources — ingestion & readiness',
+    sub: 'Every door an enquiry can come through, whether NEXUS is actually receiving from it, how well each arrival '
+       + 'is attested, and what happened to it after it landed.',
+    actionsHtml: (SCREENS.recordlead ? `<button class="${B.secondary}" data-go="recordlead"><span class="material-symbols-outlined text-[18px]">edit_note</span>Record a lead</button>` : '')
+      + `<button class="${B.primary}" data-ls-jump><span class="material-symbols-outlined text-[18px]">add_circle</span>Add lead source</button>`,
+  });
+  wireGo(headSlot);
+  headSlot.querySelector('[data-ls-jump]')?.addEventListener('click', () => {
+    document.getElementById('lsConnect')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  const feeds = () => mountFeeds(feedSlot);
+  mountSourceConnections(connectSlot, () => { resetConnections(); feeds(); });
+  feeds();
 
   const loadBoth = async () => {
     const [o, d] = await Promise.all([settle(readOrigin()), settle(readReadiness())]);
@@ -763,8 +1035,8 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Where your enquiries came from',
+  panel(kpiSlot, {
+    title: 'Where your enquiries came from', icon: 'insights',
     sub: 'Every arrival NEXUS recorded, the door it came through, and how much of that origin could actually be '
        + 'verified. Test traffic is counted nowhere in these four figures',
     actions: linkBtn('leads', 'Open Leads') + ' ' + linkBtn('attribution', 'Open Attribution'),
@@ -845,35 +1117,29 @@ SCREENS.leadsources = async host => {
                     : ' No arrival from a real customer was read, so this zero counts nothing and is not a clear.')),
             lost.length ? 't-hot' : (T.business.length ? 't-ok' : ''));
 
-      const caveat = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">info</span>
-          <div>${bold('What these figures are, and what they are not.')}
+      const caveat = banner('info', 'info', `${bold('What these figures are, and what they are not.')}
             ${muted(esc(CONNECTION_IS_ABOUT_THIS_DEALERSHIP))}
             ${muted(esc(PROVIDER_ROUTE_IS_NOT_A_CONNECTION))}
             ${muted(esc(NO_MONEY_ON_LEAD_SOURCES))}
             ${muted(esc(ORIGIN_STRENGTH_SCALE))}
             ${muted('An arrival is an enquiry reaching NEXUS. It is not a customer, not a sale and not a valuation, '
-              + 'and nothing on this screen adds any of those together.')}</div></div>`;
+              + 'and nothing on this screen adds any of those together.')}`);
 
-      return `<div class="grid g4">${arrivalsTile}${sourceTile}${attestTile}${lostTile}</div>` + caveat;
+      return `<div class="${C.grid4}">${arrivalsTile}${sourceTile}${attestTile}${lostTile}</div><div class="mt-space-md">${caveat}</div>`;
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P2 · Every source that produced something
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Sources that produced enquiries',
+  panel(restSlot, {
+    title: 'Sources that produced enquiries', icon: 'stars',
     sub: 'Busiest first. Every line carries how well its origin is attested, because a source that proves who it is '
        + 'and one that merely says who it is must never look the same',
     load: loadBoth,
     render: ({ o, d }) => {
       if (o.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the arrivals record</h3>
-          <p>The record of where enquiries came from could not be read, so this list is not empty — it is unread.
-             Nothing is being claimed about which sources are producing and which are not, and no source is being
-             ruled out.</p></div>`;
+        return unreadPanel(`Couldn't load the arrivals record`, [`The record of where enquiries came from could not be read, so this list is not empty — it is unread. Nothing is being claimed about which sources are producing and which are not, and no source is being ruled out.`]);
       }
       const T = splitTraffic(o.v);
       /* Null when the readiness read failed, and the column below then says so
@@ -904,12 +1170,12 @@ SCREENS.leadsources = async host => {
             bold(esc(sourceLabel(a)))
             + (a.name ? '' : muted('No display name came with these arrivals, so the source is shown by the name it gave for itself.'))
             + (a.channels.size
-                ? `<div style="margin-top:4px">${[...a.channels].map(x => chip(x, 'The kind of road these enquiries travelled, as the record states it.')).join(' ')}</div>`
+                ? `<div class="mt-1 flex flex-wrap gap-1">${[...a.channels].map(x => chip(x, 'The kind of road these enquiries travelled, as the record states it.')).join(' ')}</div>`
                 : '')) },
         { label: 'Is NEXUS receiving from it', render: a => wrap(
             rd ? connectionCell(a.key ? rd.byKey.get(a.key) : null) : hot(esc(CONNECTION_STATE_UNREAD))) },
         { label: 'How well the origin is attested', render: a => wrap(attestationCell(a)) },
-        { label: 'Arrivals', align: 'r', render: a => `<div style="font-weight:600">${num(a.events)}</div>`
+        { label: 'Arrivals', align: 'r', render: a => `<div class="font-semibold">${num(a.events)}</div>`
             + muted(`${num(a.promoted)} became ${plural(a.promoted, 'an enquiry', 'enquiries')}`)
             + (a.duplicate ? muted(`${num(a.duplicate)} already held`) : '')
             + (a.lost ? hot(`${num(a.lost)} lost`) : '') },
@@ -924,18 +1190,15 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P3 · Enquiries that arrived and were lost
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Enquiries that arrived and were then lost',
+  panel(restSlot, {
+    title: 'Enquiries that arrived and were then lost', icon: 'trending_down',
     sub: 'Refused, held back, or left until the time to act ran out. Each is a customer this dealership had, shown '
        + 'with the reason recorded against it — never as an absence, and never with a price on it',
     actions: linkBtn('leadrecovery', 'Open Lead Recovery'),
     load: loadBoth,
     render: ({ o }) => {
       if (o.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the arrivals record</h3>
-          <p>This list is unread, not empty. No enquiry is being reported as lost and none is being ruled out —
-             nothing was looked at.</p></div>`;
+        return unreadPanel(`Couldn't load the arrivals record`, [`This list is unread, not empty. No enquiry is being reported as lost and none is being ruled out — nothing was looked at.`]);
       }
       const T = splitTraffic(o.v);
       const lost = T.business.filter(r => (leadPhase(r.phase) || {}).kind === 'LOST');
@@ -967,7 +1230,7 @@ SCREENS.leadsources = async host => {
           } },
         { label: 'Source', render: r => wrap(
             bold(esc(str(r.source) || str(r.source_key) || 'A source that arrived without a name'))
-            + `<div style="margin-top:4px">${attestationInline(r)}</div>`
+            + `<div class="mt-1 flex flex-wrap gap-1">${attestationInline(r)}</div>`
             + (str(r.origin_explanation) ? muted(esc(str(r.origin_explanation))) : '')) },
         { label: 'The reason recorded', render: r => wrap(str(r.disposition_reason)
             ? esc(str(r.disposition_reason))
@@ -988,8 +1251,8 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P4 · Sources that are set up and produced nothing
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Sources set up that produced nothing',
+  panel(restSlot, {
+    title: 'Sources set up that produced nothing', icon: 'cloud_off',
     sub: 'A source nobody ever connected and a source having a quiet week are opposite facts. This is the only place '
        + 'in the product that tells them apart',
     load: loadBoth,
@@ -1001,30 +1264,18 @@ SCREENS.leadsources = async host => {
          panel whose subtitle promises to tell connected from unconnected. The
          honest output when this read fails is that nothing could be checked. */
       if (d.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Nothing could be checked — whether NEXUS is receiving from each source could not be read</h3>
-          <p>${esc(CONNECTION_STATE_UNREAD)}</p>
-          <p>${esc(str(d.err.message) || 'No reason was given.')}</p>
-          <p>Without it, a source that is connected and silent cannot be told from one that was never connected, so
-             neither is being reported. This panel is unread, not empty — no source is being cleared and none is being
-             blamed.</p></div>`;
+        return unreadPanel(`Nothing could be checked — whether NEXUS is receiving from each source could not be read`, [`${esc(CONNECTION_STATE_UNREAD)}`, `${esc(str(d.err.message) || 'No reason was given.')}`, `Without it, a source that is connected and silent cannot be told from one that was never connected, so neither is being reported. This panel is unread, not empty — no source is being cleared and none is being blamed.`]);
       }
       const { usable, unreadable, byKey } = readinessRows(d.v);
       const shapeFault = unreadable
-        ? `<div class="banner hot">
-             <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold('Part of the readiness answer came back in a shape this screen cannot read.')}
+        ? `<div class="mb-space-md">${banner('hot', 'report', `${bold('Part of the readiness answer came back in a shape this screen cannot read.')}
                ${muted(`${num(unreadable)} of ${num(usable.length + unreadable)} entries carry nothing this screen can `
                  + 'match against an arrival, so they are neither listed below nor counted as producing. They are '
-                 + 'reported rather than dropped: a source nobody can account for is exactly the one worth naming.')}</div></div>`
+                 + 'reported rather than dropped: a source nobody can account for is exactly the one worth naming.')}`)}</div>`
         : '';
 
       if (o.err) {
-        return shapeFault + `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the arrivals record</h3>
-          <p>${num(usable.length)} sources are set up for this dealership, and whether each has produced anything
-             cannot be answered without the arrivals record, which did not come back. Listing every configured source
-             as silent would be reporting a failed read as a finding.</p></div>`;
+        return shapeFault + unreadPanel(`Couldn't load the arrivals record`, [`${num(usable.length)} sources are set up for this dealership, and whether each has produced anything cannot be answered without the arrivals record, which did not come back. Listing every configured source as silent would be reporting a failed read as a finding.`]);
       }
 
       const T = splitTraffic(o.v);
@@ -1037,12 +1288,10 @@ SCREENS.leadsources = async host => {
          enquiries that this dealership's own readiness answer does not contain. */
       const unlisted = producingSources.filter(a => a.key && !byKey.has(a.key));
       const unlistedFault = unlisted.length
-        ? `<div class="banner warm">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('Enquiries arrived from a source that is not on this dealership’s list.')}
+        ? `<div class="mb-space-md">${banner('warm', 'warning', `${bold('Enquiries arrived from a source that is not on this dealership’s list.')}
                ${muted(`${esc(unlisted.map(sourceLabel).join(', '))}. The arrivals are real and are counted above; what `
                  + 'is missing is the entry describing the source, so nothing here can say how it is meant to be '
-                 + 'connected or what it ought to be attested by.')}</div></div>`
+                 + 'connected or what it ought to be attested by.')}`)}</div>`
         : '';
 
       if (!usable.length) {
@@ -1068,7 +1317,7 @@ SCREENS.leadsources = async host => {
 
       return shapeFault + unlistedFault + table([
         { label: 'Source', strong: true, render: s => wrap(bold(esc(s.name || s.key))
-            + (s.channel ? `<div style="margin-top:4px">${chip(s.channel)}</div>` : '')) },
+            + (s.channel ? `<div class="mt-1 flex flex-wrap gap-1">${chip(s.channel)}</div>` : '')) },
         { label: 'Is NEXUS receiving from it', render: s => wrap(connectionCell(s)) },
         { label: 'What the silence means', render: s => {
             const st = connectionState(s.state);
@@ -1100,24 +1349,19 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P5 · Test traffic, in a band of its own
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Test traffic — counted nowhere above',
+  panel(restSlot, {
+    title: 'Test traffic — counted nowhere above', icon: 'science',
     sub: 'Simulator output, shown because hiding it would be its own kind of lie, and separated because a dealership '
        + 'must never be shown one of these as business',
     load: loadBoth,
     render: ({ o }) => {
       if (o.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the arrivals record</h3>
-          <p>Whether any test traffic is present could not be checked. An empty band here would mean nothing was
-             looked at, so none is shown.</p></div>`;
+        return unreadPanel(`Couldn't load the arrivals record`, [`Whether any test traffic is present could not be checked. An empty band here would mean nothing was looked at, so none is shown.`]);
       }
       const T = splitTraffic(o.v);
       const note = T.unclassified.length
-        ? `<div class="banner warm" style="margin-bottom:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold(`${num(T.unclassified.length)} ${plural(T.unclassified.length, 'arrival does not say whether it is', 'arrivals do not say whether they are')} test traffic.`)}
-               ${muted(esc(TEST_TRAFFIC_UNCLASSIFIED))}</div></div>`
+        ? `<div class="mb-space-md">${banner('warm', 'warning', `${bold(`${num(T.unclassified.length)} ${plural(T.unclassified.length, 'arrival does not say whether it is', 'arrivals do not say whether they are')} test traffic.`)}
+               ${muted(esc(TEST_TRAFFIC_UNCLASSIFIED))}`)}</div>`
         : '';
       if (!T.test.length) {
         return note + (T.all.length
@@ -1129,14 +1373,12 @@ SCREENS.leadsources = async host => {
               'The arrivals record came back empty. That is not a statement that no simulator output exists — it is a '
               + 'statement that nothing was there to examine.', 'inbox'));
       }
-      return note + `<div class="banner info" style="margin-bottom:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">science</span>
-          <div>${bold('Everything below is test traffic.')}${muted(esc(TEST_TRAFFIC_BAND))}</div></div>`
+      return note + `<div class="mb-space-md">${banner('info', 'science', `${bold('Everything below is test traffic.')}${muted(esc(TEST_TRAFFIC_BAND))}`)}</div>`
         + table([
           { label: 'Source', strong: true, render: a => wrap(bold(esc(sourceLabel(a)))
-              + (a.channels.size ? `<div style="margin-top:4px">${[...a.channels].map(x => chip(x)).join(' ')}</div>` : '')) },
+              + (a.channels.size ? `<div class="mt-1 flex flex-wrap gap-1">${[...a.channels].map(x => chip(x)).join(' ')}</div>` : '')) },
           { label: 'How well the origin is attested', render: a => wrap(attestationCell(a)) },
-          { label: 'Arrivals', align: 'r', render: a => `<div style="font-weight:600">${num(a.events)}</div>` },
+          { label: 'Arrivals', align: 'r', render: a => `<div class="font-semibold">${num(a.events)}</div>` },
           { label: 'What happened to them', render: a => wrap(phaseCells(a)) },
           { label: 'Newest', render: a => (a.lastAt
               ? `<span title="${esc(dubaiStamp(a.lastAt))}">${esc(ago(a.lastAt))}</span>`
@@ -1148,8 +1390,8 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P6 · What this screen could not check
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'What this screen could not check — unknown is not zero',
+  panel(restSlot, {
+    title: 'What this screen could not check — unknown is not zero', icon: 'visibility_off',
     sub: 'Every gap above, named, with what it would take to close it. The last line is permanent and is here so the '
        + 'promise is on the screen rather than only in a document',
     load: loadBothSoft,
@@ -1268,9 +1510,24 @@ SCREENS.leadsources = async host => {
         { label: 'What is not known', strong: true, render: x => wrap(esc(x.what)) },
         { label: 'How much / since when', render: x => wrap(muted(esc(x.detail))) },
         { label: 'Why it matters', render: x => wrap(muted(esc(x.why))) },
-        { label: 'What would close it', render: x => wrap(`<div class="t-warm">${esc(x.unlock)}</div>`) },
+        { label: 'What would close it', render: x => wrap(`<div class="${C.warm}">${esc(x.unlock)}</div>`) },
         { label: 'Kind', render: x => pill(x.kind, x.kind === 'FAULT' || x.kind === 'UNREAD' ? 'hot' : 'unknown', { verbatim: true }) },
       ], rows);
     },
   }).then(wireGo);
+
+  /* The trust footer (states-components §7): what this screen read, when, how
+     much, and as whom. Plain words rather than schema names, for the reason the
+     top of this file gives. */
+  Promise.all([settle(readOrigin()), settle(readReadiness())]).then(([o, d]) => {
+    const n = o.err || !Array.isArray(o.v) ? null : o.v.length;
+    footSlot.innerHTML = trustFooter({
+      source: 'Arrivals record · source readiness for this dealership',
+      asOf: dubaiStamp(new Date()),
+      evidence: o.err && d.err ? 'Nothing could be read'
+        : `${n == null ? 'Arrivals unread' : `${num(n)} ${plural(n, 'arrival', 'arrivals')} read${n >= ARRIVALS_LIMIT ? ' (cap reached)' : ''}`}`
+          + `${d.err ? ' · readiness unread' : ` · ${num(readinessRows(d.v).usable.length)} sources set up`}`,
+      actor: actor(),
+    });
+  });
 };

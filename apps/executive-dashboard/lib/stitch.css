@@ -1,0 +1,100 @@
+/* NEXUS OS — lib/stitch.css
+
+   The Tailwind entry point for the Google Stitch designs (design/stitch/*.html),
+   compiled at BUILD time by PostCSS with tailwind.config.js. Imported by app.js
+   LAST, after styles.css and every lib/theme-*.css, so that on a specificity tie
+   the Stitch rule wins.
+
+   Three layers, in this order:
+
+   1. `@tailwind base` with Tailwind's preflight switched OFF in
+      tailwind.config.js. What is left of the base layer is the `--tw-*` custom
+      property defaults that shadow, ring, transform and filter utilities read;
+      without it `shadow-sm` and `ring-2` silently render nothing.
+
+   2. A SCOPED copy of preflight, applied only inside `.nx-stitch`. Stitch markup
+      was designed against preflight (borders default to solid, headings carry no
+      margin or weight, buttons have no chrome). Applying it globally would
+      restyle every heading, button and input in the screens that have not been
+      migrated yet, so it applies only under an element that opts in:
+        - the shell regions in index.html (sidebar, topbar, overlays),
+        - the sign-in card,
+        - the root element of every migrated screen (see
+          design/stitch/COMPONENTS.md, "How to migrate a screen").
+      Its selectors are `.nx-stitch <element>` — specificity (0,1,1). That is
+      deliberate: the legacy stylesheets style bare elements at up to (0,1,1)
+      (`input[type=text]`, `a`, `h1..h4`) and this file loads after them, so the
+      reset wins the tie; every Tailwind utility compiles as `.nx-tw .x` (0,2,0)
+      (tailwind.config.js `important: '.nx-tw'`) and so still beats the reset.
+
+   3. Tailwind's components and utilities. Content globs are in
+      tailwind.config.js; scripts/stitch-classes.mjs fails the build if a class a
+      source file uses is missing from the CSS this produced. */
+
+@tailwind base;
+
+/* ── 2. scoped preflight (Tailwind v3 preflight, under .nx-stitch) ─────────── */
+.nx-stitch,
+.nx-stitch *,
+.nx-stitch ::before,
+.nx-stitch ::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: #e5e7eb;
+}
+.nx-stitch :is(h1, h2, h3, h4, h5, h6, p, blockquote, figure, dl, dd, pre, hr) { margin: 0; }
+.nx-stitch :is(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
+.nx-stitch :is(ol, ul, menu) { list-style: none; margin: 0; padding: 0; }
+.nx-stitch :is(a) { color: inherit; text-decoration: inherit; }
+.nx-stitch a:hover { text-decoration: inherit; }
+.nx-stitch :is(b, strong) { font-weight: bolder; }
+.nx-stitch :is(code, kbd, samp, pre) { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 1em; }
+.nx-stitch :is(table) { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+.nx-stitch :is(button, input, optgroup, select, textarea) {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  font-size: 100%;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  border-width: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+.nx-stitch :is(button, select) { text-transform: none; }
+.nx-stitch :is(button, [type='button'], [type='reset'], [type='submit']) {
+  -webkit-appearance: button;
+  background-color: transparent;
+  background-image: none;
+}
+.nx-stitch :is(button, [role='button']) { cursor: pointer; }
+.nx-stitch :is(:disabled) { cursor: default; }
+.nx-stitch :is(input, textarea)::placeholder { opacity: 1; color: #9ca3af; }
+.nx-stitch :is(textarea) { resize: vertical; }
+.nx-stitch :is(img, svg, video, canvas, audio, iframe, embed, object) { display: block; vertical-align: middle; }
+.nx-stitch :is(img, video) { max-width: 100%; height: auto; }
+.nx-stitch [hidden] { display: none; }
+
+/* From every Stitch export's own <style> block. Scoped like the reset above. */
+.nx-stitch .material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  display: inline-block;
+  vertical-align: middle;
+}
+.nx-stitch::-webkit-scrollbar,
+.nx-stitch ::-webkit-scrollbar { display: none; }
+
+/* The legacy detail drawer (#drawer, styles.css) is parked off-screen with
+   translateX(100%) while closed, and its box-shadow still spilled a grey band
+   down the right edge of every page — visible against the Stitch surfaces. */
+.drawer:not(.open) { box-shadow: none; }
+
+@tailwind components;
+@tailwind utilities;

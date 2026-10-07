@@ -196,8 +196,8 @@
    cannot be read, the panel that depends on it says so. */
 import { db, signedUrl } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { ago, clock, esc, n0, num, pill } from '../lib/format.js';
-import { maskText } from '../lib/privacy.js';
+import { ago, clock, esc, n0, num } from '../lib/format.js';
+import { maskPhone, maskText } from '../lib/privacy.js';
 /* The canonical identity resolver. This screen holds no rule of its own for
    deciding whether two keys name the same person — see the header. */
 import { KEY_SHAPE, expandIdentity, normalizeKey } from '../lib/identity.js';
@@ -207,8 +207,13 @@ import { KEY_SHAPE, expandIdentity, normalizeKey } from '../lib/identity.js';
    module mirrors them. */
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { SCREENS } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+/* The Stitch migration (7 Oct 2026, design/stitch/MAP.md: primary
+   compliance-kyc-register-regulatory-telemetry--ec85f4). kpi, table, pill,
+   openDrawer and the state panels keep their signatures and answer in the
+   Stitch anatomy — lib/ops-kit.js says why the logic was left where it was. */
+import { actor, kpi, openDrawer, pill, stateEmpty, stateError, stateLoading, table } from '../lib/ops-kit.js';
+import { sectionHeader, trustFooter } from '../lib/stitch-ui.js';
 
 /* The moment the archive step went live, matching `v_needs_attention` and the
    KYC workflow's own archive-gap monitor, both of which carry this same instant.
@@ -403,7 +408,7 @@ const verdictKey = d => String((d && d.verdict) || '').trim().toUpperCase();
    and is said in words instead of painted as one. */
 const verdictPill = d => {
   const k = verdictKey(d);
-  if (!k) return '<span class="t-muted">No verdict recorded</span>';
+  if (!k) return '<span class="text-outline">No verdict recorded</span>';
   const m = VERDICTS[k];
   return m ? pill(m.label, m.tone, { verbatim: false }) : pill(k, undefined, { verbatim: true });
 };
@@ -807,9 +812,9 @@ const whoLabel = w => w.name || w.chatId || 'Unidentified contact';
 function whoCell(w) {
   const dup = w.phone && w.phone === w.name;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      ${w.name ? esc(maskText(w.name)) : '<span class="t-muted">No name on record</span>'}
-      ${w.phone && !dup ? `<span class="mono">${esc(maskText(w.phone))}</span>` : ''}
-      ${w.chip ? `<span class="chip">${esc(w.chip)}</span>` : ''}
+      ${w.name ? esc(maskText(w.name)) : '<span class="text-outline">No name on record</span>'}
+      ${w.phone && !dup ? `<span class="font-label-numeric-sm">${esc(maskText(w.phone))}</span>` : ''}
+      ${w.chip ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(w.chip)}</span>` : ''}
     </div>
     <div class="ds-cell-sub ${w.kind === 'lead' ? '' : 't-warm'}" style="white-space:normal">${
       w.phone ? esc(w.phoneFrom) : 'no phone stored for this contact'} · ${esc(w.line)}</div>`;
@@ -824,13 +829,25 @@ SCREENS.compliance = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* Since 7 Oct 2026 the wrapper is the Stitch root (`nx-stitch` turns on the
+     scoped reset). It is still a wrapper this screen appends, for the reason
+     above. The order is the export's: header, KPI strip, notices, then the
+     register, voided rows, retention, activity and consent. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  const head = el('div');
+  head.innerHTML = sectionHeader({
+    eyebrow: 'Operations / Compliance',
+    title: 'Compliance — KYC register & consent',
+    sub: 'Every identity document the auditor has seen and what was decided about it, how long each must be kept, '
+       + 'and who has agreed — or refused — to be messaged on WhatsApp.',
+  });
+  root.appendChild(head);
 
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
-  const banners = el('div'); banners.style.marginTop = '16px'; root.appendChild(banners);
-  const body = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
-  body.innerHTML = `<div class="card">${stateLoading(6)}</div>`;
+  const strip = el('div', 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-space-md'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const banners = el('div', 'flex flex-col gap-space-sm empty:hidden'); root.appendChild(banners);
+  const body = el('div'); root.appendChild(body);
+  body.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md">${stateLoading(6)}</div>`;
 
   /* allSettled, not catch(() => []): a table that failed to load and a table
      with no rows look identical once the error is swallowed, and on this screen
@@ -922,8 +939,8 @@ SCREENS.compliance = async host => {
      every value v_workflow_health can return, including the three that are
      absences of evidence rather than health. */
   const wfLine = (w, label) => {
-    if (healthErr) return `<span class="t-warm">The automation health figures could not be read (${esc(healthErr)}), so nothing is known here about ${esc(label)}.</span>`;
-    if (!w) return `<span class="t-warm">No row in the automation health figures names ${esc(label)}, so its health is not known from here — which is itself worth fixing.</span>`;
+    if (healthErr) return `<span class="text-amber-700">The automation health figures could not be read (${esc(healthErr)}), so nothing is known here about ${esc(label)}.</span>`;
+    if (!w) return `<span class="text-amber-700">No row in the automation health figures names ${esc(label)}, so its health is not known from here — which is itself worth fixing.</span>`;
     const hw = healthWords(w.health);
     const rate = successRate(w.successes_30d, w.effective_runs_30d);
     const runs = n0(w.runs_30d);
@@ -1325,7 +1342,7 @@ SCREENS.compliance = async host => {
     if (!r) return '';
     return r.name
       ? `by ${esc(maskText(r.name))}`
-      : `by <span class="mono">${esc(r.id)}</span> <span class="t-muted">(user id — ${esc(r.note)})</span>`;
+      : `by <span class="font-label-numeric-sm">${esc(r.id)}</span> <span class="text-outline">(user id — ${esc(r.note)})</span>`;
   };
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -1389,24 +1406,24 @@ SCREENS.compliance = async host => {
            there. Only the evidence that decisions DID happen off-register
            survives, because that is the thing which makes the dash mean
            something rather than look like a shrug. */
-        : `<span class="t-warm">${esc(NO_DECISION_CAPABILITY)}</span>${evidence ? ` ${evidence}` : ''}`);
-    const commCap = commCapped ? ` <span class="t-muted">Counted within the ${num(COMM_LIMIT)} most recent message-log rows; older ones are not on this page.</span>` : '';
+        : `<span class="text-amber-700">${esc(NO_DECISION_CAPABILITY)}</span>${evidence ? ` ${evidence}` : ''}`);
+    const commCap = commCapped ? ` <span class="text-outline">Counted within the ${num(COMM_LIMIT)} most recent message-log rows; older ones are not on this page.</span>` : '';
 
     strip.innerHTML = [
       kpi('Genuine submissions', num(live.length),
         voided.length
-          ? `<span class="t-warm">${num(voided.length)} further row${voided.length === 1 ? ' was' : 's were'} voided and ${voided.length === 1 ? 'is' : 'are'} excluded from every figure here</span>`
+          ? `<span class="text-amber-700">${num(voided.length)} further row${voided.length === 1 ? ' was' : 's were'} voided and ${voided.length === 1 ? 'is' : 'are'} excluded from every figure here</span>`
           : (live.length
               ? (oneTrail
                   /* The single most load-bearing sentence on this strip. Without
                      it "9" reads as nine customers, and every tile beside it
                      reads as a picture of the dealership's compliance rather
                      than of one man's repeated attempts to send an ID. */
-                  ? `<span class="t-warm">All ${num(live.length)} filed by one customer — this is a single document trail, not a book of them${
+                  ? `<span class="text-amber-700">All ${num(live.length)} filed by one customer — this is a single document trail, not a book of them${
                       pending ? `, and ${num(pending)} of them ${plural(pending, 'is', 'are')} still Pending` : ''}</span>`
                   : pending
-                    ? `<span class="t-warm">${num(pending)} ${plural(pending, 'is', 'are')} still Pending — no decision recorded</span>`
-                    : '<span class="t-muted">Every row carries a decided verdict</span>')
+                    ? `<span class="text-amber-700">${num(pending)} ${plural(pending, 'is', 'are')} still Pending — no decision recorded</span>`
+                    : '<span class="text-outline">Every row carries a decided verdict</span>')
               /* The empty register is where this screen is most easily wrong.
                  "Nothing has been submitted", "the auditor failed every run it
                  made" and "it audited documents that were never filed" all
@@ -1414,49 +1431,49 @@ SCREENS.compliance = async host => {
                  states the scope of its own number and points at the one place
                  the three are told apart, rather than carrying a second wording
                  of it. */
-              : `<span class="t-warm">No genuine document on file in the register.</span> <span class="t-muted">${esc(recon.short)} Set out in the retention panel below.</span>`)),
+              : `<span class="text-amber-700">No genuine document on file in the register.</span> <span class="text-outline">${esc(recon.short)} Set out in the retention panel below.</span>`)),
       /* Counts, never a share of the tile beside them. With one customer on
          file an "approval rate" would be a statistic about a single person's
          paperwork dressed up as a statistic about the business, so no tile here
          divides by any other and the subtitle says why. */
       verdictTile('Approved', 'APPROVED',
         legacyApproved
-          ? `<span class="t-muted">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
-          : (oneTrail ? `<span class="t-muted">Attempts by one customer — counted, not rated</span>` : ''),
+          ? `<span class="text-outline">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
+          : (oneTrail ? `<span class="text-outline">Attempts by one customer — counted, not rated</span>` : ''),
         legacyApproved
-          ? `<span class="t-muted">${num(legacyApproved)} approval${legacyApproved === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
+          ? `<span class="text-outline">${num(legacyApproved)} approval${legacyApproved === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
           : ''),
       verdictTile('Rejected', 'REJECTED',
         legacyRejected
-          ? `<span class="t-muted">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
-          : (oneTrail ? `<span class="t-muted">Re-uploads from the same person, not ${num(verdictCounts.REJECTED)} rejected customers</span>` : ''),
+          ? `<span class="text-outline">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
+          : (oneTrail ? `<span class="text-outline">Re-uploads from the same person, not ${num(verdictCounts.REJECTED)} rejected customers</span>` : ''),
         legacyRejected
-          ? `<span class="t-muted">${num(legacyRejected)} rejection${legacyRejected === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
+          ? `<span class="text-outline">${num(legacyRejected)} rejection${legacyRejected === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
           : ''),
       /* The number is the REGISTER's, like every other verdict tile here, and
          the caption says so — a zero beside "2 escalations logged" reads as a
          contradiction until the two are named as counts of different things. */
       verdictTile('Escalated to a human', 'ESCALATED',
         escalations.length
-          ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor${
-              verdictCounts.ESCALATED ? '' : `, and no escalated document appears among the ${num(docs.length)} register row${docs.length === 1 ? '' : 's'} loaded here`}.</span> <span class="t-muted">This tile counts rows in the register; the escalations are runs the auditor recorded. Where a case is escalated and this register holds no row for it, its register position is <strong>${esc(CASE_STATE.unknown.label)}</strong> — not proof the document does not exist. Set out case by case in the retention panel below.</span>`
-          : (auditErr ? '<span class="t-muted">The run history could not be read</span>' : ''),
+          ? `<span class="text-amber-700">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor${
+              verdictCounts.ESCALATED ? '' : `, and no escalated document appears among the ${num(docs.length)} register row${docs.length === 1 ? '' : 's'} loaded here`}.</span> <span class="text-outline">This tile counts rows in the register; the escalations are runs the auditor recorded. Where a case is escalated and this register holds no row for it, its register position is <strong>${esc(CASE_STATE.unknown.label)}</strong> — not proof the document does not exist. Set out case by case in the retention panel below.</span>`
+          : (auditErr ? '<span class="text-outline">The run history could not be read</span>' : ''),
         escalations.length
-          ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? ' was' : 's were'} recorded by the auditor with no matching register row.</span>`
-          : (auditErr ? '<span class="t-muted">The run history could not be read either, so nothing rules an escalation in or out.</span>' : '')),
+          ? `<span class="text-amber-700">${num(escalations.length)} escalation${escalations.length === 1 ? ' was' : 's were'} recorded by the auditor with no matching register row.</span>`
+          : (auditErr ? '<span class="text-outline">The run history could not be read either, so nothing rules an escalation in or out.</span>' : '')),
       /* One number, one source. This tile, the banner below it, the nav badge
          and the Overview panel all count the rows v_needs_attention files as
          kyc_archive_gap, and this screen no longer holds a predicate of its own
          that could return a different answer. */
       kpi('No archived file', gapKnown ? num(gapTotal) : '—',
         !gapKnown
-          ? `<span class="t-warm">The attention list could not be read (${esc(attnErr || 'unknown error')}), so how many documents cannot be produced is not known on this page. That is not zero.</span>`
+          ? `<span class="text-amber-700">The attention list could not be read (${esc(attnErr || 'unknown error')}), so how many documents cannot be produced is not known on this page. That is not zero.</span>`
           : gapTotal
-            ? `<span class="t-hot">Filed as an archive gap — audited, and its file was never archived, so retention cannot be proven for ${plural(gapTotal, 'it', 'them')}.</span>${
-                gapsOffPage ? ` <span class="t-muted">${num(gapsOffPage)} of ${plural(gapTotal, 'it', 'them')} ${plural(gapsOffPage, 'is', 'are')} older than the ${num(ROW_LIMIT)} rows this page loads and ${plural(gapsOffPage, 'is', 'are')} not in the table below.</span>` : ''}`
+            ? `<span class="text-red-700">Filed as an archive gap — audited, and its file was never archived, so retention cannot be proven for ${plural(gapTotal, 'it', 'them')}.</span>${
+                gapsOffPage ? ` <span class="text-outline">${num(gapsOffPage)} of ${plural(gapTotal, 'it', 'them')} ${plural(gapsOffPage, 'is', 'are')} older than the ${num(ROW_LIMIT)} rows this page loads and ${plural(gapsOffPage, 'is', 'are')} not in the table below.</span>` : ''}`
             : (live.length
-                ? '<span class="t-ok">The database files no document as an archive gap</span>'
-                : '<span class="t-muted">Nothing genuine to archive yet</span>'),
+                ? '<span class="text-emerald-700">The database files no document as an archive gap</span>'
+                : '<span class="text-outline">Nothing genuine to archive yet</span>'),
         gapKnown && gapTotal ? 't-hot' : ''),
     ].join('');
   }
@@ -1475,21 +1492,21 @@ SCREENS.compliance = async host => {
      knowing about it will draw the wrong conclusion from every other number. */
   if (voided.length) {
     const chats = voidedChats;
-    const b = el('div', 'banner hot');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">report</span>
       <div style="flex:1">
         <strong>${num(voided.length)} row${voided.length === 1 ? '' : 's'} in the ID documents ${voided.length === 1 ? 'was' : 'were'} never a KYC submission.</strong>
         Uncaptioned WhatsApp images were auto-routed to the auditor, so the table holds machine verdicts on pictures nobody asked for${
           chats ? `, from ${num(chats)} chat${chats === 1 ? '' : 's'}` : ''}.
-        They carry <span class="mono">void_reason</span> and are excluded from every count, rate, verdict and retention figure on this screen.
+        They carry <span class="font-label-numeric-sm">void_reason</span> and are excluded from every count, rate, verdict and retention figure on this screen.
         ${comms
           ? (kycCommsVoid.length
-              ? `<span class="t-hot">${num(kycCommsVoid.length)} KYC message${kycCommsVoid.length === 1 ? ' was' : 's were'} delivered to those chats.</span>`
+              ? `<span class="text-red-700">${num(kycCommsVoid.length)} KYC message${kycCommsVoid.length === 1 ? ' was' : 's were'} delivered to those chats.</span>`
               : 'No KYC message to those chats appears in the message log read here.')
           : 'The message log could not be read, so it is not known here how many of those people were messaged back.'}
       </div>
-      <button class="btn sm" id="cShowVoid">Show ${voided.length === 1 ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowVoid">Show ${voided.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#cShowVoid').addEventListener('click', () => focusVoided());
   }
@@ -1499,11 +1516,11 @@ SCREENS.compliance = async host => {
      the table under it is unreadable. When the view itself is the thing that did
      not load, the banner says the count is unknown — never that it is zero. */
   if (!gapKnown) {
-    const b = el('div', 'banner warm');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
       <div style="flex:1"><strong>How many documents have no archived file is not known on this page.</strong>
-      <span class="mono">The attention list</span> is the register of archive gaps and it could not be read (${esc(attnErr || 'unknown error')}).
+      <span class="font-label-numeric-sm">The attention list</span> is the register of archive gaps and it could not be read (${esc(attnErr || 'unknown error')}).
       This screen deliberately holds no second way of counting them, so there is nothing here to fall back on and nothing below claims a document is provable.</div>`;
     banners.appendChild(b);
   } else if (gapTotal) {
@@ -1513,11 +1530,11 @@ SCREENS.compliance = async host => {
        the older answer and is preferred. */
     const oldestAt = (attn && attn.length && attn[0].at)
       || (liveGaps.length ? liveGaps[liveGaps.length - 1].created_at : null);
-    const b = el('div', 'banner hot');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">folder_off</span>
       <div style="flex:1">
-        <strong>${num(gapTotal)} document${gapTotal === 1 ? '' : 's'} in <span class="mono">The ID documents</span> ${plural(gapTotal, 'has', 'have')} no archived file.</strong>
+        <strong>${num(gapTotal)} document${gapTotal === 1 ? '' : 's'} in <span class="font-label-numeric-sm">The ID documents</span> ${plural(gapTotal, 'has', 'have')} no archived file.</strong>
         No archived file was ever recorded for it and none was deleted, so nothing was removed on schedule —
         the file simply was never stored, and retention cannot be proven for a document whose file does not exist.
         This count is the attention list's own, which is also what the Overview panel and the sidebar badge show;
@@ -1525,13 +1542,13 @@ SCREENS.compliance = async host => {
         ${oldestAt ? `Oldest audited ${esc(ago(oldestAt))}.` : ''}
         The view excludes voided rows and rows audited before the archive step shipped (${esc(ARCHIVE_EPOCH_LABEL)}) — those documents are equally unprovable, and the register below labels them for what they are rather than folding them into this number.
         ${gapsOffPage
-          ? `<span class="t-warm">${num(gapsOffPage)} of them ${plural(gapsOffPage, 'is', 'are')} older than the ${num(ROW_LIMIT)} rows this page loads, so the table cannot show ${plural(gapsOffPage, 'it', 'them')}.</span>`
+          ? `<span class="text-amber-700">${num(gapsOffPage)} of them ${plural(gapsOffPage, 'is', 'are')} older than the ${num(ROW_LIMIT)} rows this page loads, so the table cannot show ${plural(gapsOffPage, 'it', 'them')}.</span>`
           : ''}
         ${oneTrail && liveGaps.length
           ? `Every one of them on this page belongs to the same customer: this is one submission trail failing repeatedly, not a gap spread across a book of customers.`
           : ''}
       </div>
-      ${liveGaps.length ? `<button class="btn sm" id="cShowFailed">Show ${plural(liveGaps.length, 'it', 'them')}</button>` : ''}`;
+      ${liveGaps.length ? `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowFailed">Show ${plural(liveGaps.length, 'it', 'them')}</button>` : ''}`;
     banners.appendChild(b);
     const showFailed = b.querySelector('#cShowFailed');
     if (showFailed) showFailed.addEventListener('click', () => focusRegister({ flag: 'gap' }));
@@ -1539,7 +1556,7 @@ SCREENS.compliance = async host => {
 
   if (docs) {
     if (overdueRows.length) {
-      const b = el('div', 'banner warm');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
       b.style.marginBottom = '12px';
       /* What the purge is actually doing is not inferable from these rows. It
          leaves a row unmarked both when it never ran and when it ran and could
@@ -1550,19 +1567,19 @@ SCREENS.compliance = async host => {
         The nightly purge selects exactly these documents and records a deletion only once the stored file is confirmed gone, so a document in this state is one it either never reached or could not verify.
         ${wfLine(purgeWf, 'NEXUS Retention Purge')}
         Deleting stored documents is NEXUS’s to do; nothing in this dashboard can.</div>
-        <button class="btn sm" id="cShowOverdue">Show ${overdueRows.length === 1 ? 'it' : 'them'}</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowOverdue">Show ${overdueRows.length === 1 ? 'it' : 'them'}</button>`;
       banners.appendChild(b);
       b.querySelector('#cShowOverdue').addEventListener('click', () => focusRegister({ flag: 'overdue' }));
     }
 
     if (noTermRows.length) {
-      const b = el('div', 'banner warm');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
       b.style.marginBottom = '12px';
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">event_busy</span>
         <div style="flex:1"><strong>${num(noTermRows.length)} stored file${noTermRows.length === 1 ? ' has' : 's have'} no retain_until date.</strong>
-        The purge selects on <span class="mono">retain_until</span>, and a null never satisfies that test — so ${plural(noTermRows.length, 'this document', 'these documents')} will be held indefinitely and no schedule will ever pick ${plural(noTermRows.length, 'it', 'them')} up.
+        The purge selects on <span class="font-label-numeric-sm">retain_until</span>, and a null never satisfies that test — so ${plural(noTermRows.length, 'this document', 'these documents')} will be held indefinitely and no schedule will ever pick ${plural(noTermRows.length, 'it', 'them')} up.
         Every path through the KYC auditor writes a retention term, so ${plural(noTermRows.length, 'this row was', 'these rows were')} not written by it.</div>
-        <button class="btn sm" id="cShowNoTerm">Show ${plural(noTermRows.length, 'it', 'them')}</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowNoTerm">Show ${plural(noTermRows.length, 'it', 'them')}</button>`;
       banners.appendChild(b);
       b.querySelector('#cShowNoTerm').addEventListener('click', () => focusRegister({ flag: 'no_term' }));
     }
@@ -1571,12 +1588,12 @@ SCREENS.compliance = async host => {
        decision rather than the paperwork around it: the auditor approved an
        identity document that had already lapsed on the day it read it. */
     if (acceptedExpired.length) {
-      const b = el('div', 'banner warm');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
       b.style.marginBottom = '12px';
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">event_busy</span>
         <div style="flex:1"><strong>${num(acceptedExpired.length)} approved document${acceptedExpired.length === 1 ? ' had' : 's had'} already expired when audited.</strong>
         The expiry date on the document predates the day it was checked, so ${acceptedExpired.length === 1 ? 'that identity was' : 'those identities were'} accepted on lapsed ID.</div>
-        <button class="btn sm" id="cShowExpired">Show ${acceptedExpired.length === 1 ? 'it' : 'them'}</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowExpired">Show ${acceptedExpired.length === 1 ? 'it' : 'them'}</button>`;
       banners.appendChild(b);
       b.querySelector('#cShowExpired').addEventListener('click', () =>
         focusRegister({ flag: 'expired', verdict: 'APPROVED' }));
@@ -1611,7 +1628,7 @@ SCREENS.compliance = async host => {
     escCases.forEach(c => { escReg[c.register] = (escReg[c.register] || 0) + 1; });
     const escRegKeys = CASE_ORDER.filter(k => escReg[k]);
     const escUnknown = escReg.unknown || 0;
-    const b = el('div', 'banner warm');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">block</span>
       <div style="flex:1">
@@ -1619,22 +1636,22 @@ SCREENS.compliance = async host => {
         Newest ${esc(ago(first.logged_at))} —
         ${n.name
           ? esc(maskText(n.name))
-          : `<span class="mono t-muted">${esc(n.note)}</span>`}${
-          n.phone && n.phone !== n.name ? ` <span class="mono">${esc(maskText(n.phone))}</span>` : ''}${
-          n.phone ? '' : ' <span class="t-muted">(no phone stored for this contact)</span>'}${
+          : `<span class="font-label-numeric-sm text-outline">${esc(n.note)}</span>`}${
+          n.phone && n.phone !== n.name ? ` <span class="font-label-numeric-sm">${esc(maskText(n.phone))}</span>` : ''}${
+          n.phone ? '' : ' <span class="text-outline">(no phone stored for this contact)</span>'}${
           /* A KYC escalation IS an identity record. Where the customer record
              and the name on the case disagree, both are shown: replacing one
              with the other silently is a provenance claim this screen cannot
              support, and it is the name on the case that a regulator will have
              been handed. */
           n.recorded && n.recorded !== n.name
-            ? ` <span class="t-warm">(recorded on this KYC case as ${esc(n.recorded)})</span>`
+            ? ` <span class="text-amber-700">(recorded on this KYC case as ${esc(n.recorded)})</span>`
             : ''}.
         ${esc(first.summary || 'The retry loop gave up.')}
         ${escalations.length > 1 ? `The other ${num(escalations.length - 1)} ${escalations.length - 1 === 1 ? 'is' : 'are'} in the activity trail at the foot of this screen.` : ''}
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
-          <span class="t-muted">Where ${plural(escalations.length, 'this case sits', 'these cases sit')} in the register:</span>
-          ${escRegKeys.map(k => `<span style="display:inline-flex;gap:6px;align-items:center">${casePill(k)}<span class="num">${num(escReg[k])}</span></span>`).join('')}
+          <span class="text-outline">Where ${plural(escalations.length, 'this case sits', 'these cases sit')} in the register:</span>
+          ${escRegKeys.map(k => `<span style="display:inline-flex;gap:6px;align-items:center">${casePill(k)}<span class="font-label-numeric-sm">${num(escReg[k])}</span></span>`).join('')}
         </div>
         ${escUnknown
           /* Two different reasons land on `unknown` and they may not share a
@@ -1650,9 +1667,9 @@ SCREENS.compliance = async host => {
           : ''}
         ${voidFilterKnown
           ? ''
-          : '<span class="t-warm">The register could not be read, so escalations logged against voided rows could not be excluded from this count.</span>'}
+          : '<span class="text-amber-700">The register could not be read, so escalations logged against voided rows could not be excluded from this count.</span>'}
       </div>
-      <button class="btn sm" id="cShowEsc">${inRegister ? 'Show the document' : 'Show in the trail'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cShowEsc">${inRegister ? 'Show the document' : 'Show in the trail'}</button>`;
     banners.appendChild(b);
     b.querySelector('#cShowEsc').addEventListener('click', () => {
       /* Searched on the register row's own address, not on whatever key
@@ -1684,37 +1701,37 @@ SCREENS.compliance = async host => {
      both sides are printed so the finding can be carried off this screen. */
   const caseLedger = () => {
     if (auditErr) {
-      return `<div class="ds-cell-sub t-warm" style="white-space:normal;margin-top:12px">The audit log could not be read (${esc(auditErr)}), so no case can be listed here. That is not a claim that there are none.</div>`;
+      return `<div class="font-body-sm text-body-sm text-amber-700" style="white-space:normal;margin-top:12px">The audit log could not be read (${esc(auditErr)}), so no case can be listed here. That is not a claim that there are none.</div>`;
     }
     if (!reachedVerdict.length) return '';
     const rows = reachedVerdict.map(a => {
       const c = caseFor(a);
       const n = nameFor(a.lead_email || a.lead_name, a.lead_name);
-      return `<div class="list-item" style="cursor:default;align-items:flex-start">
+      return `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default;align-items:flex-start">
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="font-weight:500">${n.name ? esc(maskText(n.name)) : `<span class="mono t-muted">${esc(n.note)}</span>`}</span>
-            ${n.recorded && n.recorded !== n.name ? `<span class="t-warm">recorded on the case as ${esc(n.recorded)}</span>` : ''}
-            <span class="t-muted">audited</span> ${casePill(c.audit)}
-            <span class="t-muted">register</span> ${casePill(c.register)}
+            <span style="font-weight:500">${n.name ? esc(maskText(n.name)) : `<span class="font-label-numeric-sm text-outline">${esc(n.note)}</span>`}</span>
+            ${n.recorded && n.recorded !== n.name ? `<span class="text-amber-700">recorded on the case as ${esc(n.recorded)}</span>` : ''}
+            <span class="text-outline">audited</span> ${casePill(c.audit)}
+            <span class="text-outline">register</span> ${casePill(c.register)}
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(dealerText(a.summary).slice(0, 240) || 'No summary on the run.')}</div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(c.note)}</div>
-          <div class="ds-cell-sub mono" style="word-break:break-all">The activity log ${esc(a.id ?? 'no id')}${
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(dealerText(a.summary).slice(0, 240) || 'No summary on the run.')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(c.note)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="word-break:break-all">The activity log ${esc(a.id ?? 'no id')}${
             c.rows.length ? ` · the ID documents ${c.rows.map(r => esc(String(r.id ?? ''))).join(', ')}` : ''}</div>
         </div>
-        <div class="ds-cell-sub">${esc(ago(a.logged_at))}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(a.logged_at))}</div>
       </div>`;
     }).join('');
-    return `<div class="label-caps" style="margin-top:24px">Every case the auditor reached a document on</div>
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">One line per auditor run that got as far as reading a document, with what the auditor did and what the register holds of it. Those are two different questions and they are answered separately: a case can be <strong>${esc(CASE_STATE.escalated.label)}</strong> on the left and <strong>${esc(CASE_STATE.unknown.label)}</strong> on the right, and that combination is a finding rather than a contradiction. Runs that stopped before reading a document are not listed — nothing was due in the register for them — and they are in the activity trail at the foot of this screen.${auditCapNote}
+    return `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-top:24px">Every case the auditor reached a document on</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">One line per auditor run that got as far as reading a document, with what the auditor did and what the register holds of it. Those are two different questions and they are answered separately: a case can be <strong>${esc(CASE_STATE.escalated.label)}</strong> on the left and <strong>${esc(CASE_STATE.unknown.label)}</strong> on the right, and that combination is a finding rather than a contradiction. Runs that stopped before reading a document are not listed — nothing was due in the register for them — and they are in the activity trail at the foot of this screen.${auditCapNote}
         ${unrecorded.length
           ? ` <strong>${num(unrecorded.length)} of the ${num(reachedVerdict.length)} listed here ${plural(unrecorded.length, 'has', 'have')} a register position this page cannot establish.</strong> That is unknown, not absent, and the line for each says how far the evidence goes.`
           : ` Every case listed here has a register position this page could establish from a row it actually read.`}</div>
       <div style="margin-top:8px">${rows}</div>`;
   };
 
-  const retCard = el('div', 'card'); body.appendChild(retCard);
+  const retCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); body.appendChild(retCard);
   if (!docs) {
     retCard.innerHTML = stateError('the retention breakdown', docsErr);
   } else if (!live.length) {
@@ -1723,13 +1740,13 @@ SCREENS.compliance = async host => {
        that contains verdicts: what is empty is the register, and the sentence
        under it says what the audit log holds instead. The KPI strip and the
        register's own empty state point here rather than restating any of it. */
-    retCard.innerHTML = `<div class="label-caps">Retention position</div>${stateEmpty(
+    retCard.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Retention position</div>${stateEmpty(
       recon.reached ? 'Audited, and not in the register' : 'Nothing in the register to retain',
       voided.length
         ? `The rows on file were voided as non-submissions, so there is no compliance retention position to report. ${recon.text}`
         : recon.text,
       recon.reached ? 'gpp_maybe' : 'shield')}
-      <div class="ds-cell-sub" style="white-space:normal;margin-top:12px">
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:12px">
         The two workflows that fill and empty this register are reported here from their own record rather than inferred from the absence of rows.
         <div style="margin-top:6px">${wfLine(kycWf, 'the KYC auditor')}</div>
         <div style="margin-top:6px">${wfLine(purgeWf, 'NEXUS Retention Purge')}</div>
@@ -1755,12 +1772,12 @@ SCREENS.compliance = async host => {
        the view's whole-table count; this is only what the bar is drawn over. */
     const gaps = liveGaps.length;
 
-    const bar = `<div class="stackbar">${present.map(k => `<i style="width:${(counts[k] / total * 100).toFixed(1)}%;background:${colour[k]}"></i>`).join('')}</div>
+    const bar = `<div class="flex h-2.5 rounded-full overflow-hidden bg-surface-container">${present.map(k => `<i style="width:${(counts[k] / total * 100).toFixed(1)}%;background:${colour[k]}"></i>`).join('')}</div>
       <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
         ${present.map(k => `<div style="display:flex;align-items:center;gap:8px">
           <span style="width:8px;height:8px;border-radius:50%;background:${colour[k]}"></span>
           <span style="font-weight:500">${esc(RETENTION[k].label)}</span>
-          <span class="t-muted num">${num(counts[k])}</span></div>`).join('')}
+          <span class="font-label-numeric-sm text-outline">${num(counts[k])}</span></div>`).join('')}
       </div>`;
 
     /* The caption carries the honesty, not the bar. A stacked bar is read as a
@@ -1768,25 +1785,25 @@ SCREENS.compliance = async host => {
        what it is before a reviewer can take a share off it. */
     const unprovable = (counts.gap || 0) + (counts.pre_archive || 0) + (counts.unfiled || 0)
       + (counts.gap_unknown || 0) + (counts.undated || 0);
-    const barNote = `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+    const barNote = `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">
         ${unprovable
           ? `${num(total - unprovable)} of ${num(total)} ${plural(total, 'document', 'documents')} on this page ${plural(total - unprovable, 'has', 'have')} a file that can still be accounted for${
               counts.purged ? ` (${num(counts.purged)} of those by having been purged on schedule, which is the policy working)` : ''}; ${num(unprovable)} ${plural(unprovable, 'has', 'have')} no stored file at all.`
           : `Every one of the ${num(total)} ${plural(total, 'document', 'documents')} on this page is either archived or purged on schedule.`}
         ${gaps
-          ? `${num(gaps)} of ${plural(unprovable, 'it', 'them')} ${plural(gaps, 'is the row', 'are the rows')} <span class="mono">The attention list</span> files as an archive gap.`
+          ? `${num(gaps)} of ${plural(unprovable, 'it', 'them')} ${plural(gaps, 'is the row', 'are the rows')} <span class="font-label-numeric-sm">The attention list</span> files as an archive gap.`
           : gapKnown
             ? 'The database files none of them as an archive gap.'
-            : '<span class="t-warm">Which of them the database files as an archive gap could not be checked on this page.</span>'}
+            : '<span class="text-amber-700">Which of them the database files as an archive gap could not be checked on this page.</span>'}
         ${num(withRetain)} of ${num(total)} ${plural(total, 'row', 'rows')} ${plural(withRetain, 'carries', 'carry')} a retain_until date${
           counts.no_term ? `, and the ${num(counts.no_term)} that ${plural(counts.no_term, 'does', 'do')} not can never be selected by the purge` : ''}.
         ${counts.pre_archive ? `Rows audited before ${esc(ARCHIVE_EPOCH_LABEL)} predate the archive step and are labelled Pre-archive; the view excludes them from the gap, and they are equally unprovable.` : ''}
-        ${oneTrail ? `<span class="t-warm">This bar is ${num(total)} ${plural(total, 'row', 'rows')} from one customer. The proportions are shapes, not shares.</span>` : ''}
+        ${oneTrail ? `<span class="text-amber-700">This bar is ${num(total)} ${plural(total, 'row', 'rows')} from one customer. The proportions are shapes, not shares.</span>` : ''}
         ${voided.length ? `${num(voided.length)} voided ${plural(voided.length, 'row is', 'rows are')} not part of this breakdown; their files are accounted for in the voided section below.` : ''}
       </div>`;
 
     if (!oneTrail) {
-      retCard.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Retention position · ${num(total)} genuine ${plural(total, 'document', 'documents')}${
+      retCard.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">Retention position · ${num(total)} genuine ${plural(total, 'document', 'documents')}${
         liveContacts.size ? ` from ${num(liveContacts.size)} ${plural(liveContacts.size, 'contact', 'contacts')}` : ''}</div>
         ${bar}${barNote}
         ${caseLedger()}`;
@@ -1809,31 +1826,31 @@ SCREENS.compliance = async host => {
         (new Date(x.created_at) - new Date(y.created_at)));
 
       retCard.innerHTML = `
-        <div class="label-caps">This register is one customer's document trail</div>
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">This register is one customer's document trail</div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
           <span style="font-size:18px;font-weight:600">${w0.name ? esc(maskText(w0.name)) : 'Unidentified contact'}</span>
           ${w0.phone
-            ? `<span class="mono">${esc(maskText(w0.phone))}</span>`
-            : '<span class="t-warm">No phone stored for this contact</span>'}
-          ${w0.chip ? `<span class="chip">${esc(w0.chip)}</span>` : `<span class="chip">${esc(w0.label)}</span>`}
+            ? `<span class="font-label-numeric-sm">${esc(maskText(w0.phone))}</span>`
+            : '<span class="text-amber-700">No phone stored for this contact</span>'}
+          ${w0.chip ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(w0.chip)}</span>` : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(w0.label)}</span>`}
         </div>
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc(w0.line)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:4px">${esc(w0.line)}</div>
 
         <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:18px;align-items:center">
-          <div><span class="num" style="font-size:22px;font-weight:600">${num(total)}</span>
-            <span class="t-muted"> ${esc(plural(total, 'document on file', 'documents on file'))}</span></div>
+          <div><span class="font-label-numeric-sm" style="font-size:22px;font-weight:600">${num(total)}</span>
+            <span class="text-outline"> ${esc(plural(total, 'document on file', 'documents on file'))}</span></div>
           ${vCounts.map(([v, c]) => `<div style="display:flex;gap:8px;align-items:center">
-            ${pill(VERDICTS[v].label, VERDICTS[v].tone, { verbatim: false })}<span class="num" style="font-weight:600">${num(c)}</span></div>`).join('')}
-          ${verdictOther ? `<div class="t-warm">${num(verdictOther)} ${plural(verdictOther, 'row carries', 'rows carry')} a verdict this screen has no wording for</div>` : ''}
+            ${pill(VERDICTS[v].label, VERDICTS[v].tone, { verbatim: false })}<span class="font-label-numeric-sm" style="font-weight:600">${num(c)}</span></div>`).join('')}
+          ${verdictOther ? `<div class="text-amber-700">${num(verdictOther)} ${plural(verdictOther, 'row carries', 'rows carry')} a verdict this screen has no wording for</div>` : ''}
         </div>
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:10px">
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:10px">
           Those are counts of one person's attempts, and they are deliberately not divided by one another.
           ${num(total)} ${plural(total, 'upload', 'uploads')} by one customer cannot produce an approval rate,
           an average confidence or a trend: a percentage taken across them would read as a fact about this
           dealership's compliance, and there is nobody else in the register to compare him with.
           Every figure on this screen is a count for that reason.
         </div>
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:6px">
           ${types.length
             ? `${num(types.length)} distinct document ${plural(types.length, 'type', 'types')} across ${num(total)} ${plural(total, 'attempt', 'attempts')}${
                 untyped ? `, plus ${num(untyped)} ${plural(untyped, 'row that records', 'rows that record')} no type at all` : ''} — ${types.map(esc).join(', ')}.`
@@ -1844,20 +1861,20 @@ SCREENS.compliance = async host => {
         <div style="margin-top:20px">${bar}</div>
         ${barNote}
 
-        <div class="label-caps" style="margin-top:24px">Every attempt, in order</div>
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">One line per row in the register, ordered by attempt number. Open any of them for the full record.</div>
-        <div class="timeline" style="margin-top:12px">${trail.map((x, i) => {
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-top:24px">Every attempt, in order</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">One line per row in the register, ordered by attempt number. Open any of them for the full record.</div>
+        <div class="flex flex-col gap-space-sm" style="margin-top:12px">${trail.map((x, i) => {
           const xa = n0(x.attempt_number);
           const conf = n0(x.confidence_score);
-          return `<div class="tl-item" role="button" tabindex="0" data-trail="${i}" style="cursor:pointer">
-            <span class="tl-dot" style="background:var(--${verdictTone(x)})"></span>
-            <div class="tl-body">
+          return `<div class="flex gap-3" role="button" tabindex="0" data-trail="${i}" style="cursor:pointer">
+            <span class="w-2 h-2 rounded-full bg-outline mt-1.5 shrink-0" style="background:var(--${verdictTone(x)})"></span>
+            <div class="flex-1 min-w-0">
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <span style="font-weight:500">Attempt ${xa == null ? '—' : num(xa)}</span>
                 ${verdictPill(x)}
                 ${retentionPill(retentionOf(x))}
               </div>
-              <div class="tl-meta">${x.document_type ? esc(x.document_type) : 'No document type recorded'}
+              <div class="font-label-numeric-sm text-[11px] text-outline">${x.document_type ? esc(x.document_type) : 'No document type recorded'}
                 · audited ${esc(ago(x.created_at))}${conf == null ? '' : ` · ${num(conf)}% confidence`}</div>
             </div></div>`;
         }).join('')}</div>
@@ -1876,10 +1893,10 @@ SCREENS.compliance = async host => {
   }
 
   /* ── The register ──────────────────────────────────────────────────────── */
-  const queue = el('div', 'card flush'); queue.style.marginTop = '16px'; body.appendChild(queue);
+  const queue = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); queue.style.marginTop = '16px'; body.appendChild(queue);
 
   if (!docs) {
-    queue.innerHTML = `<div class="card-head"><div><div class="card-title">KYC register</div></div></div>
+    queue.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">KYC register</div></div></div>
       ${stateError('the KYC register', docsErr)}`;
   } else {
     const low = s => String(s || '').toLowerCase();
@@ -1907,19 +1924,19 @@ SCREENS.compliance = async host => {
        nothing would let a capped page read as the complete book. */
     const capped = docs.length >= ROW_LIMIT;
 
-    queue.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">KYC register · genuine submissions</div>
-        <div class="card-sub">Every audited document that is a real submission, with its extracted identity fields, attempt counter and retention state. Click a row for the full record.${
+    queue.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">KYC register · genuine submissions</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every audited document that is a real submission, with its extracted identity fields, attempt counter and retention state. Click a row for the full record.${
           oneTrail ? ' Every row in it belongs to the same customer, so the columns read as one person\u2019s attempts rather than as a comparison between people.' : ''}${
-          voided.length ? ` <span class="t-warm">${num(voided.length)} voided row${voided.length === 1 ? ' is' : 's are'} excluded from this table and every count on it — they are listed separately below.</span>` : ''}${
-          capped ? ` <span class="t-warm">The underlying read is capped at the ${num(ROW_LIMIT)} most recent rows, so older documents are not on this page.</span>` : ''}${
-          gapKnown ? '' : ' <span class="t-warm">The attention list did not load, so the archive-gap finding is not offered as a filter here — an empty result from it would read as an all-clear.</span>'}</div>
+          voided.length ? ` <span class="text-amber-700">${num(voided.length)} voided row${voided.length === 1 ? ' is' : 's are'} excluded from this table and every count on it — they are listed separately below.</span>` : ''}${
+          capped ? ` <span class="text-amber-700">The underlying read is capped at the ${num(ROW_LIMIT)} most recent rows, so older documents are not on this page.</span>` : ''}${
+          gapKnown ? '' : ' <span class="text-amber-700">The attention list did not load, so the archive-gap finding is not offered as a filter here — an empty result from it would read as an all-clear.</span>'}</div>
       </div></div>
-      <div class="toolbar">
-        <div class="seg" id="cSegVerdict" role="group" aria-label="Filter by verdict">
-          ${segs.map(([k, c], i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="seg inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container" id="cSegVerdict" role="group" aria-label="Filter by verdict">
+          ${segs.map(([k, c], i) => `<button data-v="${esc(k)}" class="px-3 py-1 rounded-md font-body-sm text-body-sm font-semibold text-on-surface-variant${i === 0 ? ' on' : ''}">${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
         </div>
-        <div class="grow"><input type="search" id="cq" aria-label="Search KYC documents"
+        <div class="flex-1 min-w-[160px]"><input type="search" id="cq" aria-label="Search KYC documents"
           placeholder="Search name, email, phone, document type or chat id" /></div>
         <select id="cRet" aria-label="Filter by retention state" style="width:auto">
           <option value="ALL">All retention states</option>
@@ -1931,18 +1948,18 @@ SCREENS.compliance = async host => {
           ${FLAG_KEYS.map(k =>
             `<option value="${esc(k)}">${esc(FLAGS[k].label)} · ${num(flagCounts[k])}</option>`).join('')}
         </select>
-        <div class="t-muted num" id="cCount"></div>
+        <div class="font-label-numeric-sm text-outline" id="cCount"></div>
       </div>
       <div id="cTable"></div>`;
 
     const cols = [
       { label: 'Who', strong: true, render: d => whoCell(whoOf(d)) },
-      { label: 'Document', render: d => `${d.document_type ? esc(d.document_type) : '<span class="t-muted">No document type recorded</span>'}
-          ${d.chat_id ? `<div class="ds-cell-sub mono">${esc(d.chat_id)}</div>` : ''}` },
+      { label: 'Document', render: d => `${d.document_type ? esc(d.document_type) : '<span class="text-outline">No document type recorded</span>'}
+          ${d.chat_id ? `<div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm">${esc(d.chat_id)}</div>` : ''}` },
       { label: 'Verdict', render: d => `${verdictPill(d)}
-          ${d.reviewed_by ? `<div class="ds-cell-sub">${reviewerCell(d)}${d.reviewed_at ? ' · ' + esc(ago(d.reviewed_at)) : ''}</div>` : ''}` },
+          ${d.reviewed_by ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${reviewerCell(d)}${d.reviewed_at ? ' · ' + esc(ago(d.reviewed_at)) : ''}</div>` : ''}` },
       { label: 'Extracted identity', render: d => {
-          if (!d.full_name && !d.date_of_birth && !d.expiry_date) return '<span class="t-muted">Nothing extracted</span>';
+          if (!d.full_name && !d.date_of_birth && !d.expiry_date) return '<span class="text-outline">Nothing extracted</span>';
           /* Expired when audited is red; expired since is amber. Painting both
              the same colour makes a paperwork chore look like a control failure
              and buries the rows that are one. */
@@ -1954,11 +1971,11 @@ SCREENS.compliance = async host => {
             : unreadable ? ' (not a date this screen can read, so whether it has expired is unknown)' : '';
           const cls = atAudit ? 't-hot' : lapsed || unreadable ? 't-warm' : '';
           return `<div>${esc(maskText(d.full_name || '—'))}</div>
-            <div class="ds-cell-sub">DOB ${d.date_of_birth ? esc(d.date_of_birth) : '—'} · expires
+            <div class="font-body-sm text-body-sm text-on-surface-variant">DOB ${d.date_of_birth ? esc(d.date_of_birth) : '—'} · expires
               ${d.expiry_date ? `<span class="${cls}">${esc(d.expiry_date)}${note}</span>` : '—'}</div>`;
         } },
       { label: 'Checks', render: d => {
-          const bits = [d.tampering ? pill('Tampering', 'hot', { verbatim: false }) : '<span class="t-muted">No tampering</span>'];
+          const bits = [d.tampering ? pill('Tampering', 'hot', { verbatim: false }) : '<span class="text-outline">No tampering</span>'];
           if (d.is_valid === false) bits.push(pill('Not valid', 'hot', { verbatim: false }));
           else if (d.is_valid === true) bits.push(pill('Valid', 'ok', { verbatim: false }));
           if (expiredAtAudit(d)) bits.push(pill('Expired when audited', 'hot', { verbatim: false }));
@@ -1967,16 +1984,16 @@ SCREENS.compliance = async host => {
         } },
       { label: 'Confidence', align: 'r', render: d => {
           const c = n0(d.confidence_score);
-          if (c == null) return '<span class="t-muted">—</span>';
+          if (c == null) return '<span class="text-outline">—</span>';
           const w = Math.max(0, Math.min(100, c));
-          return `<div>${num(c)}%</div><div class="bar" style="width:56px;margin-left:auto"><i style="width:${w}%;background:var(--${c > 70 ? 'ok' : c > 40 ? 'warm' : 'hot'})"></i></div>`;
+          return `<div>${num(c)}%</div><div class="bar h-1 rounded bg-surface-container overflow-hidden" style="width:56px;margin-left:auto"><i style="width:${w}%;background:var(--${c > 70 ? 'ok' : c > 40 ? 'warm' : 'hot'})"></i></div>`;
         } },
       { label: 'Attempt', align: 'r', render: d => {
           const a = n0(d.attempt_number), m = n0(d.max_attempts);
-          if (a == null) return '<span class="t-muted">—</span>';
+          if (a == null) return '<span class="text-outline">—</span>';
           const last = m != null && a >= m;
           return `<span class="${last ? 't-hot' : ''}">${num(a)}${m != null ? ` of ${num(m)}` : ''}</span>
-            ${last ? '<div class="ds-cell-sub t-hot">Final attempt</div>' : ''}`;
+            ${last ? '<div class="font-body-sm text-body-sm text-red-700">Final attempt</div>' : ''}`;
         } },
       /* The pill and the sub-line are one verdict, not two readings. They used
          to disagree by construction: a stored file whose retain_until had
@@ -1992,10 +2009,10 @@ SCREENS.compliance = async host => {
               : 'no retain_until set';
           return `${retentionPill(r)}<div class="ds-cell-sub ${RETENTION[r.key].tone === 'ok' || RETENTION[r.key].tone === 'cold' ? '' : 't-warm'}">${sub}</div>`;
         } },
-      { label: 'Submitted', render: d => `<span class="t-muted">${esc(ago(d.created_at))}</span>` },
+      { label: 'Submitted', render: d => `<span class="text-outline">${esc(ago(d.created_at))}</span>` },
       { label: 'Decision', align: 'r', render: d => {
           const w = whoOf(d);
-          const btn = (label, title) => `<button class="btn sm" disabled
+          const btn = (label, title) => `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" disabled
             aria-label="${esc(label)} — ${esc(whoLabel(w))}" title="${esc(title)}">${esc(label)}</button>`;
           return `<div style="display:flex;gap:6px;justify-content:flex-end">
             ${btn('Approve', NO_DECISION_HOOK)}${btn('Reject', NO_DECISION_HOOK)}${btn('Re-ask', NO_REASK_HOOK)}</div>`;
@@ -2096,10 +2113,10 @@ SCREENS.compliance = async host => {
      would imply there are voided rows behind the error, which is the one thing
      the failure means we do not know. */
   if (docs && voided.length) {
-    const voidCard = el('div', 'card flush'); voidCard.style.marginTop = '16px'; body.appendChild(voidCard);
-    const voidHead = `<div class="card-head"><div>
-        <div class="card-title">Voided — not KYC submissions</div>
-        <div class="card-sub">Rows the backend marked with <span class="mono">void_reason</span>. They are evidence of a routing fault, not compliance decisions, and nothing above counts them.</div>
+    const voidCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); voidCard.style.marginTop = '16px'; body.appendChild(voidCard);
+    const voidHead = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Voided — not KYC submissions</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Rows the backend marked with <span class="font-label-numeric-sm">void_reason</span>. They are evidence of a routing fault, not compliance decisions, and nothing above counts them.</div>
       </div></div>`;
 
     const reasons = [...new Set(voided.map(v => String(v.void_reason || '').trim()).filter(Boolean))];
@@ -2111,15 +2128,15 @@ SCREENS.compliance = async host => {
       { label: 'Who this actually was', strong: true, render: d => whoCell(whoOf(d)) },
       { label: 'What the image was', render: d => {
           const t = String(d.document_type || '').trim();
-          return `${t ? esc(t) : '<span class="t-muted">The vision model returned no description</span>'}
-            <div class="ds-cell-sub" style="white-space:normal">Described by the vision model, not read off a document.</div>`;
+          return `${t ? esc(t) : '<span class="text-outline">The vision model returned no description</span>'}
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Described by the vision model, not read off a document.</div>`;
         } },
       { label: 'Machine output', render: d => {
           const c = n0(d.confidence_score);
           /* A chip, never a verdict pill. An APPROVED pill here is exactly the
              thing that made a greeting card look like a cleared identity check. */
-          return `<span class="chip">${d.verdict ? esc(String(d.verdict)) : 'no verdict'} · void</span>
-            <div class="ds-cell-sub" style="white-space:normal">Auto-generated on an image nobody requested${
+          return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${d.verdict ? esc(String(d.verdict)) : 'no verdict'} · void</span>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Auto-generated on an image nobody requested${
               c == null ? '' : ` · confidence ${num(c)}%`}. Not a decision.</div>`;
         } },
       /* Counted per chat, never per row. communication_logs carries no document
@@ -2128,44 +2145,44 @@ SCREENS.compliance = async host => {
          this screen exists to stop making. */
       { label: 'Sent to this chat', render: d => {
           const cs = commsFor(d);
-          if (cs == null) return '<span class="t-muted">Message log could not be read</span>';
-          if (!cs.length) return '<span class="t-muted">No KYC message to this chat in the log</span>';
+          if (cs == null) return '<span class="text-outline">Message log could not be read</span>';
+          if (!cs.length) return '<span class="text-outline">No KYC message to this chat in the log</span>';
           const ap = cs.filter(c => commKind(c.message) === 'APPROVED').length;
           const rj = cs.filter(c => commKind(c.message) === 'REJECTED').length;
           const other = cs.length - ap - rj;
           const bits = [];
-          if (ap) bits.push(`<span class="t-hot">${num(ap)} × [KYC-APPROVED]</span>`);
-          if (rj) bits.push(`<span class="t-warm">${num(rj)} × [KYC-REJECT]</span>`);
-          if (other) bits.push(`<span class="t-muted">${num(other)} other KYC message${other === 1 ? '' : 's'}</span>`);
+          if (ap) bits.push(`<span class="text-red-700">${num(ap)} × [KYC-APPROVED]</span>`);
+          if (rj) bits.push(`<span class="text-amber-700">${num(rj)} × [KYC-REJECT]</span>`);
+          if (other) bits.push(`<span class="text-outline">${num(other)} other KYC message${other === 1 ? '' : 's'}</span>`);
           return `<div style="display:flex;gap:8px;flex-wrap:wrap">${bits.join('')}</div>
-            <div class="ds-cell-sub" style="white-space:normal">Across the whole chat, not matched to this one image · newest ${esc(ago(cs[0].created_at))}</div>`;
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Across the whole chat, not matched to this one image · newest ${esc(ago(cs[0].created_at))}</div>`;
         } },
       { label: 'Evidence', render: d => {
           const r = retentionOf(d);
-          return `${retentionPill(r)}<div class="ds-cell-sub">${d.purged_at
+          return `${retentionPill(r)}<div class="font-body-sm text-body-sm text-on-surface-variant">${d.purged_at
             ? `purged ${esc(ago(d.purged_at))}`
             : d.storage_path ? 'image still in the private bucket' : 'no file stored'}</div>`;
         } },
-      { label: 'Voided', render: d => `<span class="t-muted">${esc(ago(d.voided_at))}</span>
-          <div class="ds-cell-sub">audited ${esc(ago(d.created_at))}</div>` },
+      { label: 'Voided', render: d => `<span class="text-outline">${esc(ago(d.voided_at))}</span>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">audited ${esc(ago(d.created_at))}</div>` },
     ];
 
     voidCard.innerHTML = `${voidHead}
       <div style="padding:14px 20px 0">
-        <div class="banner hot">
+        <div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm">
           <span class="material-symbols-outlined" style="font-size:20px">policy</span>
           <div style="flex:1">
             <strong>${num(voided.length)} row${voided.length === 1 ? '' : 's'}${chats ? ` across ${num(chats)} WhatsApp chat${chats === 1 ? '' : 's'}` : ''}.</strong>
             No Approve, Reject or Re-ask control appears in this table on purpose: nothing was submitted, so there is no decision to record and nobody is waiting for one.
             ${withLead
-              ? `<span class="t-warm">${num(withLead)} of them ${withLead === 1 ? 'does' : 'do'} resolve to a lead on file — read ${withLead === 1 ? 'that row' : 'those rows'} carefully before assuming the void was correct.</span>`
+              ? `<span class="text-amber-700">${num(withLead)} of them ${withLead === 1 ? 'does' : 'do'} resolve to a lead on file — read ${withLead === 1 ? 'that row' : 'those rows'} carefully before assuming the void was correct.</span>`
               : leadsErr
-                ? '<span class="t-warm">Your leads could not be read, so whether any of these resolves to a lead on file is not known on this page — the absence of a match here is not evidence there is none.</span>'
+                ? '<span class="text-amber-700">Your leads could not be read, so whether any of these resolves to a lead on file is not known on this page — the absence of a match here is not evidence there is none.</span>'
                 : 'None of them resolves to a lead on file.'}
           </div>
         </div>
-        ${reasons.map(r => `<div class="quote" style="margin-top:12px">${esc(r)}</div>`).join('')}
-        <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+        ${reasons.map(r => `<div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:12px">${esc(r)}</div>`).join('')}
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">
           ${comms
             ? (kycCommsVoid.length
                 ? `${num(kycCommsVoid.length)} customer-facing KYC message${kycCommsVoid.length === 1 ? ' was' : 's were'} delivered to these chats and cannot be recalled.`
@@ -2206,26 +2223,26 @@ SCREENS.compliance = async host => {
 
     const cs = commsFor(d);
     const commsHtml = cs == null
-      ? `<div class="ds-cell-sub" style="white-space:normal">The message log could not be read (${esc(commsErr || 'unknown error')}), so what this contact was told cannot be shown here.</div>`
+      ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">The message log could not be read (${esc(commsErr || 'unknown error')}), so what this contact was told cannot be shown here.</div>`
       : !cs.length
-        ? `<div class="ds-cell-sub">No KYC message to this contact appears in the ${num(COMM_LIMIT)} most recent message-log rows.</div>`
+        ? `<div class="font-body-sm text-body-sm text-on-surface-variant">No KYC message to this contact appears in the ${num(COMM_LIMIT)} most recent message-log rows.</div>`
         /* Every KYC message to this contact, not the ones belonging to this row:
            communication_logs has no document id to join on. Said plainly rather
            than implied by a suspiciously long list. */
-        : `<div class="ds-cell-sub" style="white-space:normal">Every KYC message logged to this contact. The message log carries no document id, so these are not matched to this individual upload.</div>
-           <div class="thread" style="margin-top:8px">${cs.map(c =>
-             `<div class="bubble out"><div>${esc(String(c.message || '').slice(0, 400))}</div><div class="bubble-meta">${esc(clock(c.created_at))} · ${esc(ago(c.created_at))}</div></div>`).join('')}</div>`;
+        : `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Every KYC message logged to this contact. The message log carries no document id, so these are not matched to this individual upload.</div>
+           <div class="flex flex-col gap-3 p-space-md" style="margin-top:8px">${cs.map(c =>
+             `<div class="max-w-[78%] self-end px-3.5 py-2.5 rounded-xl bg-primary-container/10 border border-outline-variant/40 font-body-sm text-body-sm whitespace-pre-wrap break-words"><div>${esc(String(c.message || '').slice(0, 400))}</div><div class="font-label-numeric-sm text-[11px] text-outline mt-1.5 flex gap-2">${esc(clock(c.created_at))} · ${esc(ago(c.created_at))}</div></div>`).join('')}</div>`;
 
     /* Who-section. It is the first thing in the drawer because every other fact
        below is only meaningful once you know whether there is a person with a
        file behind this row. */
-    const whoHtml = `<div class="section">
-        <div class="label-caps">Who this is</div>
+    const whoHtml = `<div class="mb-space-md">
+        <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Who this is</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-          ${w.name ? `<span style="font-weight:500">${esc(maskText(w.name))}</span>` : '<span class="t-muted">No name on record</span>'}
-          <span class="chip">${esc(w.label)}</span>
+          ${w.name ? `<span style="font-weight:500">${esc(maskText(w.name))}</span>` : '<span class="text-outline">No name on record</span>'}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(w.label)}</span>
         </div>
-        <dl class="kv" style="margin-top:12px">
+        <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
           <dt>Lead record</dt><dd>${w.kind === 'lead'
             /* A matched lead does not imply a usable address. Lead 34's `email`
                column holds `+971547484167@whatsapp.lead` and lead 35's holds the
@@ -2235,88 +2252,88 @@ SCREENS.compliance = async host => {
                is. */
             ? (w.leadAddress
                 ? (w.leadAddressIsEmail
-                    ? `${esc(w.leadAddress)} <span class="t-ok">· matched in leads</span>`
-                    : `<span class="t-ok">Matched in leads.</span> <span class="t-warm">The lead row's address column holds <span class="mono">${esc(w.leadAddress)}</span>, a routing key rather than somewhere this customer can be written to.</span>`)
-                : '<span class="t-ok">Matched in leads.</span> <span class="t-warm">That lead row carries no address at all, so there is nothing here to write to.</span>')
+                    ? `${esc(w.leadAddress)} <span class="text-emerald-700">· matched in leads</span>`
+                    : `<span class="text-emerald-700">Matched in leads.</span> <span class="text-amber-700">The lead row's address column holds <span class="font-label-numeric-sm">${esc(w.leadAddress)}</span>, a routing key rather than somewhere this customer can be written to.</span>`)
+                : '<span class="text-emerald-700">Matched in leads.</span> <span class="text-amber-700">That lead row carries no address at all, so there is nothing here to write to.</span>')
             : w.kind === 'email_only'
-              ? `${esc(maskText(w.email))} <span class="t-warm">· ${leadsErr ? 'Your leads could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
-              : `<span class="t-warm">${leadsErr ? 'Your leads could not be read, so whether there is a lead behind this row is unknown here.' : 'No lead behind this row'}</span>`}</dd>
+              ? `${esc(maskText(w.email))} <span class="text-amber-700">· ${leadsErr ? 'Your leads could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
+              : `<span class="text-amber-700">${leadsErr ? 'Your leads could not be read, so whether there is a lead behind this row is unknown here.' : 'No lead behind this row'}</span>`}</dd>
           <dt>WhatsApp profile name</dt><dd>${w.contact && w.contact.push_name
-            ? `${esc(maskText(w.contact.push_name))} <span class="t-muted">· the name this person set on WhatsApp, not a customer record</span>`
+            ? `${esc(maskText(w.contact.push_name))} <span class="text-outline">· the name this person set on WhatsApp, not a customer record</span>`
             : (w.contactMissing
-                ? '<span class="t-muted">No the saved contact details row for this chat id</span>'
-                : '<span class="t-muted">Not captured</span>')}</dd>
+                ? '<span class="text-outline">No the saved contact details row for this chat id</span>'
+                : '<span class="text-outline">Not captured</span>')}</dd>
           <dt>Phone</dt><dd>${w.phone
-            ? `<span class="mono">${esc(maskText(w.phone))}</span> <span class="t-muted">· ${esc(w.phoneFrom)}</span>`
-            : '<span class="t-muted">Not stored — historic contacts predate phone capture, and none is inferred from the chat id</span>'}</dd>
-          <dt>Chat id</dt><dd class="mono" style="word-break:break-all">${w.chatId
+            ? `<span class="font-label-numeric-sm">${esc(maskText(w.phone))}</span> <span class="text-outline">· ${esc(w.phoneFrom)}</span>`
+            : '<span class="text-outline">Not stored — historic contacts predate phone capture, and none is inferred from the chat id</span>'}</dd>
+          <dt>Chat id</dt><dd class="font-label-numeric-sm" style="word-break:break-all">${w.chatId
             ? esc(w.chatId)
-            : '<span class="t-muted">none</span>'}</dd>
+            : '<span class="text-outline">none</span>'}</dd>
           <dt>Name on the KYC row</dt><dd>${d.lead_name
             ? `${esc(maskText(d.lead_name))}${w.name && w.name !== String(d.lead_name).trim()
-                ? ` <span class="t-warm">· the customer record for this person is filed as ${esc(maskText(w.name))}; both are kept because a KYC row is itself an identity record</span>`
+                ? ` <span class="text-amber-700">· the customer record for this person is filed as ${esc(maskText(w.name))}; both are kept because a KYC row is itself an identity record</span>`
                 : ''}`
-            : '<span class="t-muted">none</span>'}</dd>
+            : '<span class="text-outline">none</span>'}</dd>
         </dl>
       </div>`;
 
     if (voidedRow) {
       openDrawer(`
-        <div class="drawer-head">
+        <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
           <div style="flex:1">
             <h2 style="font-size:18px">${esc(whoLabel(w))}</h2>
-            <div class="ds-cell-sub"><span class="chip">Voided — not a KYC submission</span></div>
-            <div class="ds-cell-sub mono">${esc(d.id ?? '')}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">Voided — not a KYC submission</span></div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm">${esc(d.id ?? '')}</div>
           </div>
-          <button class="btn ghost sm" id="cClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+          <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
         </div>
-        <div class="drawer-body">
-          <div class="section">
-            <div class="label-caps">Why this is not a decision</div>
-            <div class="quote" style="margin-top:8px">${esc(d.void_reason || '')}</div>
-            <dl class="kv" style="margin-top:12px">
-              <dt>Voided</dt><dd>${d.voided_at ? esc(ago(d.voided_at)) : '<span class="t-muted">no voided_at timestamp</span>'}</dd>
+        <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+          <div class="mb-space-md">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Why this is not a decision</div>
+            <div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:8px">${esc(d.void_reason || '')}</div>
+            <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+              <dt>Voided</dt><dd>${d.voided_at ? esc(ago(d.voided_at)) : '<span class="text-outline">no voided_at timestamp</span>'}</dd>
               <dt>Auto-audited</dt><dd>${esc(ago(d.created_at))}</dd>
             </dl>
           </div>
 
           ${whoHtml}
 
-          <div class="section">
-            <div class="label-caps">What the machine produced</div>
-            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">Kept verbatim as evidence. None of it is a verdict on a person, and none of it is counted anywhere on this screen.</div>
-            <dl class="kv" style="margin-top:12px">
-              <dt>Described as</dt><dd>${d.document_type ? esc(d.document_type) : '<span class="t-muted">nothing recorded</span>'}</dd>
-              <dt>Machine verdict</dt><dd><span class="chip">${d.verdict ? esc(String(d.verdict)) : 'none'} · void</span></dd>
-              <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
-              <dt>Extracted name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="t-muted">Nothing extracted</span>'}</dd>
+          <div class="mb-space-md">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">What the machine produced</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">Kept verbatim as evidence. None of it is a verdict on a person, and none of it is counted anywhere on this screen.</div>
+            <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+              <dt>Described as</dt><dd>${d.document_type ? esc(d.document_type) : '<span class="text-outline">nothing recorded</span>'}</dd>
+              <dt>Machine verdict</dt><dd><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${d.verdict ? esc(String(d.verdict)) : 'none'} · void</span></dd>
+              <dt>Confidence</dt><dd class="font-label-numeric-sm">${conf == null ? '<span class="text-outline">Not scored</span>' : num(conf) + '%'}</dd>
+              <dt>Extracted name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="text-outline">Nothing extracted</span>'}</dd>
             </dl>
-            ${d.remarks ? `<div class="quote" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
+            ${d.remarks ? `<div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
           </div>
 
-          <div class="section">
-            <div class="label-caps">What this contact was told</div>
+          <div class="mb-space-md">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">What this contact was told</div>
             ${commsHtml}
           </div>
 
-          <div class="section">
-            <div class="label-caps">Evidence held</div>
+          <div class="mb-space-md">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Evidence held</div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
               <span class="material-symbols-outlined ${m.tone === 'ok' ? 't-ok' : m.tone === 'warm' ? 't-warm' : 't-muted'}">${esc(m.icon)}</span>
               ${retentionPill(r)}
             </div>
-            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(r.detail)}
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(r.detail)}
               This is a private photograph somebody sent to a business number, not an ID document. It is retained as evidence of the routing fault; deleting it is NEXUS’s to do.</div>
-            <dl class="kv" style="margin-top:12px">
-              <dt>storage_path</dt><dd class="mono" style="word-break:break-all">${d.storage_path ? esc(d.storage_path) : '<span class="t-muted">null</span>'}</dd>
-              <dt>retain_until</dt><dd>${d.retain_until ? esc(d.retain_until) : '<span class="t-muted">null</span>'}</dd>
-              <dt>purged_at</dt><dd>${d.purged_at ? esc(ago(d.purged_at)) : '<span class="t-muted">null</span>'}</dd>
+            <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+              <dt>storage_path</dt><dd class="font-label-numeric-sm" style="word-break:break-all">${d.storage_path ? esc(d.storage_path) : '<span class="text-outline">null</span>'}</dd>
+              <dt>retain_until</dt><dd>${d.retain_until ? esc(d.retain_until) : '<span class="text-outline">null</span>'}</dd>
+              <dt>purged_at</dt><dd>${d.purged_at ? esc(ago(d.purged_at)) : '<span class="text-outline">null</span>'}</dd>
             </dl>
           </div>
         </div>
-        <div class="drawer-foot">
-          <span class="ds-cell-sub" style="flex:1;white-space:normal">No approve, reject or re-ask here — there was no submission and nobody is waiting on an answer.</span>
-          <button class="btn ghost" id="cOpenFile" ${canOpen ? '' : 'disabled'} title="${esc(fileTitle)}">Open file</button>
+        <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+          <span class="font-body-sm text-body-sm text-on-surface-variant" style="flex:1;white-space:normal">No approve, reject or re-ask here — there was no submission and nobody is waiting on an answer.</span>
+          <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cOpenFile" ${canOpen ? '' : 'disabled'} title="${esc(fileTitle)}">Open file</button>
         </div>`);
       $('cClose').addEventListener('click', closeDrawer);
       wireFileButton(d, canOpen);
@@ -2340,47 +2357,47 @@ SCREENS.compliance = async host => {
       ((n0(x.attempt_number) || 0) - (n0(y.attempt_number) || 0)) ||
       (new Date(x.created_at) - new Date(y.created_at)));
     const chainHtml = chain.length > 1
-      ? `<div class="timeline" style="margin-top:8px">${chain.map(x => {
+      ? `<div class="flex flex-col gap-space-sm" style="margin-top:8px">${chain.map(x => {
           const xa = n0(x.attempt_number);
           const here = x === d;
-          return `<div class="tl-item">
-            <span class="tl-dot" style="background:var(--${here ? 'primary' : 'neutral'})"></span>
-            <div class="tl-body">
+          return `<div class="flex gap-3">
+            <span class="w-2 h-2 rounded-full bg-outline mt-1.5 shrink-0" style="background:var(--${here ? 'primary' : 'neutral'})"></span>
+            <div class="flex-1 min-w-0">
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <span style="font-weight:500">Attempt ${xa == null ? '—' : num(xa)}</span>
                 ${verdictPill(x)}
-                ${here ? '<span class="chip">Viewing</span>' : ''}
+                ${here ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">Viewing</span>' : ''}
               </div>
-              <div class="tl-meta">${esc(x.document_type || 'Unknown document')} · ${esc(ago(x.created_at))}
+              <div class="font-label-numeric-sm text-[11px] text-outline">${esc(x.document_type || 'Unknown document')} · ${esc(ago(x.created_at))}
                 ${n0(x.confidence_score) == null ? '' : ' · ' + num(x.confidence_score) + '% confidence'}
                 · ${esc(RETENTION[retentionOf(x).key].label.toLowerCase())}</div>
             </div></div>`;
         }).join('')}</div>`
       : (n0(d.attempt_number) || 0) > 1
-        ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">This is attempt ${num(d.attempt_number)}, but no earlier genuine attempt for this customer is in the ${num(ROW_LIMIT)} rows loaded here. The earlier rows may simply be older than this page reaches.</div>`
-        : '<div class="ds-cell-sub" style="margin-top:8px">Only one genuine upload from this customer is on file.</div>';
+        ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">This is attempt ${num(d.attempt_number)}, but no earlier genuine attempt for this customer is in the ${num(ROW_LIMIT)} rows loaded here. The earlier rows may simply be older than this page reaches.</div>`
+        : '<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px">Only one genuine upload from this customer is on file.</div>';
 
     openDrawer(`
-      <div class="drawer-head">
+      <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
         <div style="flex:1">
           <h2 style="font-size:18px">${esc(whoLabel(w))}</h2>
-          <div class="ds-cell-sub">${esc(d.document_type || 'Unknown document')} · submitted ${esc(ago(d.created_at))}</div>
-          <div class="ds-cell-sub mono">${esc(d.id ?? '')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(d.document_type || 'Unknown document')} · submitted ${esc(ago(d.created_at))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm">${esc(d.id ?? '')}</div>
         </div>
-        <button class="btn ghost sm" id="cClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
-      <div class="drawer-body">
-        <div class="section">
-          <div class="label-caps">Verdict</div>
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Verdict</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${verdictPill(d)}
             ${d.tampering ? pill('Tampering detected', 'hot', { verbatim: false }) : ''}
             ${d.is_valid === false ? pill('Not valid', 'hot', { verbatim: false }) : d.is_valid === true ? pill('Valid', 'ok', { verbatim: false }) : ''}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <span class="t-muted">Register position</span>${casePill(rowCaseState(d))}
+            <span class="text-outline">Register position</span>${casePill(rowCaseState(d))}
           </div>
-          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;margin-top:6px">${
             /* Said from THIS row and nothing else. The state is the six-word
                vocabulary at the top of this file; the sentence under it names
                the column the state was read off, so a reviewer can check it
@@ -2394,65 +2411,65 @@ SCREENS.compliance = async host => {
                   : VERDICTS[verdictKey(d)]
                     ? 'This row is in the register and carries a decided verdict, so what the auditor did with this document is on file.'
                     : `This row carries a verdict the CHECK constraint on the ID documents does not permit, so this screen has no wording for its position and claims none.`}</div>
-          <dl class="kv" style="margin-top:12px">
-            <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
-            <dt>Attempt</dt><dd class="num">${a == null ? '<span class="t-muted">—</span>' : num(a) + (mx != null ? ` of ${num(mx)}` : '')}</dd>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+            <dt>Confidence</dt><dd class="font-label-numeric-sm">${conf == null ? '<span class="text-outline">Not scored</span>' : num(conf) + '%'}</dd>
+            <dt>Attempt</dt><dd class="font-label-numeric-sm">${a == null ? '<span class="text-outline">—</span>' : num(a) + (mx != null ? ` of ${num(mx)}` : '')}</dd>
             <dt>Reviewed by</dt><dd>${d.reviewed_by
-              ? `${reviewerCell(d).replace(/^by /, '')}<div class="ds-cell-sub" style="white-space:normal">reviewed_by is a uuid pointing at a row in users, resolved here rather than printed raw. Staff contact details are not recorded anywhere this dashboard reads — the users table holds no phone number — so this name cannot be turned into somebody to call.</div>`
-              : '<span class="t-muted">Not reviewed by a human</span>'}</dd>
-            <dt>Reviewed at</dt><dd>${d.reviewed_at ? esc(ago(d.reviewed_at)) : '<span class="t-muted">—</span>'}</dd>
+              ? `${reviewerCell(d).replace(/^by /, '')}<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">reviewed_by is a uuid pointing at a row in users, resolved here rather than printed raw. Staff contact details are not recorded anywhere this dashboard reads — the users table holds no phone number — so this name cannot be turned into somebody to call.</div>`
+              : '<span class="text-outline">Not reviewed by a human</span>'}</dd>
+            <dt>Reviewed at</dt><dd>${d.reviewed_at ? esc(ago(d.reviewed_at)) : '<span class="text-outline">—</span>'}</dd>
           </dl>
-          ${d.remarks ? `<div class="quote" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
+          ${d.remarks ? `<div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
         </div>
 
         ${whoHtml}
 
-        <div class="section">
-          <div class="label-caps">Extracted identity</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Full name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="t-muted">Not extracted</span>'}</dd>
-            <dt>Date of birth</dt><dd>${d.date_of_birth ? esc(d.date_of_birth) : '<span class="t-muted">Not extracted</span>'}</dd>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Extracted identity</div>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:8px">
+            <dt>Full name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="text-outline">Not extracted</span>'}</dd>
+            <dt>Date of birth</dt><dd>${d.date_of_birth ? esc(d.date_of_birth) : '<span class="text-outline">Not extracted</span>'}</dd>
             <dt>Expiry date</dt><dd>${d.expiry_date
               ? `<span class="${atAudit ? 't-hot' : lapsed || unreadableExpiry ? 't-warm' : ''}">${esc(d.expiry_date)}${
                   atAudit ? ' · already expired on the day it was audited'
                   : lapsed ? ' · expired since it was audited'
                   : unreadableExpiry ? ' · expiry_date is a text column and this value does not read as a date, so whether the document has expired is not known here' : ''}</span>`
-              : '<span class="t-muted">Not extracted</span>'}</dd>
+              : '<span class="text-outline">Not extracted</span>'}</dd>
           </dl>
         </div>
 
-        <div class="section">
-          <div class="label-caps">Attempt history</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Attempt history</div>
           ${chainHtml}
         </div>
 
-        <div class="section">
-          <div class="label-caps">Messages to this contact</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Messages to this contact</div>
           ${commsHtml}
         </div>
 
-        <div class="section">
-          <div class="label-caps">Retention</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Retention</div>
           <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
             <span class="material-symbols-outlined ${m.tone === 'hot' ? 't-hot' : m.tone === 'ok' ? 't-ok' : m.tone === 'warm' ? 't-warm' : 't-muted'}">${esc(m.icon)}</span>
             ${retentionPill(r)}
           </div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(r.detail)}</div>
-          ${od ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">schedule</span>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(r.detail)}</div>
+          ${od ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">schedule</span>
             <div>retain_until has passed and the file is still in the bucket. ${wfLine(purgeWf, 'NEXUS Retention Purge')}</div></div>` : ''}
-          <dl class="kv" style="margin-top:12px">
-            <dt>storage_path</dt><dd class="mono" style="word-break:break-all">${d.storage_path ? esc(d.storage_path) : '<span class="t-muted">null</span>'}</dd>
-            <dt>retain_until</dt><dd>${d.retain_until ? `<span class="${od ? 't-warm' : ''}">${esc(d.retain_until)}</span>` : '<span class="t-muted">null</span>'}</dd>
-            <dt>purged_at</dt><dd>${d.purged_at ? esc(ago(d.purged_at)) : '<span class="t-muted">null</span>'}</dd>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+            <dt>storage_path</dt><dd class="font-label-numeric-sm" style="word-break:break-all">${d.storage_path ? esc(d.storage_path) : '<span class="text-outline">null</span>'}</dd>
+            <dt>retain_until</dt><dd>${d.retain_until ? `<span class="${od ? 't-warm' : ''}">${esc(d.retain_until)}</span>` : '<span class="text-outline">null</span>'}</dd>
+            <dt>purged_at</dt><dd>${d.purged_at ? esc(ago(d.purged_at)) : '<span class="text-outline">null</span>'}</dd>
             <dt>Audited</dt><dd>${esc(ago(d.created_at))}</dd>
           </dl>
         </div>
       </div>
-      <div class="drawer-foot">
-        <button class="btn primary" disabled title="${esc(NO_DECISION_HOOK)}">Approve</button>
-        <button class="btn danger" disabled title="${esc(NO_DECISION_HOOK)}">Reject</button>
-        <button class="btn" disabled title="${esc(NO_REASK_HOOK)}">Re-request upload</button>
-        <button class="btn ghost" id="cOpenFile" ${canOpen ? '' : 'disabled'} title="${esc(fileTitle)}">Open file</button>
+      <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm whitespace-nowrap disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" disabled title="${esc(NO_DECISION_HOOK)}">Approve</button>
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-red-700 text-white font-body-sm text-body-sm font-semibold hover:bg-red-800 transition-colors whitespace-nowrap disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed" disabled title="${esc(NO_DECISION_HOOK)}">Reject</button>
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" disabled title="${esc(NO_REASK_HOOK)}">Re-request upload</button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="cOpenFile" ${canOpen ? '' : 'disabled'} title="${esc(fileTitle)}">Open file</button>
       </div>`);
     $('cClose').addEventListener('click', closeDrawer);
     wireFileButton(d, canOpen);
@@ -2497,7 +2514,7 @@ SCREENS.compliance = async host => {
      no row carries the chip. It is kept because the branch has to stay correct
      for the day a row is voided again, and the card's own subtitle no longer
      promises marking that nothing on the page shows. */
-  const hist = el('div', 'card flush'); hist.style.marginTop = '16px'; body.appendChild(hist);
+  const hist = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); hist.style.marginTop = '16px'; body.appendChild(hist);
   const down = [auditErr ? 'the audit log' : '', commsErr ? 'the message log' : ''].filter(Boolean);
 
   /* Two different vocabularies land in this one list and they must not be
@@ -2568,36 +2585,36 @@ SCREENS.compliance = async host => {
       ? events.map(e => {
           const n = nameFor(e.who, e.recorded);
           return `
-        <div class="list-item" style="cursor:default">
-          <span class="mono t-muted">${esc(clock(e.at))}</span>
-          ${e.voided ? `<span class="chip">${esc(e.label)} · void</span>` : pill(e.label, e.tone, { verbatim: false })}
-          ${e.register ? `<span class="t-muted" style="font-size:12px">register</span>${casePill(e.register)}` : ''}
+        <div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" style="cursor:default">
+          <span class="font-label-numeric-sm text-outline">${esc(clock(e.at))}</span>
+          ${e.voided ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(e.label)} · void</span>` : pill(e.label, e.tone, { verbatim: false })}
+          ${e.register ? `<span class="text-outline" style="font-size:12px">register</span>${casePill(e.register)}` : ''}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${n.name
               ? esc(maskText(n.name))
-              : `<span class="mono t-muted">${esc(n.note)}</span>`}${
-              n.phone && n.phone !== n.name ? ` <span class="mono t-muted" style="font-weight:400">${esc(maskText(n.phone))}</span>` : ''}${
+              : `<span class="font-label-numeric-sm text-outline">${esc(n.note)}</span>`}${
+              n.phone && n.phone !== n.name ? ` <span class="font-label-numeric-sm text-outline" style="font-weight:400">${esc(maskText(n.phone))}</span>` : ''}${
               n.recorded && n.recorded !== n.name
-                ? ` <span class="t-warm" style="font-weight:400">recorded as ${esc(n.recorded)}</span>`
+                ? ` <span class="text-amber-700" style="font-weight:400">recorded as ${esc(n.recorded)}</span>`
                 : ''}</div>
-            <div class="ds-cell-sub" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${
               n.phone ? '' : 'no phone stored · '}${esc(dealerText(e.text).slice(0, 180))}</div>
-            ${e.blurb ? `<div class="ds-cell-sub t-muted">${esc(e.blurb)}</div>` : ''}
+            ${e.blurb ? `<div class="font-body-sm text-body-sm text-outline">${esc(e.blurb)}</div>` : ''}
             ${e.registerNote ? `<div class="ds-cell-sub ${e.register === 'unknown' ? 't-warm' : 't-muted'}" style="white-space:normal">${esc(e.registerNote)}</div>` : ''}
-            ${e.voided ? '<div class="ds-cell-sub t-hot">Sent about a voided row — this was not a compliance decision, and the recipient was never a customer.</div>' : ''}
+            ${e.voided ? '<div class="font-body-sm text-body-sm text-red-700">Sent about a voided row — this was not a compliance decision, and the recipient was never a customer.</div>' : ''}
           </div>
-          <div class="ds-cell-sub">${esc(ago(e.at))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(e.at))}</div>
         </div>`;
         }).join('')
       : stateEmpty('No KYC activity on this page',
           `No run by the KYC auditor appears in the ${num(AUDIT_LIMIT)} most recent the activity log rows read here, and no [KYC-…] line appears in the ${num(COMM_LIMIT)} most recent message-log rows. That is what these two reads found; it is not a statement that nothing has ever run, because anything older than those windows is not on this page. Both lists fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.`,
           'history');
 
-  hist.innerHTML = `<div class="card-head"><div><div class="card-title">KYC activity</div>
-      <div class="card-sub">Auditor runs from the activity log and customer-facing KYC messages from the message history.${
+  hist.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">KYC activity</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Auditor runs from the activity log and customer-facing KYC messages from the message history.${
         voided.length ? ' Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.' : ''}${
-        voidFilterKnown ? '' : ' <span class="t-warm">The register could not be read on this page load, so nothing here could be checked against void_reason and no row is marked.</span>'}</div></div></div>
-    ${down.length && !(auditErr && commsErr) ? `<div style="padding:14px 20px 0"><div class="banner warm">
+        voidFilterKnown ? '' : ' <span class="text-amber-700">The register could not be read on this page load, so nothing here could be checked against void_reason and no row is marked.</span>'}</div></div></div>
+    ${down.length && !(auditErr && commsErr) ? `<div style="padding:14px 20px 0"><div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
       <span class="material-symbols-outlined">warning</span>
       <div>Could not read ${esc(down.join(' or '))} (${esc(auditErr || commsErr)}), so this trail is incomplete.</div></div></div>` : ''}
     <div>${trailBody}</div>`;
@@ -2632,9 +2649,9 @@ SCREENS.compliance = async host => {
      That means nothing has been recorded — not that nobody has opted out, and
      not that everybody has agreed. The empty state below says exactly that, and
      the counts are counts of RECORDS rather than of people or of permissions. */
-  const consent = el('div', 'card flush'); consent.style.marginTop = '16px'; body.appendChild(consent);
-  consent.innerHTML = `<div class="card-head"><div><div class="card-title">WhatsApp consent</div>
-      <div class="card-sub">Reading what this dealership has recorded about who may be messaged.</div></div></div>${stateLoading(3)}`;
+  const consent = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); consent.style.marginTop = '16px'; body.appendChild(consent);
+  consent.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">WhatsApp consent</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Reading what this dealership has recorded about who may be messaged.</div></div></div>${stateLoading(3)}`;
 
   const CONSENT_LIMIT = 200;
   const CONSENT_NOTHING =
@@ -2667,12 +2684,12 @@ SCREENS.compliance = async host => {
         'Nobody’s consent has changed — this is a read that failed. The history below is read separately and may still have loaded.')
     : (conSt && conSt.length)
       ? `<div>${conSt.map(c => `<div style="padding:12px 20px;border-top:1px solid var(--line);display:flex;gap:16px;flex-wrap:wrap;align-items:baseline">
-          <div style="flex:1;min-width:180px"><span class="mono">${esc(c.customer_wa_id)}</span>
-            ${c.channel_identifier ? `<div class="ds-cell-sub">on ${esc(c.channel_identifier)}</div>` : ''}</div>
+          <div style="flex:1;min-width:180px"><span class="font-label-numeric-sm">${esc(maskPhone(c.customer_wa_id))}</span>
+            ${c.channel_identifier ? `<div class="font-body-sm text-body-sm text-on-surface-variant">on ${esc(c.channel_identifier)}</div>` : ''}</div>
           <div style="flex:0 0 auto">${stateChip(c.state)}</div>
           <div style="flex:2;min-width:240px">
-            <div class="ds-cell-sub">${esc(ago(c.occurred_at))}${c.mechanism ? ` · ${esc(String(c.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}</div>
-            <div class="ds-cell-sub mono" style="white-space:normal">${esc(c.evidence_kind || 'no evidence kind recorded')}: ${esc(c.evidence_ref || 'no reference recorded')}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(c.occurred_at))}${c.mechanism ? ` · ${esc(String(c.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="white-space:normal">${esc(c.evidence_kind || 'no evidence kind recorded')}: ${esc(c.evidence_ref || 'no reference recorded')}</div>
           </div>
         </div>`).join('')}`
       : stateEmpty('No customer has a recorded position', CONSENT_NOTHING, 'contact_support');
@@ -2683,35 +2700,45 @@ SCREENS.compliance = async host => {
     : (conEv && conEv.length)
       ? `<div>${conEv.map(e => `<div style="padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:baseline">
           <div style="flex:0 0 auto">${consentChip(e.event)}</div>
-          <div style="flex:1;min-width:170px"><span class="mono">${esc(e.customer_wa_id)}</span></div>
+          <div style="flex:1;min-width:170px"><span class="font-label-numeric-sm">${esc(maskPhone(e.customer_wa_id))}</span></div>
           <div style="flex:2;min-width:260px">
-            <div class="ds-cell-sub">${esc(clock(e.occurred_at))}${e.mechanism ? ` · ${esc(String(e.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}${
+            <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(clock(e.occurred_at))}${e.mechanism ? ` · ${esc(String(e.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}${
               e.channel_identifier ? ` · ${esc(e.channel_identifier)}` : ''}</div>
-            <div class="ds-cell-sub mono" style="white-space:normal">${esc(e.evidence_kind || 'no evidence kind recorded')}: ${esc(e.evidence_ref || 'no reference recorded')}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" style="white-space:normal">${esc(e.evidence_kind || 'no evidence kind recorded')}: ${esc(e.evidence_ref || 'no reference recorded')}</div>
             ${/* Two different instants, and a reviewer asks about both: when the
                   customer said it, and when this system wrote it down. */''}
-            <div class="ds-cell-sub">Recorded ${esc(ago(e.recorded_at))} by ${esc(e.recorded_by || 'an unnamed writer')}${
+            <div class="font-body-sm text-body-sm text-on-surface-variant">Recorded ${esc(ago(e.recorded_at))} by ${esc(e.recorded_by || 'an unnamed writer')}${
               e.notes ? ` — ${esc(e.notes)}` : ''}</div>
           </div>
         </div>`).join('')}`
       : stateEmpty('Nothing has been recorded', CONSENT_NOTHING, 'history');
 
-  consent.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">WhatsApp consent</div>
-      <div class="card-sub">Who has agreed to be messaged on WhatsApp, who has withdrawn, when, and on what evidence.
+  consent.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">WhatsApp consent</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Who has agreed to be messaged on WhatsApp, who has withdrawn, when, and on what evidence.
         Every line is a record this dealership holds; nothing on this card is inferred, and a customer who is absent has said neither yes nor no.</div>
     </div></div>
-    <div style="padding:14px 20px 4px"><div class="label-caps">Where each customer stands now</div>
-      <div class="ds-cell-sub" style="white-space:normal">The database’s own answer, not one worked out here — the order that decides it lives in one place so a replayed message cannot overturn a withdrawal.</div></div>
+    <div style="padding:14px 20px 4px"><div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Where each customer stands now</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">The database’s own answer, not one worked out here — the order that decides it lives in one place so a replayed message cannot overturn a withdrawal.</div></div>
     ${conCurrentBody}
-    <div style="padding:14px 20px 4px;border-top:1px solid var(--line)"><div class="label-caps">Everything recorded${
+    <div style="padding:14px 20px 4px;border-top:1px solid var(--line)"><div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Everything recorded${
       conEv && conEv.length ? ` · ${num(conEv.length)}` : ''}</div>
-      <div class="ds-cell-sub" style="white-space:normal">Newest first.${conCapped
-        ? ` <span class="t-warm">This read stopped at ${num(CONSENT_LIMIT)} records, so there are older ones this page has not looked at.</span>`
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">Newest first.${conCapped
+        ? ` <span class="text-amber-700">This read stopped at ${num(CONSENT_LIMIT)} records, so there are older ones this page has not looked at.</span>`
         : ''}</div></div>
     ${conHistoryBody}
-    <div style="padding:14px 20px"><div class="ds-cell-sub" style="white-space:normal">${esc(CONSENT_SCOPE)}</div></div>`;
+    <div style="padding:14px 20px"><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(CONSENT_SCOPE)}</div></div>`;
 
+  /* Trust footer (states-components §7): what this page read, when, how much,
+     and as whom. A failed read is said as one, never as a zero. */
+  const trust = el('div', 'mt-space-md');
+  trust.innerHTML = trustFooter({
+    source: 'KYC register · activity log · message history · consent record',
+    asOf: clock(Date.now()),
+    evidence: docs ? `${num(docs.length)} ${docs.length === 1 ? 'document' : 'documents'} read${docs.length >= ROW_LIMIT ? ' (cap reached)' : ''}` : 'KYC register unread',
+    actor: actor(),
+  });
+  root.appendChild(trust);
 };
 
 /* ==========================================================================

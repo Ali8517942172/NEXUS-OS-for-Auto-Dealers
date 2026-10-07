@@ -638,7 +638,7 @@ select t.id,
        'https://35.224.126.225.nip.io/webhook/whatsapp-inbound',
        'disabled',                      -- armed deliberately, see section 7
        120,
-       'ALBA CARS - WhatsApp enquiries via WAHA session default'
+       'Tenant A - WhatsApp enquiries via WAHA session default'
   from public.tenants t where t.slug = 'alba-cars';
 
 -- Cloud. Registered so the row exists before the traffic does; has carried nothing.
@@ -658,7 +658,7 @@ select t.id,
        'https://35.224.126.225.nip.io/webhook/whatsapp-cloud-inbound',
        'disabled',
        600,
-       'ALBA CARS - WhatsApp enquiries via Cloud API phone_number_id 1306545252542419'
+       'Tenant A - WhatsApp enquiries via Cloud API phone_number_id 1306545252542419'
   from public.tenants t where t.slug = 'alba-cars';
 ```
 
@@ -1243,5 +1243,5 @@ Only the owner can decide these.
 8. **Should the measurement in §1.5 be repeated on a real dealership number
    before this is built?** The 1-in-31 figure comes from your personal handset.
    It establishes the risk; it does not establish a dealership's base rate. A
-   week of a real ALBA CARS sales line would turn a strong argument into a
+   week of a real Tenant A sales line would turn a strong argument into a
    measured one — and would be the number to put in front of the second customer.

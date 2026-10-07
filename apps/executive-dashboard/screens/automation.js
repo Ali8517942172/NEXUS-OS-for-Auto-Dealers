@@ -114,20 +114,28 @@
        AND can be fired without inventing a subject record. Everything else is a
        disabled button whose title names exactly what is missing. No webhook
        path is guessed, and nothing here writes to a service-role table. */
-import { HOOK, db, n8n } from '../lib/data.js';
+import { HOOK, canManageAccess, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
-import { ago, clock, esc, n0, num, pct, pill } from '../lib/format.js';
+import { ago, clock, esc, n0, num, pct } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import {
   OUTCOME, OUTCOME_WORDS, healthWords, isIncomplete, outcomeOf, outcomeWords, successRate,
 } from '../lib/health.js';
 import { renderIntegrations } from '../lib/integrations.js';
-import { modalError, openModal } from '../lib/modal.js';
+import { readFlag, writeFlag } from '../lib/prefs.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+/* The Stitch migration (7 Oct 2026, design/stitch/MAP.md: primary
+   automation-action-engine-pipeline-drawer--9c8237, also --4539d7). kpi, table,
+   panel, pill, openModal, openDrawer and the state panels keep their signatures
+   and answer in the Stitch anatomy — lib/ops-kit.js says why the logic was left
+   where it was. */
+import {
+  actor, kpi, modalError, openDrawer, openModal, panel, pill, stateEmpty, stateError, stateLoading, table,
+} from '../lib/ops-kit.js';
+import { sectionHeader, statusChip, trustFooter } from '../lib/stitch-ui.js';
 
 /* Bounded read. Where the cap is actually hit the screen says so — an activity
    log that looks complete but is a window is the same class of lie this screen
@@ -289,7 +297,7 @@ const outcomePill = a => {
   const same = raw === up(outcomeOf(a));
   return `${wordPill(words.label, words.tone, words.blurb)}${
     raw && !same
-      ? `<span class="chip mono" title="${esc(`This run was recorded as "${a.status}". NEXUS’s own rule for what a run achieved reads it as ${words.label}, classifying from the summary as well as the status word.`)}">${esc(a.status)}</span>`
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="${esc(`This run was recorded as "${a.status}". NEXUS’s own rule for what a run achieved reads it as ${words.label}, classifying from the summary as well as the status word.`)}">${esc(a.status)}</span>`
       : ''}`;
 };
 
@@ -439,7 +447,7 @@ const MIX = [
 const runBar = w => {
   const total = MIX.reduce((a, [k]) => a + (n0(w[k]) || 0), 0);
   if (!total) return '';
-  return `<div class="stackbar" style="height:6px;max-width:220px;margin-top:8px">
+  return `<div class="flex h-2.5 rounded-full overflow-hidden bg-surface-container" style="height:6px;max-width:220px;margin-top:8px">
     ${MIX.map(([k, colour, alpha, why]) => {
       const c = n0(w[k]) || 0;
       return c
@@ -859,18 +867,65 @@ SCREENS.automation = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* Since 7 Oct 2026 the wrapper is the Stitch root (`nx-stitch` turns on the
+     scoped reset). It is still a wrapper this screen appends, for the reason
+     above. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
-  const banners = el('div'); banners.style.marginTop = '16px'; root.appendChild(banners);
-  const schedCard = el('div', 'card flush'); schedCard.style.marginTop = '16px'; root.appendChild(schedCard);
-  schedCard.innerHTML = stateLoading(3);
-  const healthCard = el('div', 'card flush'); healthCard.style.marginTop = '16px'; root.appendChild(healthCard);
+  /* BUSINESS VIEW / TECHNICAL VIEW — automation-action-engine-pipeline-drawer
+     --9c8237. The business view is the default and is what every role sees:
+     the figures, one card per automation in plain words, the schedule check,
+     the activity log and the writers nobody registered. The technical view adds
+     the health-by-category register and the connectivity checks, and is offered
+     to owners and admins only. Nothing is removed from a role that had it: every
+     workflow's full record opens from its card in either view. The choice is a
+     per-browser convenience, so it is remembered through lib/prefs.js (the one
+     module that touches localStorage), and a failure to read or write it
+     changes nothing but the default. */
+  const canTech = canManageAccess();
+  let view = 'business';
+  if (canTech && readFlag('nexus.automation.technical', false)) view = 'technical';
+  const SEGB = { off: 'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-md font-body-sm text-body-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors disabled:text-outline disabled:cursor-not-allowed',
+                 on:  'inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-md font-body-sm text-body-sm font-semibold bg-surface-container-lowest text-on-surface shadow-sm' };
+  const head = el('div');
+  root.appendChild(head);
+  const paintHead = () => {
+    head.innerHTML = sectionHeader({
+      eyebrow: 'Settings / Automation',
+      title: 'Automation — action engine',
+      sub: 'What each automation is meant to do, whether it did it, and the record behind every run. Nothing on this '
+         + 'screen starts, stops or retries a workflow.',
+      actionsHtml: `<div class="inline-flex gap-0.5 p-0.5 rounded-lg bg-surface-container" role="group" aria-label="View">
+          <button type="button" data-view="business" class="${view === 'business' ? SEGB.on : SEGB.off}" aria-pressed="${view === 'business'}"><span class="material-symbols-outlined text-[18px]">view_quilt</span>Business view</button>
+          <button type="button" data-view="technical" class="${view === 'technical' ? SEGB.on : SEGB.off}" aria-pressed="${view === 'technical'}"${canTech ? '' : ' disabled title="The technical view is for owners and admins at this dealership."'}><span class="material-symbols-outlined text-[18px]">terminal</span>Technical view${canTech ? '' : ' (admins only)'}</button>
+        </div>`,
+    });
+    head.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+      if (b.disabled) return;
+      view = b.dataset.view;
+      writeFlag('nexus.automation.technical', view === 'technical');
+      paintHead(); applyView();
+    }));
+  };
+
+  const strip = el('div', 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-space-md'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const banners = el('div', 'flex flex-col gap-space-sm empty:hidden'); root.appendChild(banners);
+  const bizCard = el('section', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); root.appendChild(bizCard);
+  bizCard.innerHTML = stateLoading(4);
+  const healthCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); root.appendChild(healthCard);
   healthCard.innerHTML = stateLoading(6);
-  const logCard = el('div', 'card flush'); logCard.style.marginTop = '16px'; root.appendChild(logCard);
+  const schedCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); root.appendChild(schedCard);
+  schedCard.innerHTML = stateLoading(3);
+  const logCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm'); root.appendChild(logCard);
   logCard.innerHTML = stateLoading(5);
-  const intg = el('div', 'card'); intg.style.marginTop = '16px'; root.appendChild(intg);
+  const intg = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-md'); root.appendChild(intg);
+  /* The technical-only regions. `hidden` is the Tailwind utility; the element
+     keeps its content so switching back is instant and nothing is re-read. */
+  const applyView = () => {
+    [healthCard, intg].forEach(n => n.classList.toggle('hidden', view !== 'technical'));
+  };
+  paintHead(); applyView();
 
   /* allSettled, not a shared catch: "the health view is down" and "the audit log
      is down" are different sentences and each panel is entitled to the right
@@ -912,11 +967,11 @@ SCREENS.automation = async host => {
      lead exists and carries none, no lead matches this email at all, or the lead
      table could not be read. */
   const phoneLine = email => {
-    if (!email) return '<span class="t-muted">no email on the run, so no number to look up</span>';
-    if (!leadsOk) return '<span class="t-muted">leads could not be read, so no phone</span>';
-    if (!phoneByEmail.has(low(email))) return '<span class="t-muted">no lead record for this email, so no phone</span>';
+    if (!email) return '<span class="text-outline">no email on the run, so no number to look up</span>';
+    if (!leadsOk) return '<span class="text-outline">leads could not be read, so no phone</span>';
+    if (!phoneByEmail.has(low(email))) return '<span class="text-outline">no lead record for this email, so no phone</span>';
     const p = phoneByEmail.get(low(email));
-    return p ? `<span class="mono">${esc(p)}</span>` : '<span class="t-muted">no phone on the lead record</span>';
+    return p ? `<span class="font-label-numeric-sm">${esc(p)}</span>` : '<span class="text-outline">no phone on the lead record</span>';
   };
 
   /* The registry is what ties an n8n workflow to the string it writes into
@@ -1018,8 +1073,8 @@ SCREENS.automation = async host => {
   const ceilingChip = w => {
     const ex = exemptFrom(w);
     return ex
-      ? `<span class="chip" title="${esc(`${ex.why} ${CEILING.provenance}`)}">${esc(ex.chip)}</span>`
-      : `<span class="chip" title="${esc(`${CEILING.why} ${CEILING.onTimeout} ${CEILING.provenance}`)}">${esc(CEILING.chip)}</span>`;
+      ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="${esc(`${ex.why} ${CEILING.provenance}`)}">${esc(ex.chip)}</span>`
+      : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="${esc(`${CEILING.why} ${CEILING.onTimeout} ${CEILING.provenance}`)}">${esc(CEILING.chip)}</span>`;
   };
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -1069,10 +1124,10 @@ SCREENS.automation = async host => {
       if (attention.length) {
         const names = attention.slice(0, 2).map(w => w.name).filter(Boolean).join(', ');
         const kinds = [...new Set(attention.map(w => healthOf(w).label))].join(' · ');
-        return `<span class="t-hot">${esc(names)}${attention.length > 2 ? ` +${attention.length - 2} more` : ''}</span>
-          <br><span class="t-muted">${esc(kinds)}</span>`;
+        return `<span class="text-red-700">${esc(names)}${attention.length > 2 ? ` +${attention.length - 2} more` : ''}</span>
+          <br><span class="text-outline">${esc(kinds)}</span>`;
       }
-      if (!logged) return '<span class="t-muted">Nothing writes to the activity log, so nothing can be measured</span>';
+      if (!logged) return '<span class="text-outline">Nothing writes to the activity log, so nothing can be measured</span>';
       /* Three separate ways this can be a true statement and still not mean
          "everything is fine", each said out loud rather than left to the green.
          A stopped schedule fails nothing by definition; a workflow with no
@@ -1081,8 +1136,8 @@ SCREENS.automation = async host => {
         overdue.length ? `${num(overdue.length)} scheduled job${overdue.length === 1 ? ' has' : 's have'} not run on cadence` : '',
         noQualifying.length ? `${num(noQualifying.length)} ${noQualifying.length === 1 ? 'has' : 'have'} no qualifying run to rate` : '',
       ].filter(Boolean);
-      return `<span class="t-ok">No workflow is failing, half-delivering or logging a word this system cannot read</span>${
-        caveats.length ? `<br><span class="t-warm">but ${esc(caveats.join(', and '))}</span>` : ''}`;
+      return `<span class="text-emerald-700">No workflow is failing, half-delivering or logging a word this system cannot read</span>${
+        caveats.length ? `<br><span class="text-amber-700">but ${esc(caveats.join(', and '))}</span>` : ''}`;
     };
 
     strip.innerHTML = [
@@ -1097,27 +1152,27 @@ SCREENS.automation = async host => {
         attention.length ? 't-hot' : ''),
       kpi('Runs · last 30 days', num(runs30),
         runs30
-          ? `<span class="t-muted">${num(ok30)} delivered · ${num(bad30)} failed or half-done · ${num(none30)} produced nothing${
+          ? `<span class="text-outline">${num(ok30)} delivered · ${num(bad30)} failed or half-done · ${num(none30)} produced nothing${
               refused30 || esc30in ? ` · ${num(refused30 + esc30in)} refused or escalated, left out of the rate` : ''}${
               unknown30 ? ` · ${num(unknown30)} unreadable` : ''}</span>`
-          : '<span class="t-muted">No run logged inside the window</span>'),
+          : '<span class="text-outline">No run logged inside the window</span>'),
       /* Failures and partials in one number because both are the same finding —
          work that did not land — and split in the sub-line because they are not
          the same repair. */
       kpi('Failed or half-done · 30 days', num(bad30),
         bad30
-          ? `<span class="t-hot">${num(fails30)} failed · ${num(partials30)} went out half-done</span>
-             <br><span class="t-muted">most recent ${esc(ago(lastBad))}</span>`
+          ? `<span class="text-red-700">${num(fails30)} failed · ${num(partials30)} went out half-done</span>
+             <br><span class="text-outline">most recent ${esc(ago(lastBad))}</span>`
           : (none30
-              ? `<span class="t-warm">None — but ${num(none30)} run${none30 === 1 ? '' : 's'} produced nothing usable, which is not the same as none</span>`
-              : '<span class="t-muted">None logged inside the window</span>'),
+              ? `<span class="text-amber-700">None — but ${num(none30)} run${none30 === 1 ? '' : 's'} produced nothing usable, which is not the same as none</span>`
+              : '<span class="text-outline">None logged inside the window</span>'),
         bad30 ? 't-hot' : ''),
       /* A zero denominator prints its reason, never a number. Green is reserved
          for a rate with nothing failed, nothing half-done and nothing produced
          empty behind it — the old tile went green on failures alone. */
       kpi('Success rate · 30 days', r30 == null ? 'no rate' : pct(r30),
         r30 == null
-          ? `<span class="t-muted">${eff30 === 0 && runs30 > 0
+          ? `<span class="text-outline">${eff30 === 0 && runs30 > 0
               ? `every one of the ${num(runs30)} logged run${runs30 === 1 ? '' : 's'} was refused by design or handed to a person, so none of them counted toward a rate`
               : 'nothing was logged inside the window, so there is no denominator'}</span>`
           : `${num(ok30)} of ${num(eff30)} qualifying run${eff30 === 1 ? '' : 's'} succeeded outright${
@@ -1144,7 +1199,7 @@ SCREENS.automation = async host => {
     const wr = rate30(worst);
     const bad = incomplete30(worst);
     const runs = n0(worst.runs_30d) || 0;
-    const b = el('div', 'banner hot');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">error</span>
       <div style="flex:1">
         <strong>${num(degraded.length)} workflow${degraded.length === 1 ? ' is' : 's are'} degraded right now.</strong>
@@ -1154,7 +1209,7 @@ SCREENS.automation = async host => {
         ${(n0(worst.partials_30d) || 0) ? 'failed or went out half-done' : 'failed'}${
           worst.last_incomplete ? `, most recently ${esc(ago(worst.last_incomplete))}` : ''}.
       </div>
-      <button class="btn sm" id="aShowDegraded">Show ${degraded.length === 1 ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowDegraded">Show ${degraded.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowDegraded').addEventListener('click', () => focusHealth('DEGRADED'));
   }
@@ -1171,15 +1226,15 @@ SCREENS.automation = async host => {
     const one = producingNothing.length === 1;
     const worst = producingNothing[0];
     const wr = rate30(worst);
-    const b = el('div', 'banner hot');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">do_not_disturb_on</span>
       <div style="flex:1">
         <strong>${num(producingNothing.length)} workflow${one ? '' : 's'} run${one ? 's' : ''} without failing and produce${one ? 's' : ''} nothing usable.</strong>
         ${esc(worst.name || 'One workflow')} logged ${num(n0(worst.runs_30d) || 0)} run${(n0(worst.runs_30d) || 0) === 1 ? '' : 's'} in the window and
         ${num(n0(worst.successes_30d) || 0)} of them produced a result${wr == null ? '' : ` — ${esc(pct(wr))}`}. The rest completed and had nothing to show for it.
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">Nothing here is red: these runs did not crash, they finished. That is exactly why this state needs its own banner — a workflow achieving nothing raises no failure for anything else on this screen to notice.</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">Nothing here is red: these runs did not crash, they finished. That is exactly why this state needs its own banner — a workflow achieving nothing raises no failure for anything else on this screen to notice.</div>
       </div>
-      <button class="btn sm" id="aShowNothing">Show ${one ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowNothing">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowNothing').addEventListener('click', () => focusHealth('PRODUCING_NOTHING'));
   }
@@ -1189,15 +1244,15 @@ SCREENS.automation = async host => {
      pass — so it is named here rather than left to sort quietly mid-list. */
   if (unknownOutcome.length) {
     const one = unknownOutcome.length === 1;
-    const b = el('div', 'banner warm');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
       <div style="flex:1">
         <strong>${num(unknownOutcome.length)} workflow${one ? '' : 's'} logged a status this system does not define.</strong>
         ${esc(unknownOutcome.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} wrote a value
-        <span class="mono">NEXUS’s own rule for what a run achieved</span> has no case for, so ${one ? 'its' : 'their'} health cannot be stated either way and no rate is claimed for ${one ? 'it' : 'them'}.
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">Adding the value to <span class="mono">NEXUS’s own rule for what a run achieved</span> and to <span class="mono">NEXUS</span> together is what resolves this. Guessing at it on the screen is what this rebuild removed.</div>
+        <span class="font-label-numeric-sm">NEXUS’s own rule for what a run achieved</span> has no case for, so ${one ? 'its' : 'their'} health cannot be stated either way and no rate is claimed for ${one ? 'it' : 'them'}.
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">Adding the value to <span class="font-label-numeric-sm">NEXUS’s own rule for what a run achieved</span> and to <span class="font-label-numeric-sm">NEXUS</span> together is what resolves this. Guessing at it on the screen is what this rebuild removed.</div>
       </div>
-      <button class="btn sm" id="aShowUnknown">Show ${one ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowUnknown">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowUnknown').addEventListener('click', () => focusHealth('UNKNOWN_OUTCOME'));
   }
@@ -1208,7 +1263,7 @@ SCREENS.automation = async host => {
      covers all three attention states, and it still refuses to generalise past
      the workflows that are actually instrumented. */
   if (!attention.length && health && rows.length && rows.some(w => w.writes_audit_log)) {
-    const b = el('div', 'banner info');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">check_circle</span>
       <div>No instrumented workflow failed, went out half-done, produced nothing usable or logged an unreadable status inside the 30-day window.
       This statement only covers the ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to the activity log${
@@ -1235,9 +1290,9 @@ SCREENS.automation = async host => {
           ? 'has never logged a run at all'
           : `last logged one ${esc(fmtHours(s.ageH))} ago, past the ${esc(fmtHours(s.c.allowance))} that cadence allows`}.
       A schedule that stops firing produces no failures and no degraded health, so this is the only place it shows up.
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
-      <button class="btn sm" id="aShowOverdue">Show ${overdue.length === 1 ? 'it' : 'them'}</button>`;
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowOverdue">Show ${overdue.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowOverdue').addEventListener('click', () => focusSched('LATE'));
   }
@@ -1248,13 +1303,13 @@ SCREENS.automation = async host => {
      trains people to ignore it. Said out loud, with the assumption on show. */
   if (restarted.length) {
     const one = restarted.length === 1;
-    const b = el('div', 'banner info');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">restart_alt</span>
       <div style="flex:1"><strong>${num(restarted.length)} scheduled job${one ? ' has' : 's have'} not logged a run inside ${one ? 'its' : 'their'} cadence, and ${one ? 'is' : 'are'} not overdue.</strong>
       ${esc(restarted.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} had ${one ? 'its' : 'their'} schedule changed more recently than
       ${one ? 'that' : 'those'} last run, which restarts the clock — the gap belongs to the old schedule and says nothing about the new one.
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
-      <button class="btn sm" id="aShowRestarted">Show ${one ? 'it' : 'them'}</button>`;
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowRestarted">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowRestarted').addEventListener('click', () => focusSched('ALL'));
   }
@@ -1263,27 +1318,27 @@ SCREENS.automation = async host => {
      read. Stated once, at the top, because it applies to every row on the page. */
   if (rows.length) {
     const exempt = rows.filter(w => exemptFrom(w));
-    const b = el('div', 'banner info');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">timer</span>
       <div style="flex:1"><strong>Every workflow is capped at ${CEILING_SECONDS / 60} minutes of wall-clock time.</strong>
       ${esc(CEILING.why)}
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(CEILING.onTimeout)}</div>
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(CEILING.onTimeout)}</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${
         exempt.length
           ? `One deliberate exception: <strong>${esc(exempt.map(w => w.name).join(', '))}</strong> carries no ceiling. ${esc(exempt.map(w => exemptFrom(w).why)[0])}`
           : 'The one workflow exempt from it — the 7-Day Warm Lead Drip, whose Wait nodes hold an execution open for a week — is not in this list, so nothing on screen is currently exempt.'}
       </div>
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(CEILING.provenance)}</div></div>`;
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(CEILING.provenance)}</div></div>`;
     banners.appendChild(b);
   }
 
   if (blind.length) {
-    const b = el('div', 'banner warm');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">visibility_off</span>
       <div style="flex:1"><strong>${num(blind.length)} workflow${blind.length === 1 ? '' : 's'} write${blind.length === 1 ? 's' : ''} nothing to the activity log.</strong>
       ${blind.length === 1 ? 'It' : 'They'} may be running perfectly or failing every time — the dashboard cannot tell, because there is no Audit Log node to read.
       Only NEXUS can close that gap, by instrumenting the workflow.</div>
-      <button class="btn sm" id="aShowBlind">Show ${blind.length === 1 ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowBlind">Show ${blind.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowBlind').addEventListener('click', () => focusHealth('NOT_INSTRUMENTED'));
   }
@@ -1295,14 +1350,14 @@ SCREENS.automation = async host => {
   if (byDesign.length) {
     const one = byDesign.length === 1;
     const names = byDesign.map(w => w.name).filter(Boolean);
-    const b = el('div', 'banner info');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">sync_alt</span>
       <div style="flex:1"><strong>${num(byDesign.length)} workflow${one ? '' : 's'} answer${one ? 's' : ''} the caller instead of writing to the activity log.</strong>
       ${names.length ? `${esc(names.join(', '))} ${names.length === 1 ? 'is' : 'are'}` : `${one ? 'It is' : 'They are'}`} called by the dashboard and read on the spot,
       so ${one ? 'the' : 'each'} outcome is shown by the screen that made the call. For a request/response endpoint that is the right design,
       so ${one ? 'it is' : 'they are'} not counted as a blind spot above. It does mean no run history is kept here — this screen cannot tell you
       how ${one ? 'it' : 'they'} behaved yesterday, only the calling screen can, as it happens.</div>
-      <button class="btn sm" id="aShowByDesign">Show ${one ? 'it' : 'them'}</button>`;
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowByDesign">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowByDesign').addEventListener('click', () => focusHealth('RETURNS_RESULT'));
   }
@@ -1310,12 +1365,12 @@ SCREENS.automation = async host => {
   /* Not automation at all, and unlabelled it reads as three dead workflows. */
   if (pages.length) {
     const one = pages.length === 1;
-    const b = el('div', 'banner info');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">public</span>
       <div style="flex:1"><strong>${num(pages.length)} of these ${one ? 'is a web page, not an automation' : 'are web pages, not automations'}.</strong>
       ${esc(pages.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} ${one ? 'is a page NEXUS publishes' : 'are pages NEXUS publishes'}, not ${one ? 'an automation' : 'automations'} of yours.
-      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${one ? 'It' : 'They'} will never log a run — a page view is not a workflow run — so ${one ? 'it is' : 'they are'} not counted as a blind spot above, and a silent one here is correct rather than suspicious.</div></div>
-      <button class="btn sm" id="aShowPages">Show ${one ? 'it' : 'them'}</button>`;
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${one ? 'It' : 'They'} will never log a run — a page view is not a workflow run — so ${one ? 'it is' : 'they are'} not counted as a blind spot above, and a silent one here is correct rather than suspicious.</div></div>
+      <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowPages">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowPages').addEventListener('click', () => focusHealth('PUBLIC_PAGE'));
   }
@@ -1328,18 +1383,18 @@ SCREENS.automation = async host => {
     rows.forEach(w => namesFor(w).forEach(n => known.add(n)));
     const orphans = [...new Set((audit || []).map(a => a.workflow).filter(w => w && !known.has(low(w))))];
     if (orphans.length) {
-      const b = el('div', 'banner warm');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
       /* Each unmatched name is a button that filters the log to it, so the claim
          hands over the exact runs it is about rather than leaving someone to
          search for them. */
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
         <div style="flex:1"><strong>${num(orphans.length)} name${orphans.length === 1 ? '' : 's'} in the activity log match no registered workflow.</strong>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-          ${orphans.slice(0, 6).map(n => `<button class="btn sm ghost" data-orphan="${esc(n)}">${esc(n)}</button>`).join('')}
-          ${orphans.length > 6 ? `<span class="ds-cell-sub">and ${orphans.length - 6} more</span>` : ''}
+          ${orphans.slice(0, 6).map(n => `<button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-orphan="${esc(n)}">${esc(n)}</button>`).join('')}
+          ${orphans.length > 6 ? `<span class="font-body-sm text-body-sm text-on-surface-variant">and ${orphans.length - 6} more</span>` : ''}
         </div>
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">Runs logged under ${orphans.length === 1 ? 'that name' : 'those names'} are not counted in any health figure above until
-        the automation register records ${orphans.length === 1 ? 'it' : 'them'} as an <span class="mono">audit_name</span> or in <span class="mono">audit_aliases</span> —
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">Runs logged under ${orphans.length === 1 ? 'that name' : 'those names'} are not counted in any health figure above until
+        the automation register records ${orphans.length === 1 ? 'it' : 'them'} as an <span class="font-label-numeric-sm">audit_name</span> or in <span class="font-label-numeric-sm">audit_aliases</span> —
         which is the join every figure on this screen uses, precisely because the name a run logs under can drift from the name the workflow is registered with.</div></div>`;
       banners.appendChild(b);
       b.querySelectorAll('[data-orphan]').forEach(btn =>
@@ -1348,7 +1403,7 @@ SCREENS.automation = async host => {
   }
 
   if (!registry) {
-    const b = el('div', 'banner warm');
+    const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">warning</span>
       <div>The automation register could not be read (${esc(regR.status === 'rejected' ? (regR.reason?.message || 'Unknown error') : 'no rows')}),
       so a workflow's run history is matched on its display name alone. A workflow that logs under an alias will look quieter than it is.</div>`;
@@ -1363,7 +1418,7 @@ SCREENS.automation = async host => {
      different question: given what this job's own trigger says its cadence is,
      is a run overdue? */
   if (!health) {
-    schedCard.innerHTML = `<div class="card-head"><div><div class="card-title">Scheduled jobs</div></div></div>
+    schedCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Scheduled jobs</div></div></div>
       ${stateError('workflow health', healthErr)}`;
   } else if (!triggerVisible) {
     /* THE FALSE ABSENCE THIS BRANCH EXISTS TO END. Until 5 Sep 2026 the branch
@@ -1374,50 +1429,50 @@ SCREENS.automation = async host => {
        read it. Reporting that as a missing record, and then asking the customer
        to go and supply it, is the system inventing an absence and then billing
        the customer for it. */
-    schedCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Scheduled jobs</div>
-        <div class="card-sub">Not checked from this dashboard.</div>
+    schedCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Scheduled jobs</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Not checked from this dashboard.</div>
       </div></div>
       ${stateEmpty('Schedules are operated by NEXUS',
         `${TRIGGER_NOT_AVAILABLE} So this screen cannot tell you whether a scheduled job is overdue, and it will not guess: the ${num(rows.length)} workflows below still report every run they logged, and a job that fails or half-delivers is still coloured and counted above. What is not covered is the quiet case — a schedule that simply stops firing raises no failure — and NEXUS watches for that on its side.`,
         'visibility_off')}`;
   } else if (!scheduled.length) {
-    schedCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Scheduled jobs</div>
-        <div class="card-sub">Cadence is read from the trigger recorded in the automation register.</div>
+    schedCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Scheduled jobs</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Cadence is read from the trigger recorded in the automation register.</div>
       </div></div>
       ${stateEmpty('No schedule this screen can read',
         `None of the ${rows.length} registered workflows records a cadence this screen can parse — a cron expression, or wording like "every 6 hours" or "nightly". Without one there is nothing to measure the last logged run against, so a stopped schedule would go unnoticed here.`, 'schedule')}`;
   } else {
     let sf = 'ALL';
     const lateCount = overdue.length;
-    schedCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Scheduled jobs — each against its own cadence</div>
-        <div class="card-sub">${num(scheduled.length)} of ${num(rows.length)} registered workflows run on a schedule this screen can read. A job that quietly stops firing raises no failures and no degraded health, so it is checked against its own interval instead: hourly is late after 2 h, daily after 26 h — the same thresholds <span class="mono">scripts/nexus_healthcheck.py</span> section 7 uses.</div>
+    schedCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Scheduled jobs — each against its own cadence</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(scheduled.length)} of ${num(rows.length)} registered workflows run on a schedule this screen can read. A job that quietly stops firing raises no failures and no degraded health, so it is checked against its own interval instead: hourly is late after 2 h, daily after 26 h — the same thresholds <span class="font-label-numeric-sm">scripts/nexus_healthcheck.py</span> section 7 uses.</div>
       </div></div>
-      <div class="toolbar">
-        <div class="seg" id="aSegSched" role="group" aria-label="Filter scheduled jobs">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="seg inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container" id="aSegSched" role="group" aria-label="Filter scheduled jobs">
           <button data-s="ALL" class="on">All · ${num(scheduled.length)}</button>
           ${lateCount ? `<button data-s="LATE">Overdue · ${num(lateCount)}</button>` : ''}
         </div>
-        <div class="grow"></div>
-        <div class="t-muted num" id="aSchedCount"></div>
+        <div class="flex-1 min-w-[160px]"></div>
+        <div class="font-label-numeric-sm text-outline" id="aSchedCount"></div>
       </div>
       <div id="aSchedList"></div>
-      <div class="toolbar" style="background:var(--surface-sunken)">
-        <div class="ds-cell-sub" style="white-space:normal;flex:1">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40" style="background:var(--surface-sunken)">
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;flex:1">
           <strong>How this is judged, and how far it can be trusted.</strong> ${esc(CADENCE_CAVEAT)}
           <div style="margin-top:6px">${esc(EDIT_BLIND)}</div>
         </div>
       </div>
-      <div class="toolbar" style="background:var(--surface-sunken)">
-        <div class="ds-cell-sub" style="white-space:normal;flex:1">
-          <strong>An interval is not a fixed clock.</strong> An “every N hours” interval counts from when the workflow was last started rather than from the clock, so a restart of the host moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, and its health record stayed green the whole time. (It reads <span class="mono">No output</span> today for an unrelated reason — its scrapes are landing and finding no price — so the green is gone but the blind spot is not: a schedule that stops still turns nothing red.) It is on <span class="mono">0 5 * * *</span> now — 05:00 UTC, on the clock, unmoved by a restart. ${
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40" style="background:var(--surface-sunken)">
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;flex:1">
+          <strong>An interval is not a fixed clock.</strong> An “every N hours” interval counts from when the workflow was last started rather than from the clock, so a restart of the host moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, and its health record stayed green the whole time. (It reads <span class="font-label-numeric-sm">No output</span> today for an unrelated reason — its scrapes are landing and finding no price — so the green is gone but the blind spot is not: a schedule that stops still turns nothing red.) It is on <span class="font-label-numeric-sm">0 5 * * *</span> now — 05:00 UTC, on the clock, unmoved by a restart. ${
             trulyDrifting.length
-              ? `<span class="t-warm">${num(trulyDrifting.length)} job${trulyDrifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(trulyDrifting.map(w => w.name).join(', '))}. Worth asking NEXUS whether ${trulyDrifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a fixed clock.</span>`
+              ? `<span class="text-amber-700">${num(trulyDrifting.length)} job${trulyDrifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(trulyDrifting.map(w => w.name).join(', '))}. Worth asking NEXUS whether ${trulyDrifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a fixed clock.</span>`
               : 'No job in this list records an interval this screen has reason to warn about.'}${
             staleInterval.length
-              ? ` <span class="t-muted">${esc(staleInterval.map(w => w.name).join(', '))} still reads as an interval in the automation register, but ${staleInterval.length === 1 ? 'that trigger has' : 'those triggers have'} since been moved onto a fixed clock — the register is the stale half, and NEXUS keeps it.</span>`
+              ? ` <span class="text-outline">${esc(staleInterval.map(w => w.name).join(', '))} still reads as an interval in the automation register, but ${staleInterval.length === 1 ? 'that trigger has' : 'those triggers have'} since been moved onto a fixed clock — the register is the stale half, and NEXUS keeps it.</span>`
               : ''}
         </div>
       </div>`;
@@ -1428,7 +1483,7 @@ SCREENS.automation = async host => {
     const schedRow = (w, i) => {
       const s = schedOf.get(w);
       const v = SCHED[s.state];
-      return `<div class="list-item" data-sched="${i}" role="button" tabindex="0"
+      return `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" data-sched="${i}" role="button" tabindex="0"
         aria-label="Open ${esc(w.name || 'workflow')} — ${esc(v.label)}" style="align-items:flex-start">
         <span class="material-symbols-outlined ${v.tone === 'hot' ? 't-hot' : v.tone === 'ok' ? 't-ok' : 't-muted'}"
           style="margin-top:2px">${esc(v.icon)}</span>
@@ -1451,18 +1506,18 @@ SCREENS.automation = async host => {
                       : `Recorded as an interval (${s.c.expr}). An interval counts from when the workflow was last started, so a restart moves the fire time.`)
                   : `Recorded as “${s.c.expr}”. Whether that is a fixed clock or an interval is not written down, so the mechanism — and whether a restart moves it — is unknown here.`;
               const suffix = !s.c.drifts ? '' : chg ? ' · the register says interval, the schedule is fixed' : ' · interval, drifts';
-              return `<span class="chip" title="${esc(title)}">${esc(s.c.kind === 'cron' ? `cron ${s.c.expr}` : s.c.expr)}${suffix}</span>`;
+              return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="${esc(title)}">${esc(s.c.kind === 'cron' ? `cron ${s.c.expr}` : s.c.expr)}${suffix}</span>`;
             })()}
-            <span class="chip">expects a run every ${esc(fmtHours(s.c.hours))}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">expects a run every ${esc(fmtHours(s.c.hours))}</span>
           </div>
           <div class="ds-cell-sub ${s.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:6px;white-space:normal">${esc(s.why)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div class="ds-cell-sub">${w.last_run ? 'last logged run' : ''}</div>
-          <div class="num" style="font-weight:500">${w.last_run
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${w.last_run ? 'last logged run' : ''}</div>
+          <div class="font-label-numeric-sm" style="font-weight:500">${w.last_run
             ? `<span class="${s.state === 'OVERDUE' ? 't-hot' : ''}">${esc(ago(w.last_run))}</span>`
-            : '<span class="t-muted">never</span>'}</div>
-          <div class="ds-cell-sub">late after ${esc(fmtHours(s.c.allowance))}</div>
+            : '<span class="text-outline">never</span>'}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">late after ${esc(fmtHours(s.c.allowance))}</div>
         </div>
       </div>`;
     };
@@ -1505,10 +1560,10 @@ SCREENS.automation = async host => {
 
   /* ── Workflow health, grouped by category ──────────────────────────────── */
   if (!health) {
-    healthCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflow health</div></div></div>
+    healthCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Workflow health</div></div></div>
       ${stateError('workflow health', healthErr)}`;
   } else if (!rows.length) {
-    healthCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflow health</div></div></div>
+    healthCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Workflow health</div></div></div>
       ${stateEmpty('No workflows registered', 'The automation register is empty, so the automation health figures has nothing to report.', 'account_tree')}`;
   } else {
     const f = { health: 'ALL', q: '' };
@@ -1535,12 +1590,12 @@ SCREENS.automation = async host => {
       : k === 'SCHED_LATE' ? 'Schedule overdue'
       : STATES[k] ? STATES[k].label : k;
 
-    healthCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">This list is the register of the automations NEXUS runs for you. The run figures beside each row are counted from this dealership's own record, so a workflow reading “never logged a run” here has never run for you. A handful of entries are pages NEXUS publishes rather than automations, and they are labelled where they appear. Headline figures are the rolling 30-day window from <span class="mono">The automation health figures</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
+    healthCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Workflow health by category</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">This list is the register of the automations NEXUS runs for you. The run figures beside each row are counted from this dealership's own record, so a workflow reading “never logged a run” here has never run for you. A handful of entries are pages NEXUS publishes rather than automations, and they are labelled where they appear. Headline figures are the rolling 30-day window from <span class="font-label-numeric-sm">The automation health figures</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
-      <div class="toolbar">
-        <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="seg inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container" id="aSegHealth" role="group" aria-label="Filter workflows by health">
           ${/* Each segment carries the canonical layer's own sentence about the
                 state it filters to, so the definition is on the control rather
                 than only in a banner somebody may have scrolled past. */ ''}
@@ -1548,14 +1603,14 @@ SCREENS.automation = async host => {
             const title = k === 'SCHED_LATE'
               ? 'Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. The automation health figures cannot express this: a job that stops firing logs no failures.'
               : (STATES[k] ? STATES[k].detail : '');
-            return `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+            return `<button data-h="${esc(k)}" class="px-3 py-1 rounded-md font-body-sm text-body-sm font-semibold text-on-surface-variant${i === 0 ? ' on' : ''}"${
               title ? ` title="${esc(title)}"` : ''
               }>${esc(segLabel(k))} · ${num(c)}</button>`;
           }).join('')}
         </div>
-        <div class="grow"><input type="search" id="aWfQ" aria-label="Search workflows"
+        <div class="flex-1 min-w-[160px]"><input type="search" id="aWfQ" aria-label="Search workflows"
           placeholder="Search workflow, category or description" /></div>
-        <div class="t-muted num" id="aWfCount"></div>
+        <div class="font-label-numeric-sm text-outline" id="aWfCount"></div>
       </div>
       <div id="aWfList"></div>`;
 
@@ -1586,13 +1641,13 @@ SCREENS.automation = async host => {
          every workflow in PRODUCING_NOTHING on the day this was rebuilt. */
       const mixLine = [
         `${num(n0(w.successes_30d) || 0)} delivered`,
-        bad30 ? `<span class="t-hot">${num(bad30)} failed or half-done</span>` : '',
-        none30 ? `<span class="t-warm">${num(none30)} produced nothing</span>` : '',
-        (n0(w.rejected_30d) || 0) ? `<span class="t-muted">${num(n0(w.rejected_30d) || 0)} refused by design, left out of the rate</span>` : '',
-        (n0(w.escalated_30d) || 0) ? `<span class="t-muted">${num(n0(w.escalated_30d) || 0)} escalated, left out of the rate</span>` : '',
-        (n0(w.unknown_30d) || 0) ? `<span class="t-unknown">${num(n0(w.unknown_30d) || 0)} logged a status this system cannot read</span>` : '',
+        bad30 ? `<span class="text-red-700">${num(bad30)} failed or half-done</span>` : '',
+        none30 ? `<span class="text-amber-700">${num(none30)} produced nothing</span>` : '',
+        (n0(w.rejected_30d) || 0) ? `<span class="text-outline">${num(n0(w.rejected_30d) || 0)} refused by design, left out of the rate</span>` : '',
+        (n0(w.escalated_30d) || 0) ? `<span class="text-outline">${num(n0(w.escalated_30d) || 0)} escalated, left out of the rate</span>` : '',
+        (n0(w.unknown_30d) || 0) ? `<span class="text-zinc-600">${num(n0(w.unknown_30d) || 0)} logged a status this system cannot read</span>` : '',
       ].filter(Boolean).join(' · ');
-      return `<div class="list-item" data-wf="${i}" role="button" tabindex="0"
+      return `<div class="block w-full text-left px-space-md py-3 border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors" data-wf="${i}" role="button" tabindex="0"
         aria-label="Open ${esc(w.name || 'workflow')} — ${esc(healthLabel(w))}" style="align-items:flex-start">
         <span class="material-symbols-outlined ${h.tone === 'hot' ? 't-hot' : h.tone === 'ok' ? 't-ok' : 't-muted'}"
           style="margin-top:2px">${esc(h.icon)}</span>
@@ -1609,9 +1664,9 @@ SCREENS.automation = async host => {
                  once, on the Scheduled jobs card, not eighteen times here. */ ''}
             ${ceilingChip(w)}
           </div>
-          <div class="ds-cell-sub" style="margin-top:4px;white-space:normal">${esc(w.description || 'No description in the automation register.')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px;white-space:normal">${esc(w.description || 'No description in the automation register.')}</div>
           ${runBar(w)}
-          <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">
             ${runs30 == null || runs30 === 0
               ? (w.writes_audit_log
                   ? 'No runs logged in the last 30 days.'
@@ -1619,12 +1674,12 @@ SCREENS.automation = async host => {
                     ? `Answers its caller in the reply instead of logging, so there is no run count here by design — ${esc(answers.where)} reports each call as it happens.`
                     : 'Not instrumented — nothing reaches the activity log, so no run can be counted.')
               : `${num(runs30)} run${runs30 === 1 ? '' : 's'} in the window · ${mixLine}`}
-            ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${
+            ${w.runs ? ` · <span class="text-outline">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${
               rAll == null ? ', no all-time rate' : ` (${pct(rAll)} of the runs that qualified)`}</span>` : ''}
           </div>
           ${/* last_incomplete, not last_failure: a run that went out half-done is
                 the same finding and the old line said "none recorded" over it. */ ''}
-          ${w.last_incomplete ? `<div class="ds-cell-sub t-hot" style="margin-top:2px">Last failed or half-done run ${esc(ago(w.last_incomplete))}</div>` : ''}
+          ${w.last_incomplete ? `<div class="font-body-sm text-body-sm text-red-700" style="margin-top:2px">Last failed or half-done run ${esc(ago(w.last_incomplete))}</div>` : ''}
           ${(() => {
             const s = schedOf.get(w);
             if (!s) return '';
@@ -1644,19 +1699,19 @@ SCREENS.automation = async host => {
                 when nothing failed, nothing went half-done and nothing came back
                 empty — a workflow can hold a rate of 12.5% with no failure on
                 it at all. */ ''}
-          <div class="num" style="font-weight:500;font-size:16px"
+          <div class="font-label-numeric-sm" style="font-weight:500;font-size:16px"
             ><span class="${r30 == null ? 't-unknown' : (bad30 || none30) ? 't-hot' : 't-ok'}">${
               r30 == null ? 'no rate' : esc(pct(r30))}</span></div>
-          <div class="ds-cell-sub" style="white-space:normal;max-width:190px">${
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;max-width:190px">${
             r30 == null
               ? (answers
                   ? 'no rate is kept here — this endpoint answers its caller instead of logging'
                   : esc(noRateWhy(w)))
               : `30-day success, over ${num(n0(w.effective_runs_30d) || 0)} qualifying run${(n0(w.effective_runs_30d) || 0) === 1 ? '' : 's'}`}</div>
-          <div class="ds-cell-sub">${w.last_run
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${w.last_run
             ? 'ran ' + esc(ago(w.last_run))
             : (answers ? 'no run log kept' : 'never logged a run')}</div>
-          <button class="btn sm" data-run="${i}" ${t.can ? '' : 'disabled'}
+          <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" data-run="${i}" ${t.can ? '' : 'disabled'}
             aria-label="${esc(t.label)} — ${esc(w.name || 'workflow')}"
             title="${esc(t.can ? `POSTs to the ${t.hook} webhook with your session token.` : t.why)}">${esc(t.label)}</button>
         </div>
@@ -1694,10 +1749,10 @@ SCREENS.automation = async host => {
         const catRuns = catSum('runs_30d');
         const catEff = catSum('effective_runs_30d');
         const cr = successRate(catSum('successes_30d'), catEff);
-        return `<div class="toolbar" style="background:var(--surface-sunken)">
-            <div class="label-caps" style="flex:1">${esc(cat)}</div>
+        return `<div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40" style="background:var(--surface-sunken)">
+            <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="flex:1">${esc(cat)}</div>
             ${catBad.length ? pill(`${catBad.length} need${catBad.length === 1 ? 's' : ''} attention`, 'hot', { verbatim: false }) : ''}
-            <span class="ds-cell-sub">${list.length} workflow${list.length === 1 ? '' : 's'}${
+            <span class="font-body-sm text-body-sm text-on-surface-variant">${list.length} workflow${list.length === 1 ? '' : 's'}${
               catRuns
                 ? ` · ${num(catRuns)} run${catRuns === 1 ? '' : 's'} in 30 days · ${
                     cr == null
@@ -1780,45 +1835,45 @@ SCREENS.automation = async host => {
     const answers = respondsToCaller(w) ? callerInfo(w) : null;
 
     openDrawer(`
-      <div class="drawer-head">
+      <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
         <div style="flex:1">
           <h2 style="font-size:18px">${esc(w.name || 'Unnamed workflow')}</h2>
-          <div class="ds-cell-sub">${esc(w.category || 'Uncategorised')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(w.category || 'Uncategorised')}</div>
         </div>
-        <button class="btn ghost sm" id="aClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
-      <div class="drawer-body">
-        <div class="section">
-          <div class="label-caps">Health</div>
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Health</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${wordPill(healthLabel(w), h.tone, h.detail)}
             ${w.is_active === false ? pill('Inactive', 'warm', { verbatim: false }) : pill('Active', 'ok', { verbatim: false })}
             ${w.writes_audit_log ? '' : (answers ? pill('Answers the caller', 'cold', { verbatim: false }) : pill('No audit node', 'warm', { verbatim: false }))}
           </div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(h.detail)}</div>
-          ${answers ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">It replies with <span class="mono">${esc(answers.answer)}</span>. ${esc(answers.line)}</div>` : ''}
-          ${w.description ? `<div class="quote" style="margin-top:12px">${esc(w.description)}</div>` : ''}
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(h.detail)}</div>
+          ${answers ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">It replies with <span class="font-label-numeric-sm">${esc(answers.answer)}</span>. ${esc(answers.line)}</div>` : ''}
+          ${w.description ? `<div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:12px">${esc(w.description)}</div>` : ''}
         </div>
 
-        <div class="section">
-          <div class="label-caps">Execution ceiling</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Execution ceiling</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${/* Neither of these is a fault, so neither is coloured as one — the
                  words carry the difference. */ ''}
             ${exempt ? pill(exempt.chip, 'cold', { verbatim: false }) : pill(`${CEILING_SECONDS / 60} minutes`, 'cold', { verbatim: false })}
           </div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(exempt ? exempt.why : CEILING.why)}</div>
-          ${exempt ? '' : `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(CEILING.onTimeout)}</div>`}
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(CEILING.provenance)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(exempt ? exempt.why : CEILING.why)}</div>
+          ${exempt ? '' : `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(CEILING.onTimeout)}</div>`}
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(CEILING.provenance)}</div>
         </div>
 
-        ${sched ? `<div class="section">
-          <div class="label-caps">Schedule</div>
+        ${sched ? `<div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Schedule</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${pill(SCHED[sched.state].label, SCHED[sched.state].tone || undefined, { verbatim: false })}
-            <span class="chip">${esc(sched.c.kind === 'cron' ? `cron ${sched.c.expr}` : sched.c.expr)}</span>
-            <span class="chip">every ${esc(fmtHours(sched.c.hours))}</span>
-            <span class="chip">late after ${esc(fmtHours(sched.c.allowance))}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(sched.c.kind === 'cron' ? `cron ${sched.c.expr}` : sched.c.expr)}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">every ${esc(fmtHours(sched.c.hours))}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">late after ${esc(fmtHours(sched.c.allowance))}</span>
           </div>
           <div class="ds-cell-sub ${sched.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:8px;white-space:normal">${esc(sched.why)}</div>
           ${sched.c.drifts ? `<div class="banner ${scheduleChange(w) ? 'info' : 'warm'}" style="margin-top:12px"><span class="material-symbols-outlined">restart_alt</span>
@@ -1828,13 +1883,13 @@ SCREENS.automation = async host => {
               scheduleChange(w)
                 ? ` <strong>This one has already been fixed:</strong> the trigger was ${esc(scheduleChange(w).what)}. The automation register still describes it as an interval, and every cadence figure in this drawer is read from that description, so it lags the change.`
                 : ''}</div></div>` : ''}
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(EDIT_BLIND)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(EDIT_BLIND)}</div>
         </div>` : ''}
 
-        <div class="section">
-          <div class="label-caps">Last 30 days</div>
-          ${runBar(w) || `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Last 30 days</div>
+          ${runBar(w) || `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${
             answers
               ? 'Nothing is logged for this endpoint at all, so there is no bar to draw and the figures below stay empty. That is expected here — it is not evidence that it did or did not run.'
               : 'Nothing logged in the window, so there is no bar to draw.'}</div>`}
@@ -1845,8 +1900,8 @@ SCREENS.automation = async host => {
                 line carries the canonical layer's own sentence about what that
                 outcome means, so the definition is one hover away from the
                 count. */ ''}
-          <dl class="kv" style="margin-top:12px">
-            <dt>Runs logged</dt><dd class="num">${w.runs_30d == null ? '<span class="t-muted">—</span>' : num(w.runs_30d)}</dd>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:12px">
+            <dt>Runs logged</dt><dd class="font-label-numeric-sm">${w.runs_30d == null ? '<span class="text-outline">—</span>' : num(w.runs_30d)}</dd>
             ${[[OUTCOME.SUCCESS, 'successes_30d', ''],
                [OUTCOME.FAILURE, 'failures_30d', 't-hot'],
                [OUTCOME.PARTIAL, 'partials_30d', 't-hot'],
@@ -1862,63 +1917,63 @@ SCREENS.automation = async host => {
                 <dd class="num ${c ? cls : 't-muted'}" title="${esc(words.blurb)}">${num(c)}</dd>`;
             }).join('')}
             <dt title="Runs the workflow was expected to deliver on: everything except what was refused by design or handed to a person on purpose. This is the denominator of the rate below.">Qualifying runs</dt>
-            <dd class="num">${num(n0(w.effective_runs_30d) || 0)}</dd>
-            <dt>Success rate</dt><dd class="num">${
+            <dd class="font-label-numeric-sm">${num(n0(w.effective_runs_30d) || 0)}</dd>
+            <dt>Success rate</dt><dd class="font-label-numeric-sm">${
               r30 == null
-                ? `<span class="t-unknown">no rate</span><div class="ds-cell-sub" style="white-space:normal">${esc(noRateWhy(w))}</div>`
-                : `${esc(pct(r30))}<div class="ds-cell-sub">${num(n0(w.successes_30d) || 0)} outright successes over ${num(n0(w.effective_runs_30d) || 0)} qualifying runs</div>`}</dd>
-            <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+                ? `<span class="text-zinc-600">no rate</span><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(noRateWhy(w))}</div>`
+                : `${esc(pct(r30))}<div class="font-body-sm text-body-sm text-on-surface-variant">${num(n0(w.successes_30d) || 0)} outright successes over ${num(n0(w.effective_runs_30d) || 0)} qualifying runs</div>`}</dd>
+            <dt>Last failure</dt><dd>${w.last_failure ? `<span class="text-red-700">${esc(ago(w.last_failure))}</span>` : '<span class="text-outline">none recorded</span>'}</dd>
             <dt title="A run that finished but left a claimed step undone. Tracked separately because it is not a failure and the workflow will not tell you about it.">Last half-delivered</dt>
-            <dd>${w.last_partial ? `<span class="t-hot">${esc(ago(w.last_partial))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
-            <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) : '<span class="t-muted">none recorded</span>'}</dd>
+            <dd>${w.last_partial ? `<span class="text-red-700">${esc(ago(w.last_partial))}</span>` : '<span class="text-outline">none recorded</span>'}</dd>
+            <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) : '<span class="text-outline">none recorded</span>'}</dd>
           </dl>
-          ${drift ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">warning</span>
+          ${drift ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">warning</span>
             <div>This screen and the view disagree about this workflow's 30-day rate. The view reports
-            <span class="mono">The success rate it publishes</span> ${esc(viewRate30 == null ? 'null' : pct(viewRate30))}; the same arithmetic run here over
-            <span class="mono">successes_30d</span> and <span class="mono">effective_runs_30d</span> gives ${esc(r30 == null ? 'no rate' : pct(r30))}.
-            Both are meant to be successes over qualifying runs, so one of them has drifted from <span class="mono">NEXUS’s own rule for what a run achieved</span>.
+            <span class="font-label-numeric-sm">The success rate it publishes</span> ${esc(viewRate30 == null ? 'null' : pct(viewRate30))}; the same arithmetic run here over
+            <span class="font-label-numeric-sm">successes_30d</span> and <span class="font-label-numeric-sm">effective_runs_30d</span> gives ${esc(r30 == null ? 'no rate' : pct(r30))}.
+            Both are meant to be successes over qualifying runs, so one of them has drifted from <span class="font-label-numeric-sm">NEXUS’s own rule for what a run achieved</span>.
             Neither figure should be relied on until somebody says which — the difference is shown rather than resolved, because picking one silently
             is what this screen was rebuilt to stop doing.</div></div>` : ''}
         </div>
 
-        <div class="section">
-          <div class="label-caps">All time</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Runs</dt><dd class="num">${w.runs == null ? '<span class="t-muted">—</span>' : num(w.runs)}</dd>
-            <dt title="${esc(OUTCOME_WORDS.FAILURE.blurb)}">Failures</dt><dd class="num">${w.failures == null ? '<span class="t-muted">—</span>' : num(w.failures)}</dd>
-            <dt title="${esc(OUTCOME_WORDS.ESCALATED.blurb)}">Escalations</dt><dd class="num">${w.escalations == null ? '<span class="t-muted">—</span>' : num(w.escalations)}</dd>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">All time</div>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:8px">
+            <dt>Runs</dt><dd class="font-label-numeric-sm">${w.runs == null ? '<span class="text-outline">—</span>' : num(w.runs)}</dd>
+            <dt title="${esc(OUTCOME_WORDS.FAILURE.blurb)}">Failures</dt><dd class="font-label-numeric-sm">${w.failures == null ? '<span class="text-outline">—</span>' : num(w.failures)}</dd>
+            <dt title="${esc(OUTCOME_WORDS.ESCALATED.blurb)}">Escalations</dt><dd class="font-label-numeric-sm">${w.escalations == null ? '<span class="text-outline">—</span>' : num(w.escalations)}</dd>
             ${/* All-time is the view's own figure and is labelled as such. There
                   is no all-time successes column to recompute it from, and this
                   screen does not fabricate one out of runs minus failures — that
                   subtraction is the exact arithmetic the 31 Aug rebuild removed,
                   and all-time is precisely where nobody would notice it. */ ''}
-            <dt>Success rate</dt><dd class="num">${
+            <dt>Success rate</dt><dd class="font-label-numeric-sm">${
               rAll == null
-                ? '<span class="t-unknown">no rate</span><div class="ds-cell-sub" style="white-space:normal">nothing has qualified for one — every logged run was refused by design or escalated, or nothing was logged at all</div>'
-                : `${esc(pct(rAll))}<div class="ds-cell-sub">reported by the view as <span class="mono">success_rate</span>, over the same definition as the 30-day figure. There is no all-time successes column, so this one is not recomputed here and the two cannot be cross-checked.</div>`}</dd>
-            <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : '<span class="t-muted">never logged</span>'}</dd>
+                ? '<span class="text-zinc-600">no rate</span><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">nothing has qualified for one — every logged run was refused by design or escalated, or nothing was logged at all</div>'
+                : `${esc(pct(rAll))}<div class="font-body-sm text-body-sm text-on-surface-variant">reported by the view as <span class="font-label-numeric-sm">success_rate</span>, over the same definition as the 30-day figure. There is no all-time successes column, so this one is not recomputed here and the two cannot be cross-checked.</div>`}</dd>
+            <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : '<span class="text-outline">never logged</span>'}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">All-time counts start from the day each workflow gained an Audit Log node, not from the day it was built, so they understate anything older than instrumentation.</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">All-time counts start from the day each workflow gained an Audit Log node, not from the day it was built, so they understate anything older than instrumentation.</div>
         </div>
 
-        <div class="section">
-          <div class="label-caps">Recent logged runs</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Recent logged runs</div>
           ${auditErr
             ? stateError('this workflow’s run history', auditErr)
             : history.length
-              ? `<div class="timeline" style="margin-top:8px">${history.slice(0, 25).map(a => `
-                  <div class="tl-item">
-                    <span class="tl-dot" style="background:var(--${runDot(a)})"></span>
-                    <div class="tl-body">
+              ? `<div class="flex flex-col gap-space-sm" style="margin-top:8px">${history.slice(0, 25).map(a => `
+                  <div class="flex gap-3">
+                    <span class="w-2 h-2 rounded-full bg-outline mt-1.5 shrink-0" style="background:var(--${runDot(a)})"></span>
+                    <div class="flex-1 min-w-0">
                       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                         ${a.status ? outcomePill(a) : pill('No status written', 'unknown', { verbatim: false })}
-                        <span class="ds-cell-sub">${esc(ago(a.logged_at))}</span>
-                        ${a.lead_name ? `<span class="chip">${esc(maskText(a.lead_name))}</span>` : ''}
+                        <span class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(a.logged_at))}</span>
+                        ${a.lead_name ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(maskText(a.lead_name))}</span>` : ''}
                       </div>
-                      <div class="tl-meta" style="white-space:normal">${esc(String(a.summary || 'No summary written.').slice(0, 240))}</div>
+                      <div class="font-label-numeric-sm text-[11px] text-outline" style="white-space:normal">${esc(String(a.summary || 'No summary written.').slice(0, 240))}</div>
                     </div>
                   </div>`).join('')}</div>
-                 <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${num(history.length)} run${history.length === 1 ? '' : 's'} for this workflow inside the ${num(AUDIT_LIMIT)} most recent audit rows, matched on ${esc(known)}.</div>`
+                 <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:10px;white-space:normal">${num(history.length)} run${history.length === 1 ? '' : 's'} for this workflow inside the ${num(AUDIT_LIMIT)} most recent audit rows, matched on ${esc(known)}.</div>`
               : (w.writes_audit_log
                   ? stateEmpty('No runs in the loaded window',
                       `This workflow writes to the activity log but none of the ${AUDIT_LIMIT} most recent rows belong to it.`, 'history')
@@ -1929,13 +1984,13 @@ SCREENS.automation = async host => {
                         'This workflow has no Audit Log node, so it will never appear in the activity log no matter how often it runs.', 'visibility_off'))}
         </div>
       </div>
-      <div class="drawer-foot">
-        <button class="btn primary" id="aRunDrawer" ${t.can ? '' : 'disabled'}
+      <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm whitespace-nowrap disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" id="aRunDrawer" ${t.can ? '' : 'disabled'}
           title="${esc(t.can ? 'Starts this automation the same way it normally starts itself, signed in as you. The dashboard is not reaching around it — it is doing what the caller would do.' : t.why)}">${esc(t.label)}</button>
-        <button class="btn ghost" disabled
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" disabled
           title="The dashboard cannot stop a run that is already going. Starting one is the only thing it can do; nothing in it can stop or retry one, and that is a deliberate limit rather than a missing button — stopping a run needs a credential that would have to be shipped into this browser to be used here, and anything shipped to a browser is public. Ask NEXUS support to stop a run.">Stop a run</button>
         ${t.hook && !t.can && SUBJECT_SCREEN[t.hook]
-          ? `<button class="btn" id="aGoSubject">Open ${esc(SUBJECT_SCREEN[t.hook].title)}</button>`
+          ? `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aGoSubject">Open ${esc(SUBJECT_SCREEN[t.hook].title)}</button>`
           : ''}
       </div>`);
     $('aClose').addEventListener('click', closeDrawer);
@@ -1954,47 +2009,47 @@ SCREENS.automation = async host => {
     const t = triggerState(w);
     if (!t.can) return;
     const m = openModal(`${t.label} — ${w.name || 'workflow'}`, `
-      <div class="banner info">
+      <div class="flex items-start gap-3 p-space-md rounded-lg border border-sky-200 bg-sky-50/50 text-sky-950 font-body-sm text-body-sm">
         <span class="material-symbols-outlined">bolt</span>
-        <div>This starts <span class="mono">${esc(w.name || t.hook)}</span>, signed in as you.
+        <div>This starts <span class="font-label-numeric-sm">${esc(w.name || t.hook)}</span>, signed in as you.
         The automation decides what it does; this dashboard does not choose records for it.</div>
       </div>
-      <dl class="kv">
+      <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline">
         <dt>Workflow</dt><dd>${esc(w.name || '—')}</dd>
         <dt>Category</dt><dd>${esc(w.category || 'Uncategorised')}</dd>
-        <dt>Webhook</dt><dd class="mono">${esc(t.hook)}</dd>
-        <dt>Body</dt><dd class="mono">{}</dd>
+        <dt>Webhook</dt><dd class="font-label-numeric-sm">${esc(t.hook)}</dd>
+        <dt>Body</dt><dd class="font-label-numeric-sm">{}</dd>
         <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : 'never logged'}</dd>
-        <dt>30-day health</dt><dd>${esc(healthLabel(w))}<div class="ds-cell-sub" style="white-space:normal">${esc(healthOf(w).detail)}</div></dd>
+        <dt>30-day health</dt><dd>${esc(healthLabel(w))}<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(healthOf(w).detail)}</div></dd>
         <dt>30-day success rate</dt><dd>${(() => {
           const r = rate30(w);
           return r == null
-            ? `<span class="t-unknown">no rate</span><div class="ds-cell-sub" style="white-space:normal">${esc(noRateWhy(w))}</div>`
-            : `${esc(pct(r))}<div class="ds-cell-sub">${num(n0(w.successes_30d) || 0)} of ${num(n0(w.effective_runs_30d) || 0)} qualifying runs succeeded outright</div>`;
+            ? `<span class="text-zinc-600">no rate</span><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(noRateWhy(w))}</div>`
+            : `${esc(pct(r))}<div class="font-body-sm text-body-sm text-on-surface-variant">${num(n0(w.successes_30d) || 0)} of ${num(n0(w.effective_runs_30d) || 0)} qualifying runs succeeded outright</div>`;
         })()}</dd>
       </dl>
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">
         The counts on this screen come from the activity log. They will not change until the workflow writes a row and the screen is reloaded.
       </div>
-      <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">
         This run is capped at ${CEILING_SECONDS / 60} minutes of wall-clock time like every other execution on the instance. If it hits that ceiling it is stopped
         and recorded as a failure with its data saved — the dashboard cannot stop it early, and there is no endpoint here that could.
       </div>`,
-      `<button class="btn primary" id="aGo">${esc(t.label)}</button>
-       <button class="btn ghost" id="aCancel">Cancel</button>`);
+      `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm whitespace-nowrap disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" id="aGo">${esc(t.label)}</button>
+       <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aCancel">Cancel</button>`);
 
     m.wrap.querySelector('#aCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#aGo').addEventListener('click', async ev => {
       const btn = ev.currentTarget;
       btn.disabled = true; btn.textContent = 'Running…';
-      m.msg('<span class="t-muted">Waiting for the workflow to answer…</span>');
+      m.msg('<span class="text-outline">Waiting for the workflow to answer…</span>');
       try {
         const res = await n8n(t.hook, {});
         const line = res && typeof res === 'object'
           ? String(res.message || res.status || res.raw || 'accepted')
           : 'accepted';
-        m.msg(`<span class="t-ok">${esc(t.hook)} answered: ${esc(String(line).slice(0, 200))}</span>
-          <div class="ds-cell-sub" style="margin-top:6px">Reload this screen once the workflow has written its audit row to see the counts move.</div>`);
+        m.msg(`<span class="text-emerald-700">${esc(t.hook)} answered: ${esc(String(line).slice(0, 200))}</span>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px">Reload this screen once the workflow has written its audit row to see the counts move.</div>`);
         btn.textContent = 'Ran';
       } catch (e) {
         modalError(m, e);
@@ -2005,7 +2060,7 @@ SCREENS.automation = async host => {
 
   /* ── Activity log ──────────────────────────────────────────────────────── */
   if (!audit) {
-    logCard.innerHTML = `<div class="card-head"><div><div class="card-title">Activity log</div></div></div>
+    logCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Activity log</div></div></div>
       ${stateError('the activity log', auditErr)}`;
   } else {
     /* The log is filtered by outcome, not by the status word a workflow happened
@@ -2042,13 +2097,13 @@ SCREENS.automation = async host => {
 
     const lf = { status: 'ALL', wf: 'ALL', q: '' };
 
-    logCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Activity log</div>
-        <div class="card-sub">Every row <span class="mono">The activity log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first. A run stopped by the ${CEILING_SECONDS / 60}-minute ceiling arrives here as a failure with its data kept, so failures on this list are two different findings and are labelled as such.${
-          auditCapped ? ` <span class="t-warm">This read is capped at ${num(AUDIT_LIMIT)} rows, so anything older is not on this page.</span>` : ''}</div>
+    logCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Activity log</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every row <span class="font-label-numeric-sm">The activity log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first. A run stopped by the ${CEILING_SECONDS / 60}-minute ceiling arrives here as a failure with its data kept, so failures on this list are two different findings and are labelled as such.${
+          auditCapped ? ` <span class="text-amber-700">This read is capped at ${num(AUDIT_LIMIT)} rows, so anything older is not on this page.</span>` : ''}</div>
       </div></div>
-      <div class="toolbar">
-        <div class="seg" id="aSegStatus" role="group" aria-label="Filter runs by status">
+      <div class="px-space-md py-3 flex flex-wrap items-center gap-space-sm border-b border-outline-variant/40">
+        <div class="seg inline-flex flex-wrap gap-0.5 p-0.5 rounded-lg bg-surface-container" id="aSegStatus" role="group" aria-label="Filter runs by status">
           ${/* Each segment is labelled and explained by lib/health.js, so the
                 filter, the pill in the row and the count in the KPI strip above
                 all use one vocabulary. */ ''}
@@ -2062,17 +2117,17 @@ SCREENS.automation = async host => {
               ? `Runs whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping them. The activity log has no reason column, so this is a reading of the summary, not something the database asserts. They also appear under their own outcome.`
               : k === 'NONE' ? 'Rows where the activity log holds no status at all. Nothing is claimed about these runs — a missing status is not a pass.'
               : known ? outcomeWords(k).blurb : '';
-            return `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+            return `<button data-s="${esc(k)}" class="px-3 py-1 rounded-md font-body-sm text-body-sm font-semibold text-on-surface-variant${i === 0 ? ' on' : ''}"${
               title ? ` title="${esc(title)}"` : ''}>${esc(label)} · ${num(c)}</button>`;
           }).join('')}
         </div>
-        <div class="grow"><input type="search" id="aLogQ" aria-label="Search the activity log"
+        <div class="flex-1 min-w-[160px]"><input type="search" id="aLogQ" aria-label="Search the activity log"
           placeholder="Search workflow, customer, intent or summary" /></div>
         <select id="aLogWf" aria-label="Filter runs by workflow" style="width:auto">
           <option value="ALL">All workflows · ${num(audit.length)}</option>
           ${wfNames.map(n => `<option value="${esc(n)}">${esc(n)} · ${num(audit.filter(a => a.workflow === n).length)}</option>`).join('')}
         </select>
-        <div class="t-muted num" id="aLogCount"></div>
+        <div class="font-label-numeric-sm text-outline" id="aLogCount"></div>
       </div>
       <div id="aLogTable"></div>`;
 
@@ -2085,33 +2140,33 @@ SCREENS.automation = async host => {
     const isBad = a => !!a.status && NEEDS_LOOKING_AT.includes(outcomeOf(a));
 
     const cols = [
-      { label: 'Logged', render: a => `<span class="mono t-muted">${esc(clock(a.logged_at))}</span>
-          <div class="ds-cell-sub">${esc(ago(a.logged_at))}</div>` },
+      { label: 'Logged', render: a => `<span class="font-label-numeric-sm text-outline">${esc(clock(a.logged_at))}</span>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(a.logged_at))}</div>` },
       { label: 'Outcome', render: a => a.status
           ? `${outcomePill(a)}${
               looksTimedOut(a)
-                ? `<div class="ds-cell-sub" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
+                ? `<div class="font-body-sm text-body-sm text-on-surface-variant" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
                 : looksGuardRejected(a)
-                  ? `<div class="ds-cell-sub" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel — the run completed, and it still produced no price</div>`
+                  ? `<div class="font-body-sm text-body-sm text-on-surface-variant" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel — the run completed, and it still produced no price</div>`
                   : missedCustomer(a)
-                    ? `<div class="ds-cell-sub t-hot" title="${esc(PARTIAL_NOTE)}">The run finished; the customer-facing step did not land</div>`
-                    : isBad(a) ? '<div class="ds-cell-sub t-hot">Needs investigation</div>' : ''}`
-          : '<span class="t-muted">No status written — nothing is claimed about this run</span>' },
+                    ? `<div class="font-body-sm text-body-sm text-red-700" title="${esc(PARTIAL_NOTE)}">The run finished; the customer-facing step did not land</div>`
+                    : isBad(a) ? '<div class="font-body-sm text-body-sm text-red-700">Needs investigation</div>' : ''}`
+          : '<span class="text-outline">No status written — nothing is claimed about this run</span>' },
       { label: 'Workflow', strong: true, render: a => `${esc(a.workflow || 'Unnamed')}
-          ${a.intent ? `<div class="ds-cell-sub">${esc(a.intent)}</div>` : ''}` },
+          ${a.intent ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(a.intent)}</div>` : ''}` },
       /* Name, then the number to reach them on, then the email. The phone comes
          from `leads.phone` matched on the run's lead_email — audit_log itself
          carries no phone — and every way that lookup can come up empty is
          spelled out rather than rendered as a dash. */
       { label: 'Customer', render: a => a.lead_name || a.lead_email
           ? `${esc(maskText(a.lead_name || 'Name not recorded on this run'))}
-             <div class="ds-cell-sub">${phoneLine(a.lead_email)}</div>
-             <div class="ds-cell-sub">${esc(maskText(a.lead_email || 'no email on the row'))}</div>`
-          : '<span class="t-muted">Not a per-customer run</span>' },
-      { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
+             <div class="font-body-sm text-body-sm text-on-surface-variant">${phoneLine(a.lead_email)}</div>
+             <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(a.lead_email || 'no email on the row'))}</div>`
+          : '<span class="text-outline">Not a per-customer run</span>' },
+      { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="text-outline">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
           ? `<span class="${looksGuardRejected(a) ? 't-warm' : isBad(a) ? 't-hot' : ''}" style="white-space:normal">${esc(dealerSummary(a.summary).slice(0, 200))}</span>`
-          : '<span class="t-muted">No summary written</span>' },
+          : '<span class="text-outline">No summary written</span>' },
     ];
 
     const th = logCard.querySelector('#aLogTable');
@@ -2176,15 +2231,15 @@ SCREENS.automation = async host => {
     if (incomplete.length) {
       const failed = incomplete.filter(a => outcomeOf(a) === OUTCOME.FAILURE).length;
       const half = incomplete.length - failed;
-      const b = el('div', 'banner hot');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">report</span>
         <div style="flex:1"><strong>${num(incomplete.length)} logged run${incomplete.length === 1 ? '' : 's'} did not land.</strong>
         ${num(failed)} failed outright and ${num(half)} finished with a claimed step undone.
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.
         ${timedOut.length
-          ? `<div class="ds-cell-sub" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking. Filter to “Hit the ceiling” below to see them. The activity log records no reason, so this is read off the summary text; NEXUS can confirm it against the run itself.</div>`
+          ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking. Filter to “Hit the ceiling” below to see them. The activity log records no reason, so this is read off the summary text; NEXUS can confirm it against the run itself.</div>`
           : ''}</div>
-        <button class="btn sm" id="aShowFailed">Show the failures</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowFailed">Show the failures</button>`;
       banners.appendChild(b);
       b.querySelector('#aShowFailed').addEventListener('click', () => focusLog(OUTCOME.FAILURE));
     }
@@ -2195,12 +2250,12 @@ SCREENS.automation = async host => {
        The two are split because they are different repairs, not different
        severities. */
     if (undelivered.length) {
-      const b = el('div', 'banner hot');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">forward_to_inbox</span>
         <div style="flex:1"><strong>${num(undelivered.length)} logged run${undelivered.length === 1 ? '' : 's'} completed without reaching the customer.</strong>
         ${esc(PARTIAL_NOTE)}
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
-        <button class="btn sm" id="aShowPartial">Show them</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowPartial">Show them</button>`;
       banners.appendChild(b);
       b.querySelector('#aShowPartial').addEventListener('click', () => focusLog(OUTCOME.PARTIAL));
     }
@@ -2212,12 +2267,12 @@ SCREENS.automation = async host => {
     const nothing = audit.filter(a => a.status && outcomeOf(a) === OUTCOME.NO_RESULT);
     if (nothing.length) {
       const one = nothing.length === 1;
-      const b = el('div', 'banner warm');
+      const b = el('div', 'flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">do_not_disturb_on</span>
         <div style="flex:1"><strong>${num(nothing.length)} logged run${one ? '' : 's'} finished and produced nothing usable.</strong>
         ${esc(OUTCOME_WORDS.NO_RESULT.blurb)} Nothing excuses these from the rate: they count against it in full. A refusal by design is left out of the denominator because the workflow was never expected to deliver; a run that simply came back empty was.
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
-        <button class="btn sm" id="aShowNoResult">Show ${one ? 'it' : 'them'}</button>`;
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aShowNoResult">Show ${one ? 'it' : 'them'}</button>`;
       banners.appendChild(b);
       b.querySelector('#aShowNoResult').addEventListener('click', () => focusLog(OUTCOME.NO_RESULT));
     }
@@ -2229,8 +2284,157 @@ SCREENS.automation = async host => {
   /* Real probes only. A hardcoded green dot next to a dead WhatsApp session is
      the one component on this screen that can cause a worse outcome than having
      no screen at all. Anything we cannot probe says so. */
-  intg.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Integration status</div><div id="intgRow">${stateLoading(1)}</div>`;
+  intg.innerHTML = `<div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold" style="margin-bottom:12px">Integration status</div><div id="intgRow">${stateLoading(1)}</div>`;
   renderIntegrations($('intgRow'));
+
+  /* ── Writers not registered ──────────────────────────────────────────────
+     Added 7 Oct 2026, from v_audit_unregistered_writers. Every health figure
+     above is driven by the automation register, so a workflow that writes to
+     the activity log under a name the register does not know is invisible to
+     all of them — its failures are counted nowhere. This lists those names
+     rather than registering them: a register row must carry a real workflow,
+     and inventing one to make the list empty would put a fabricated row into
+     the one table whose value is that it mirrors what is deployed. The
+     `disposition` column is the view's own account of each and is printed
+     verbatim. Fixing one is NEXUS's job; this panel is how a dealership sees it. */
+  panel(root, {
+    title: 'Writers not registered', icon: 'shield_lock',
+    sub: 'Names that appear in the activity log but not in the automation register, so no health figure on this '
+       + 'screen counts them',
+    load: () => db('v_audit_unregistered_writers?select=workflow_written_in_audit_log,audit_rows,audit_rows_30d,'
+      + 'first_written_at,last_written_at,statuses_seen,disposition&order=last_written_at.desc&limit=100'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('Every writer to the activity log is registered',
+          'Every name in this dealership’s activity log matches a workflow in the automation register, so the health '
+          + 'figures above count all of them.', 'task_alt');
+      }
+      return table([
+        { label: 'Name in the activity log', strong: true, render: w => `<span class="font-label-numeric-sm">${esc(String(w.workflow_written_in_audit_log || '(empty)'))}</span>` },
+        { label: 'Rows (30 days / all)', align: 'r', render: w => `${esc(num(w.audit_rows_30d))} / ${esc(num(w.audit_rows))}` },
+        { label: 'Last written', render: w => `<span title="first ${esc(String(w.first_written_at || 'not recorded'))}">${esc(ago(w.last_written_at))}</span>` },
+        { label: 'Statuses seen', render: w => (Array.isArray(w.statuses_seen) && w.statuses_seen.length
+            ? w.statuses_seen.map(x => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(String(x))}</span>`).join(' ')
+            : '<span class="text-outline">none recorded</span>') },
+        { label: 'What this is', render: w => `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(String(w.disposition || 'The view records no disposition for this name.'))}</div>` },
+      ], list) + `<div class="font-body-sm text-body-sm text-on-surface-variant" style="padding:12px 16px;white-space:normal">These are not errors on their own.
+        They are runs whose outcome nothing on this screen measures. Quote the name to NEXUS support to have it
+        registered or retired.</div>`;
+    },
+  });
+
+  /* ── Business view: one card per automation, in plain words ──────────────
+     automation-action-engine-pipeline-drawer--9c8237 "rule cards". Every figure
+     on a card is a column of v_workflow_health for this dealership's own
+     record; the export's "Evaluated / Actions / Exceptions" are NOT copied,
+     because nothing records an evaluation or an action separately from a run —
+     the card says runs, successes and failed-or-partial, which are measured.
+     Public pages NEXUS serves are not automations and are left off the cards
+     (they stay in the technical register). */
+  const plainName = w => String(w.name || 'Unnamed automation')
+    .replace(/^wf_\d+\s*/i, '').replace(/\s+-\s+AI Agent$/i, '').replace(/\s+—\s+NOT LIVE \(candidate\)$/i, '')
+    .replace(/\s*\((?:Phase \d+|WhatsApp Cloud|Meta|Dashboard Reply)\)\s*$/i, '').replace(/^NEXUS\s+/, '').trim();
+  const notLive = w => /NOT LIVE|candidate/i.test(String(w.name || ''));
+  const AUTO_ICON = { Lead: 'person_search', Comms: 'chat', CRM: 'corporate_fare', AI: 'smart_toy', Finance: 'calculate',
+    Compliance: 'badge', Marketing: 'campaign', Pricing: 'price_change', Assets: 'directions_car', Ops: 'settings' };
+  const cardRows = rows.filter(w => stateKey(w) !== 'PUBLIC_PAGE');
+  const metricCell = (k, v, cls) => `<div class="flex flex-col"><span class="font-table-header text-[10px] uppercase tracking-wider text-outline font-semibold">${esc(k)}</span>`
+    + `<span class="font-label-numeric-md text-label-numeric-md font-bold ${cls || 'text-on-surface'}">${v}</span></div>`;
+  const paintBiz = () => {
+    const headHtml = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-center justify-between gap-space-sm">
+        <div class="flex items-start gap-2.5 min-w-0"><span class="material-symbols-outlined text-primary text-xl mt-0.5">bolt</span>
+          <div class="min-w-0"><h2 class="font-headline-md text-headline-md text-on-surface">Automations</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">What each one does for this dealership, and what its last 30 days of runs show. Open a card for its pipeline.</p></div></div>
+        <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${health ? `${num(cardRows.length)} automations` : ''}</span></div>`;
+    if (!health) { bizCard.innerHTML = headHtml + `<div class="p-space-md">${stateError('the automations', healthErr)}</div>`; return; }
+    if (!cardRows.length) {
+      bizCard.innerHTML = headHtml + `<div class="p-space-md">${stateEmpty('No automation is registered', 'The automation health figures returned no automation for this dealership, so there is nothing to show here.', 'account_tree')}</div>`;
+      return;
+    }
+    bizCard.innerHTML = headHtml + `<div class="p-space-md grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md">${cardRows.map((w, i) => {
+      const h = healthOf(w);
+      const r30 = rate30(w);
+      const inc = incomplete30(w);
+      return `<div class="p-space-md rounded-lg border border-outline-variant/60 bg-surface-container-lowest flex flex-col gap-3 min-w-0">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">${esc(AUTO_ICON[w.category] || 'bolt')}</span></span>
+            <div class="min-w-0"><div class="font-body-md text-body-md font-semibold text-on-surface">${esc(plainName(w))}</div>
+              <div class="font-label-numeric-sm text-[11px] text-outline">${esc(w.category || 'Uncategorised')}${notLive(w) ? ' · not live' : ''}</div></div></div>
+          <span class="shrink-0">${wordPill(healthLabel(w), h.tone, h.detail)}</span></div>
+        <div class="p-2.5 rounded bg-surface-container-low"><div class="font-table-header text-[10px] uppercase tracking-wider text-outline font-semibold">What it does</div>
+          <div class="font-body-sm text-body-sm text-on-surface mt-0.5">${esc(dealerSummary(w.description) || 'The automation register holds no description for this one.')}</div></div>
+        <div class="grid grid-cols-3 gap-2">
+          ${metricCell('Runs · 30d', n0(w.runs_30d) == null ? '—' : num(w.runs_30d))}
+          ${metricCell('Succeeded', n0(w.successes_30d) == null ? '—' : num(w.successes_30d), 'text-emerald-700')}
+          ${metricCell('Failed / partial', num(inc), inc ? 'text-red-700' : 'text-on-surface')}
+        </div>
+        <div class="flex items-center justify-between gap-2 pt-2 border-t border-outline-variant/30">
+          <span class="font-body-sm text-body-sm text-on-surface-variant">${r30 == null ? 'No success rate — nothing qualified' : `${esc(pct(r30))} succeeded`}${w.last_run ? ` · last ${esc(ago(w.last_run))}` : ' · never ran'}</span>
+          <button type="button" data-biz="${i}" class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap">View pipeline<span class="material-symbols-outlined text-[16px]">chevron_right</span></button>
+        </div></div>`;
+    }).join('')}</div>`;
+    bizCard.querySelectorAll('[data-biz]').forEach(b => b.addEventListener('click', () => openPipeline(cardRows[Number(b.dataset.biz)])));
+  };
+
+  /* The pipeline drawer: Trigger → Eligibility → Action → Outbound → Result →
+     Audit, with a count ONLY where a column measures that step. Action and
+     Outbound are not recorded separately from the run anywhere this dealership
+     can read, so they say "not recorded" rather than borrowing the run count —
+     a step that shows the same number as the one before it is a step nobody
+     measured. */
+  function openPipeline(w) {
+    if (!w) return;
+    const h = healthOf(w);
+    const v = x => (n0(x) == null ? null : num(x));
+    const steps = [
+      { name: 'Trigger', count: v(w.runs_30d), unit: 'runs started in 30 days',
+        why: 'Counted from this dealership’s activity log: one row per run.' },
+      { name: 'Eligibility', count: v(w.effective_runs_30d), unit: 'runs expected to deliver',
+        why: `Runs refused by design (${v(w.rejected_30d) ?? '—'}) and handed to a person on purpose (${v(w.escalated_30d) ?? '—'}) are left out.` },
+      { name: 'Action', count: null, unit: '', why: 'Not recorded separately from the run. No figure is shown rather than one copied from the step above.' },
+      { name: 'Outbound', count: null, unit: '', why: 'Whether a message or update left NEXUS is not recorded per run on a surface this screen can read.' },
+      { name: 'Result', count: v(w.successes_30d), unit: 'succeeded',
+        why: `Failed ${v(w.failures_30d) ?? '—'} · partial ${v(w.partials_30d) ?? '—'} · produced nothing ${v(w.no_result_30d) ?? '—'} · outcome unreadable ${v(w.unknown_30d) ?? '—'}.` },
+      { name: 'Audit', count: w.writes_audit_log === false ? null : v(w.runs_30d), unit: 'activity-log rows',
+        why: w.writes_audit_log === false ? 'This automation does not write to the activity log, so nothing here is evidence about it.' : 'Every run above is a row in the activity log, readable from the activity panel on this screen.' },
+    ];
+    openDrawer(`
+      <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
+        <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap">${wordPill(healthLabel(w), h.tone, h.detail)}<span class="font-label-numeric-sm text-[11px] text-outline">${esc(w.category || 'Uncategorised')}</span></div>
+          <h2 class="font-headline-md text-headline-md font-bold text-on-surface mt-1">Automation pipeline — ${esc(plainName(w))}</h2>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(dealerSummary(w.description) || 'No description in the automation register.')}</div>
+          <div class="font-label-numeric-sm text-[11px] text-outline mt-1">${w.last_run ? `Last run ${esc(ago(w.last_run))} · ${esc(clock(w.last_run))}` : 'Never ran for this dealership'}</div></div>
+        <button type="button" id="aPipeClose" aria-label="Close" class="w-8 h-8 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">close</span></button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+        <div class="flex items-center justify-between"><span class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Sequential pipeline steps</span>
+          <span class="font-label-numeric-sm text-[11px] text-outline">${steps.filter(x => x.count != null).length} of ${steps.length} measured</span></div>
+        <ol class="flex flex-col gap-2">${steps.map((x, i) => `<li class="flex items-start gap-3 p-3 rounded-lg border ${x.count == null ? 'border-outline-variant/40 bg-surface-container-lowest' : 'border-outline-variant/70 bg-surface-container-lowest'}">
+          <span class="w-6 h-6 rounded-full ${x.count == null ? 'bg-surface-container text-outline' : 'bg-primary text-on-primary'} flex items-center justify-center font-label-numeric-sm text-[12px] font-bold shrink-0">${i + 1}</span>
+          <div class="min-w-0 flex-1"><div class="flex items-center justify-between gap-2"><span class="font-body-sm text-body-sm font-semibold text-on-surface">${x.name}</span>
+            <span class="font-label-numeric-sm text-[12px] ${x.count == null ? 'text-outline' : 'text-on-surface font-bold'}">${x.count == null ? 'Not recorded' : `${x.count} ${esc(x.unit)}`}</span></div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(x.why)}</div></div></li>`).join('')}</ol>
+      </div>
+      <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+        <button type="button" id="aPipeFull" class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm whitespace-nowrap"><span class="material-symbols-outlined text-[18px]">receipt_long</span>Full record & recent runs</button>
+        <button type="button" disabled title="Nothing on this screen edits, simulates or re-runs an automation. Changing one is NEXUS's, on the automation host." class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed">Edit workflow parameters</button>
+      </div>`);
+    $('aPipeClose')?.addEventListener('click', closeDrawer);
+    $('aPipeFull')?.addEventListener('click', () => openWorkflow(w));
+  }
+  paintBiz();
+
+  /* Trust footer (states-components §7). */
+  const trust = el('div');
+  trust.innerHTML = trustFooter({
+    source: 'Automation health figures · activity log',
+    asOf: clock(Date.now()),
+    evidence: health ? `${num(rows.length)} automations · ${audit ? `${num(audit.length)} log rows read${auditCapped ? ' (cap reached)' : ''}` : 'activity log unread'}` : 'Health figures unread',
+    actor: actor(),
+  });
+  root.appendChild(trust);
 
   /* ── One logged run, in full ───────────────────────────────────────────── */
   function openRun(a) {
@@ -2247,71 +2451,71 @@ SCREENS.automation = async host => {
     const ceilingHit = looksTimedOut(a);
     const wf = (health || []).find(w => namesFor(w).has(low(a.workflow))) || null;
     openDrawer(`
-      <div class="drawer-head">
+      <div class="px-space-lg py-space-md flex items-start justify-between gap-space-sm bg-surface-container-lowest shadow-sm shrink-0">
         <div style="flex:1">
           <h2 style="font-size:18px">${esc(a.workflow || 'Unnamed workflow')}</h2>
-          <div class="ds-cell-sub">Logged ${esc(ago(a.logged_at))} · ${esc(clock(a.logged_at))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">Logged ${esc(ago(a.logged_at))} · ${esc(clock(a.logged_at))}</div>
         </div>
-        <button class="btn ghost sm" id="aRunClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aRunClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
-      <div class="drawer-body">
-        <div class="section">
-          <div class="label-caps">Outcome</div>
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-md bg-surface-container-low/40">
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Outcome</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${a.status ? outcomePill(a) : pill('No status written', 'unknown', { verbatim: false })}
-            ${a.intent ? `<span class="chip">${esc(a.intent)}</span>` : ''}
+            ${a.intent ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(a.intent)}</span>` : ''}
           </div>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${
             a.status
               ? esc(words.blurb)
               : 'The activity log holds no status for this run, so nothing is claimed about it either way. A blank status is not a pass.'}</div>
-          <div class="quote" style="margin-top:12px;white-space:pre-wrap">${esc(dealerSummary(a.summary) || 'The workflow wrote no summary for this run.')}</div>
-          ${guarded ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
+          <div class="p-3 rounded-lg bg-surface-container-low border-l-4 border-outline-variant font-body-sm text-body-sm text-on-surface whitespace-pre-wrap break-words" style="margin-top:12px;white-space:pre-wrap">${esc(dealerSummary(a.summary) || 'The workflow wrote no summary for this run.')}</div>
+          ${guarded ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
             <div><strong>This run refused a scrape rather than failing — and came away with no price.</strong> ${esc(GUARD_NOTE)}</div></div>` : ''}
-          ${ceilingHit ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
+          ${ceilingHit ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
             <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
-            <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">The activity log records a status and a summary but no reason code, so this is read off the summary text above.
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">The activity log records a status and a summary but no reason code, so this is read off the summary text above.
             The execution itself is the place that says for certain.</div></div></div>` : ''}
-          ${undelivered ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
+          ${undelivered ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
             <div><strong>This run completed, but its customer-facing step did not land.</strong> ${esc(PARTIAL_NOTE)}${
               up(a.status) !== outcome
-                ? `<div class="ds-cell-sub" style="margin-top:6px;white-space:normal">This row's own status says <span class="mono">${esc(a.status)}</span>. It is counted as a partial delivery because its summary states which claimed steps did not land, and that structured phrase is the more specific evidence. The classification is made once, by NEXUS’s own rule for what a run achieved, so the counts above and this drawer cannot disagree about it.</div>`
+                ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">This row's own status says <span class="font-label-numeric-sm">${esc(a.status)}</span>. It is counted as a partial delivery because its summary states which claimed steps did not land, and that structured phrase is the more specific evidence. The classification is made once, by NEXUS’s own rule for what a run achieved, so the counts above and this drawer cannot disagree about it.</div>`
                 : ''}</div></div>` : ''}
-          ${bad ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
+          ${bad ? `<div class="flex items-start gap-3 p-space-md rounded-lg border border-red-200 bg-red-50/40 text-red-950 font-body-sm text-body-sm" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
             <div>This run did not complete. What it was trying to do, and what did not get done, is above. Where inside the automation it stopped is NEXUS's to diagnose and is not shown here — report the run by its workflow and time and NEXUS can find it.</div></div>` : ''}
         </div>
-        <div class="section">
-          <div class="label-caps">Subject</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Customer</dt><dd>${a.lead_name ? esc(maskText(a.lead_name)) : '<span class="t-muted">not a per-customer run</span>'}</dd>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Subject</div>
+          <dl class="grid grid-cols-[150px_1fr] gap-x-3 gap-y-2 font-body-sm text-body-sm [&_dt]:text-outline" style="margin-top:8px">
+            <dt>Customer</dt><dd>${a.lead_name ? esc(maskText(a.lead_name)) : '<span class="text-outline">not a per-customer run</span>'}</dd>
             <dt>Phone</dt><dd>${phoneLine(a.lead_email)}</dd>
-            <dt>Email</dt><dd>${a.lead_email ? esc(maskText(a.lead_email)) : '<span class="t-muted">—</span>'}</dd>
-            <dt>Lead score</dt><dd class="num">${n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score)}</dd>
+            <dt>Email</dt><dd>${a.lead_email ? esc(maskText(a.lead_email)) : '<span class="text-outline">—</span>'}</dd>
+            <dt>Lead score</dt><dd class="font-label-numeric-sm">${n0(a.lead_score) == null ? '<span class="text-outline">—</span>' : num(a.lead_score)}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The phone number is read from <span class="mono">The phone number on the lead record</span> matched on this run's email — The activity log carries no phone of its own.
-          No member of staff appears here at all: <span class="mono">users</span> has no phone column, so whoever owns this workflow has no number recorded anywhere the dashboard can read.</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">The phone number is read from <span class="font-label-numeric-sm">The phone number on the lead record</span> matched on this run's email — The activity log carries no phone of its own.
+          No member of staff appears here at all: <span class="font-label-numeric-sm">users</span> has no phone column, so whoever owns this workflow has no number recorded anywhere the dashboard can read.</div>
         </div>
-        <div class="section">
-          <div class="label-caps">Workflow</div>
+        <div class="mb-space-md">
+          <div class="font-table-header text-table-header uppercase tracking-wider text-outline font-semibold">Workflow</div>
           ${wf
             ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
                  ${wordPill(healthLabel(wf), healthOf(wf).tone, healthOf(wf).detail)}
-                 <span class="chip">${esc(wf.category || 'Uncategorised')}</span>
+                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(wf.category || 'Uncategorised')}</span>
                </div>
-               <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(wf.description || 'No description in the automation register.')}</div>`
-            : `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">No registered workflow claims the name
-               <span class="mono">${esc(a.workflow || '')}</span>, so this run is not counted in any health figure on this screen.</div>`}
+               <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(wf.description || 'No description in the automation register.')}</div>`
+            : `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">No registered workflow claims the name
+               <span class="font-label-numeric-sm">${esc(a.workflow || '')}</span>, so this run is not counted in any health figure on this screen.</div>`}
         </div>
       </div>
-      <div class="drawer-foot">
-        ${wf ? '<button class="btn" id="aOpenWf">Open workflow</button>' : ''}
-        <button class="btn ghost" disabled
+      <div class="p-space-md bg-surface-container-lowest flex flex-wrap items-center gap-space-sm shrink-0 border-t border-outline-variant/40">
+        ${wf ? '<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" id="aOpenWf">Open workflow</button>' : ''}
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" disabled
           title="The dashboard cannot re-run this. Nothing here can start, stop or retry a workflow run on your behalf — retrying is NEXUS's, on the automation host.">Retry this run</button>
         ${/* Was a deep link into the vendor's n8n whenever the summary carried
               an execution URL. Removed 5 Sep 2026: CONTROL-PLANE.md 5.4. The
               control stays visible and refused rather than disappearing, so
               nobody is left wondering whether it exists. */ ''}
-        <button class="btn ghost" disabled
+        <button class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary hover:text-primary-container transition-colors whitespace-nowrap disabled:text-outline disabled:cursor-not-allowed" disabled
           title="Inspecting the run inside the automation is NEXUS's, not this dashboard's. Quote the workflow name and the time above to NEXUS support and they can open it.">Inspect this run</button>
       </div>`);
     $('aRunClose').addEventListener('click', closeDrawer);

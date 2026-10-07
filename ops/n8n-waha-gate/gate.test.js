@@ -4,7 +4,7 @@
  * WHY THIS FILE EXISTS
  * --------------------
  * This gate is the only control on POST /webhook/whatsapp-inbound, which is the
- * only public path into the workflow that carries ALBA's real WhatsApp traffic.
+ * only public path into the workflow that carries Tenant A's real WhatsApp traffic.
  * It has never been exercised in any state except DORMANT, because its three
  * states are chosen by container environment variables and the box has always
  * had WAHA_WEBHOOK_SECRET unset.

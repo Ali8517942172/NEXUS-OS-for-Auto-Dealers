@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-surface-variant": "#424753", "on-primary-container": "#dee6ff", "tertiary-container": "#007281", "surface-dim": "#d2d9f3", "surface-variant": "#dbe2fb", "surface-container-highest": "#dbe2fb", "error-container": "#ffdad6", "surface": "#faf8ff", "secondary-fixed-dim": "#b4c6f5", "on-secondary-fixed-variant": "#34466e", "inverse-surface": "#283043", "on-secondary": "#ffffff", "tertiary": "#005864", "secondary": "#4c5e87", "secondary-container": "#bccefe", "surface-bright": "#faf8ff", "on-error-container": "#93000a", "on-background": "#131b2d", "on-tertiary-fixed": "#001f25", "primary-fixed-dim": "#afc6ff", "inverse-on-surface": "#edf0ff", "tertiary-fixed": "#a0efff", "on-primary-fixed": "#001a43", "surface-container": "#e9edff", "tertiary-fixed-dim": "#44d8f0", "on-primary-fixed-variant": "#004398", "on-secondary-fixed": "#041a40", "secondary-fixed": "#d9e2ff", "on-tertiary-fixed-variant": "#004e59", "surface-tint": "#155ac0", "on-tertiary-container": "#b1f1ff", "on-surface": "#131b2d", "outline-variant": "#c2c6d5", "inverse-primary": "#afc6ff", "primary-fixed": "#d9e2ff", "on-primary": "#ffffff", "on-secondary-container": "#465780", "surface-container-low": "#f2f3ff", "background": "#faf8ff", "error": "#ba1a1a", "outline": "#737784", "surface-container-lowest": "#ffffff", "on-error": "#ffffff", "primary": "#004ba8", "surface-container-high": "#e1e8ff", "on-tertiary": "#ffffff", "primary-container": "#2563c9" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "margin": "1.5rem", "space-sm": "0.5rem", "space-md": "1rem", "space-xs": "0.25rem", "space-xl": "2rem", "space-lg": "1.5rem", "gutter": "1rem" }, "fontFamily": { "label-numeric-sm": [ "JetBrains Mono" ], "table-header": [ "Inter" ], "label-numeric-md": [ "JetBrains Mono" ], "body-lg": [ "Inter" ], "headline-lg": [ "Inter" ], "body-sm": [ "Inter" ], "headline-xl": [ "Inter" ], "headline-md": [ "Inter" ], "body-md": [ "Inter" ], "label-numeric-lg": [ "JetBrains Mono" ] }, "fontSize": { "label-numeric-sm": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "500" } ], "table-header": [ "0.6875rem", { "lineHeight": "0.875rem", "letterSpacing": "0.05em", "fontWeight": "600" } ], "label-numeric-md": [ "0.875rem", { "lineHeight": "1.25rem", "letterSpacing": "-0.01em", "fontWeight": "500" } ], "body-lg": [ "1rem", { "lineHeight": "1.5rem", "fontWeight": "400" } ], "headline-lg": [ "1.5rem", { "lineHeight": "2rem", "letterSpacing": "-0.015em", "fontWeight": "600" } ], "body-sm": [ "0.75rem", { "lineHeight": "1rem", "fontWeight": "400" } ], "headline-xl": [ "2rem", { "lineHeight": "2.5rem", "letterSpacing": "-0.02em", "fontWeight": "700" } ], "headline-md": [ "1.125rem", { "lineHeight": "1.5rem", "letterSpacing": "-0.01em", "fontWeight": "600" } ], "body-md": [ "0.875rem", { "lineHeight": "1.25rem", "fontWeight": "400" } ], "label-numeric-lg": [ "1.25rem", { "lineHeight": "1.5rem", "letterSpacing": "-0.02em", "fontWeight": "600" } ] } } } };</script></head><body class="bg-background font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-60 bg-[#16294F] z-50 flex flex-col justify-between border-r border-[#1E3566]"><div class="flex flex-col flex-1 min-h-0"><div class="h-14 px-4 flex items-center justify-between border-b border-[#1E3566] shrink-0"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-tertiary-fixed-dim text-[20px]">directions_car</span><span class="font-headline-md text-headline-md tracking-wider text-white font-bold">NEXUS OS</span></div><div class="flex items-center gap-1.5"><span class="text-[10px] font-label-numeric-sm px-1.5 py-0.5 rounded bg-[#24428A] text-tertiary-fixed-dim font-bold">PRO</span><span class="text-[10px] font-label-numeric-sm text-[#8B9DC3]">v4.12.0</span></div></div><div class="flex-1 overflow-y-auto px-2 py-3 space-y-4"><nav class="space-y-4" data-active-classes="bg-[#24428A] text-white border-l-[3px] border-tertiary-fixed-dim font-medium"><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Work</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="todays-money-leaks" href="#"><span class="material-symbols-outlined text-[17px]">trending_down</span>Today's Money Leaks</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="overview" href="#"><span class="material-symbols-outlined text-[17px]">dashboard</span>Overview</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="leads" href="#"><span class="material-symbols-outlined text-[17px]">group</span>Leads</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="record-a-lead" href="#"><span class="material-symbols-outlined text-[17px]">person_add</span>Record a Lead</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="lead-sources" href="#"><span class="material-symbols-outlined text-[17px]">hub</span>Lead Sources</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="channels" href="#"><span class="material-symbols-outlined text-[17px]">alt_route</span>Channels</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="integrations" href="#"><span class="material-symbols-outlined text-[17px]">sync_alt</span>Integrations</a><a aria-current="page" class="flex items-center px-2.5 py-1.5 rounded transition-colors gap-2.5 bg-[#24428A] text-white border-l-[3px] border-tertiary-fixed-dim font-medium" data-path="conversations" href="#"><span class="material-symbols-outlined text-[17px]">chat</span>Conversations</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="appointments" href="#"><span class="material-symbols-outlined text-[17px]">event</span>Appointments</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="compliance" href="#"><span class="material-symbols-outlined text-[17px]">verified_user</span>Compliance</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Revenue Recovery</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="revenue-recovery" href="#"><span class="material-symbols-outlined text-[17px]">currency_exchange</span>Revenue Recovery</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="lead-recovery" href="#"><span class="material-symbols-outlined text-[17px]">person_search</span>Lead Recovery</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="deal-rescue" href="#"><span class="material-symbols-outlined text-[17px]">health_and_safety</span>Deal Rescue</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="attribution" href="#"><span class="material-symbols-outlined text-[17px]">insights</span>Attribution</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="policy" href="#"><span class="material-symbols-outlined text-[17px]">gavel</span>Policy</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Assets</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="inventory" href="#"><span class="material-symbols-outlined text-[17px]">garage_home</span>Inventory</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="competitors" href="#"><span class="material-symbols-outlined text-[17px]">query_stats</span>Competitors</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Intelligence</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="ask-ai" href="#"><span class="material-symbols-outlined text-[17px]">psychology</span>Ask AI</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="finance-desk" href="#"><span class="material-symbols-outlined text-[17px]">account_balance</span>Finance Desk</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="customer-360" href="#"><span class="material-symbols-outlined text-[17px]">contacts</span>Customer 360</a></div><div class="space-y-0.5"><p class="px-2 pb-1 text-[10px] font-table-header uppercase tracking-wider text-[#8B9DC3]">Operations</p><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="action-center" href="#"><span class="material-symbols-outlined text-[17px]">bolt</span>Action Center</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="campaigns" href="#"><span class="material-symbols-outlined text-[17px]">campaign</span>Campaigns</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="deals" href="#"><span class="material-symbols-outlined text-[17px]">handshake</span>Deals</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="automation" href="#"><span class="material-symbols-outlined text-[17px]">smart_toy</span>Automation</a><a class="flex items-center px-2.5 py-1.5 rounded text-[13px] text-[#C7D3EA] hover:bg-[#1E3566] hover:text-white transition-colors gap-2.5" data-path="team" href="#"><span class="material-symbols-outlined text-[17px]">badge</span>Team</a></div></nav></div></div><div class="px-3 py-3 border-t border-[#1E3566] space-y-2 bg-[#122242] shrink-0"><div class="flex items-center justify-between px-1 text-[#8B9DC3]"><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="setup" href="#"><span class="material-symbols-outlined text-[15px]">tune</span>Setup</a><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="subscription" href="#"><span class="material-symbols-outlined text-[15px]">receipt_long</span>Plan</a><a class="flex items-center gap-1.5 text-[11px] hover:text-white transition-colors" data-path="settings" href="#"><span class="material-symbols-outlined text-[15px]">settings</span>Settings</a></div><div class="flex items-center justify-between p-1.5 rounded bg-[#16294F] border border-[#1E3566]"><div class="flex items-center gap-2 overflow-hidden"><div class="w-7 h-7 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-[11px] shrink-0">FM</div><div class="truncate"><p class="text-[11px] font-semibold text-white leading-tight truncate">Faris M.</p><p class="text-[9px] text-[#8B9DC3] truncate">GM / Sales Director</p></div></div><button class="text-[#8B9DC3] hover:text-white p-1 rounded transition-colors" title="Sign out" type="button"><span class="material-symbols-outlined text-[16px]">logout</span></button></div></div></aside><div class="pl-60"><header class="fixed top-0 left-60 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant z-40 flex items-center justify-between px-6"><div class="flex items-center gap-6"><div class="flex items-center gap-2.5"><span class="material-symbols-outlined text-primary text-[20px]">storefront</span><div><h1 class="font-headline-md text-[13px] leading-tight font-bold text-on-surface">Demo Motors</h1><span class="font-body-sm text-[11px] text-on-surface-variant">Dubai Showroom</span></div></div><div class="h-5 w-px bg-outline-variant"></div><div class="relative"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span><input class="w-72 h-8 pl-8 pr-12 rounded border border-outline-variant bg-surface text-xs text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary" placeholder="Search VIN, lead, agreement..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-label-numeric-sm bg-surface-container rounded border border-outline-variant text-on-surface-variant">⌘K</kbd></div></div><div class="flex items-center gap-4"><div class="flex items-center gap-2 px-2.5 py-1 rounded bg-surface border border-outline-variant"><span class="text-[11px] font-label-numeric-sm text-on-surface font-semibold">AED</span><span class="text-[11px] font-label-numeric-sm text-on-surface-variant">1.00 = 0.272 USD</span></div><div class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] border border-[#157A5B]/20"><span class="w-2 h-2 rounded-full bg-[#157A5B] animate-pulse"></span><span class="text-[10px] font-table-header uppercase tracking-wider">Live Sync</span></div><button class="relative p-1 text-on-surface-variant hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span></button><div class="flex items-center gap-2 pl-2 border-l border-outline-variant"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="relative pt-14 w-full px-space-lg min-h-screen bg-background"><div class="flex flex-col w-full space-y-4 pb-8">
+<!-- Executive Top Stat Tiles -->
+<section class="grid grid-cols-5 gap-3 w-full">
+<!-- Stat 1 -->
+<div class="bg-surface-container-lowest p-3.5 rounded-lg flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Conversations</span>
+<span class="material-symbols-outlined text-primary text-[18px]">forum</span>
+</div>
+<div class="mt-2 flex items-baseline justify-between">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">48</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-semibold">+12 today</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate">Active floor &amp; cloud threads</p>
+</div>
+<!-- Stat 2 -->
+<div class="bg-surface-container-lowest p-3.5 rounded-lg flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-error">Reply Due</span>
+<span class="px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider">Breaching 15m</span>
+</div>
+<div class="mt-2 flex items-baseline justify-between">
+<span class="font-label-numeric-lg text-label-numeric-lg text-error font-bold">6</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-error">Urgent attention</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate">SLA timeout imminent</p>
+</div>
+<!-- Stat 3 -->
+<div class="bg-surface-container-lowest p-3.5 rounded-lg flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Direct Repliable</span>
+<span class="material-symbols-outlined text-tertiary text-[18px]">bolt</span>
+</div>
+<div class="mt-2 flex items-baseline justify-between">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">38</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-semibold">24h Open</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate">Free-form window active</p>
+</div>
+<!-- Stat 4 -->
+<div class="bg-surface-container-lowest p-3.5 rounded-lg flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Unidentified</span>
+<span class="material-symbols-outlined text-secondary text-[18px]">qr_code_2</span>
+</div>
+<div class="mt-2 flex items-baseline justify-between">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">4</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">No CRM link</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate">Unmatched UAE mobile IDs</p>
+</div>
+<!-- Stat 5 -->
+<div class="bg-surface-container-lowest p-3.5 rounded-lg flex flex-col justify-between shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Numbers On File</span>
+<span class="material-symbols-outlined text-primary text-[18px]">contact_phone</span>
+</div>
+<div class="mt-2 flex items-baseline justify-between">
+<span class="font-label-numeric-lg text-label-numeric-lg text-on-surface font-bold">1,840</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-primary font-semibold">+971 Index</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5 truncate">Verified Dubai showroom CRM</p>
+</div>
+</section>
+<!-- Waiting on a human Priority Queue -->
+<section class="bg-surface-container-low rounded-lg p-3 shadow-sm flex flex-col space-y-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error animate-ping"></span>
+<span class="font-headline-md text-body-md font-bold text-on-surface">Floor Action Queue: Waiting on Human</span>
+<span class="font-label-numeric-sm text-[11px] px-2 py-0.5 rounded bg-error-container text-on-error-container font-semibold">3 VIPs in SLA Breach</span>
+</div>
+<span class="font-body-sm text-on-surface-variant">Average response latency: <strong class="font-label-numeric-sm text-on-surface">14m 10s</strong></span>
+</div>
+<div class="grid grid-cols-3 gap-2.5">
+<!-- Priority Item 1 -->
+<div class="bg-surface-container-lowest p-2.5 rounded flex items-center justify-between shadow-sm hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-error-container text-on-error-container flex items-center justify-center font-label-numeric-sm font-bold shrink-0">
+            TN
+          </div>
+<div class="truncate">
+<div class="flex items-center gap-1.5">
+<span class="font-body-md font-semibold text-on-surface truncate">Dr. Tariq Al-Nuaimi</span>
+<span class="px-1 rounded bg-error-container text-on-error-container font-label-numeric-sm text-[10px] font-bold">HOT</span>
+</div>
+<p class="font-body-sm text-on-surface-variant truncate">G63 trade quote • <span class="font-label-numeric-sm text-error font-medium">28m overdue</span></p>
+</div>
+</div>
+<button class="ml-2 px-2.5 py-1 bg-primary text-on-primary rounded text-body-sm font-semibold hover:bg-primary-container shrink-0 flex items-center gap-1" type="button">
+<span>Jump</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+<!-- Priority Item 2 -->
+<div class="bg-surface-container-lowest p-2.5 rounded flex items-center justify-between shadow-sm hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-error-container text-on-error-container flex items-center justify-center font-label-numeric-sm font-bold shrink-0">
+            MA
+          </div>
+<div class="truncate">
+<div class="flex items-center gap-1.5">
+<span class="font-body-md font-semibold text-on-surface truncate">Sheikh Mansoor Al-Nahyan</span>
+<span class="px-1 rounded bg-error-container text-on-error-container font-label-numeric-sm text-[10px] font-bold">HOT</span>
+</div>
+<p class="font-body-sm text-on-surface-variant truncate">Range Rover SV • <span class="font-label-numeric-sm text-error font-medium">19m overdue</span></p>
+</div>
+</div>
+<button class="ml-2 px-2.5 py-1 bg-surface-container text-on-surface rounded text-body-sm font-semibold hover:bg-surface-variant shrink-0 flex items-center gap-1" type="button">
+<span>Jump</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+<!-- Priority Item 3 -->
+<div class="bg-surface-container-lowest p-2.5 rounded flex items-center justify-between shadow-sm hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-8 h-8 rounded bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-label-numeric-sm font-bold shrink-0">
+            ER
+          </div>
+<div class="truncate">
+<div class="flex items-center gap-1.5">
+<span class="font-body-md font-semibold text-on-surface truncate">Elena Rostova</span>
+<span class="px-1 rounded bg-secondary-container text-on-secondary-container font-label-numeric-sm text-[10px] font-bold">WARM</span>
+</div>
+<p class="font-body-sm text-on-surface-variant truncate">Bentley GT speed • <span class="font-label-numeric-sm text-secondary font-medium">41m waiting</span></p>
+</div>
+</div>
+<button class="ml-2 px-2.5 py-1 bg-surface-container text-on-surface rounded text-body-sm font-semibold hover:bg-surface-variant shrink-0 flex items-center gap-1" type="button">
+<span>Jump</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Filter & Query Control Strip -->
+<section class="flex items-center justify-between bg-surface-container-lowest p-2 rounded-lg shadow-sm gap-4">
+<div class="flex items-center gap-1.5 overflow-x-auto text-body-sm">
+<button class="px-3 py-1 rounded bg-primary text-on-primary font-semibold flex items-center gap-1.5 shadow-sm" type="button">
+<span>All</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-1 rounded bg-primary-container text-on-primary-container">48</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant font-medium flex items-center gap-1.5" type="button">
+<span>Lead</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">32</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant font-medium flex items-center gap-1.5" type="button">
+<span>Not in leads</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">12</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant font-medium flex items-center gap-1.5" type="button">
+<span>Number only</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">4</span>
+</button>
+<button class="px-3 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant font-medium flex items-center gap-1.5" type="button">
+<span>WhatsApp Profile Name</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">16</span>
+</button>
+</div>
+<div class="relative w-80 shrink-0">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+<input class="w-full bg-surface-container-low rounded px-8 py-1 text-body-sm text-on-surface placeholder-on-surface-variant focus:bg-surface-container-lowest focus:outline-none" placeholder="Search messages, +971 phone, or customer name..." type="text"/>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px] cursor-pointer">filter_list</span>
+</div>
+</section>
+<!-- Three-Pane Inbox Layout -->
+<section class="grid grid-cols-12 gap-3.5 h-[680px] w-full">
+<!-- PANE A: Left - Thread List (3 cols out of 12) -->
+<div class="col-span-3 bg-surface-container-lowest rounded-lg flex flex-col shadow-sm overflow-hidden">
+<!-- Pane A Header -->
+<div class="p-3 bg-surface-container-low flex items-center justify-between shrink-0">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Inbound Feed (Dubai UTC+4)</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-semibold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span> Meta Cloud Sync
+        </span>
+</div>
+<!-- Threads Scroller -->
+<div class="flex-1 overflow-y-auto divide-y-0 space-y-1 p-1.5">
+<!-- Thread 1: Selected (Dr. Tariq) -->
+<div class="p-2.5 rounded bg-surface-container-high cursor-pointer shadow-sm relative">
+<div class="absolute left-0 top-2 bottom-2 w-1 bg-primary rounded-r"></div>
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-primary text-on-primary flex items-center justify-center font-label-numeric-sm font-bold text-[11px]">
+                TA
+              </div>
+<div>
+<p class="font-body-md font-bold text-on-surface leading-tight">Dr. Tariq Al-Nuaimi</p>
+<p class="font-label-numeric-sm text-[11px] text-on-surface-variant">+971 50 882 1920</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-[11px] text-error font-semibold">11:14 AM</span>
+<div class="mt-0.5">
+<span class="w-2 h-2 rounded-full bg-error inline-block" title="SLA Breached"></span>
+</div>
+</div>
+</div>
+<div class="mt-2 flex items-center justify-between">
+<span class="px-1.5 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-label-numeric-sm rounded font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">chat</span> WhatsApp
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-error bg-error-container px-1 rounded">28m SLA</span>
+</div>
+<p class="font-body-sm text-on-surface-variant mt-1.5 line-clamp-1 italic">
+            "Can you send the finance calculation with Emirates NBD 20% down?"
+          </p>
+</div>
+<!-- Thread 2: Sheikh Mansoor -->
+<div class="p-2.5 rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-surface-container text-on-surface flex items-center justify-center font-label-numeric-sm font-bold text-[11px]">
+                SM
+              </div>
+<div>
+<p class="font-body-md font-semibold text-on-surface leading-tight">Sheikh Mansoor</p>
+<p class="font-label-numeric-sm text-[11px] text-on-surface-variant">+971 55 901 3340</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-[11px] text-error font-semibold">10:55 AM</span>
+<div class="mt-0.5">
+<span class="w-2 h-2 rounded-full bg-error inline-block"></span>
+</div>
+</div>
+</div>
+<div class="mt-2 flex items-center justify-between">
+<span class="px-1.5 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-label-numeric-sm rounded font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">chat</span> WhatsApp
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-error bg-error-container px-1 rounded">19m SLA</span>
+</div>
+<p class="font-body-sm text-on-surface-variant mt-1.5 line-clamp-1">
+            "Book an inspection slot for my Range Rover at the Al Quoz service hub..."
+          </p>
+</div>
+<!-- Thread 3: Elena Rostova -->
+<div class="p-2.5 rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-label-numeric-sm font-bold text-[11px]">
+                ER
+              </div>
+<div>
+<p class="font-body-md font-semibold text-on-surface leading-tight">Elena Rostova</p>
+<p class="font-label-numeric-sm text-[11px] text-on-surface-variant">+971 52 441 8911</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-[11px] text-secondary font-semibold">10:33 AM</span>
+<div class="mt-0.5">
+<span class="w-2 h-2 rounded-full bg-secondary inline-block"></span>
+</div>
+</div>
+</div>
+<div class="mt-2 flex items-center justify-between">
+<span class="px-1.5 py-0.2 bg-surface-variant text-on-surface-variant text-[10px] font-label-numeric-sm rounded font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">sms</span> SMS Cloud
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-secondary bg-secondary-container px-1 rounded">41m SLA</span>
+</div>
+<p class="font-body-sm text-on-surface-variant mt-1.5 line-clamp-1">
+            "Can I see the Dubai inspection certificate for the GT Speed?"
+          </p>
+</div>
+<!-- Thread 4: Unidentified Lead -->
+<div class="p-2.5 rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-surface-container-highest text-on-surface flex items-center justify-center font-label-numeric-sm font-bold text-[11px]">
+                ?
+              </div>
+<div>
+<p class="font-body-md font-semibold text-on-surface leading-tight">+971 50 338 9012</p>
+<p class="font-body-sm text-[11px] text-secondary">Unmatched Caller</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-[11px] text-on-surface-variant">09:40 AM</span>
+</div>
+</div>
+<div class="mt-2 flex items-center justify-between">
+<span class="px-1.5 py-0.2 bg-primary-fixed text-on-primary-fixed text-[10px] font-label-numeric-sm rounded font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">call_received</span> Inbound IVR
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-on-surface-variant">Resolved</span>
+</div>
+<p class="font-body-sm text-on-surface-variant mt-1.5 line-clamp-1">
+            Voice recording transcribed: "Interested in the 2024 Defender 130 V8..."
+          </p>
+</div>
+<!-- Thread 5: Rashid Al-Maktoum -->
+<div class="p-2.5 rounded bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer transition-colors">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded bg-surface-container text-on-surface flex items-center justify-center font-label-numeric-sm font-bold text-[11px]">
+                RA
+              </div>
+<div>
+<p class="font-body-md font-semibold text-on-surface leading-tight">Rashid M.</p>
+<p class="font-label-numeric-sm text-[11px] text-on-surface-variant">+971 50 119 7733</p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-numeric-sm text-[11px] text-on-surface-variant">Yesterday</span>
+</div>
+</div>
+<div class="mt-2 flex items-center justify-between">
+<span class="px-1.5 py-0.2 bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-label-numeric-sm rounded font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[11px]">chat</span> WhatsApp
+            </span>
+<span class="font-label-numeric-sm text-[10px] text-tertiary bg-tertiary-fixed px-1 rounded">Template OK</span>
+</div>
+<p class="font-body-sm text-on-surface-variant mt-1.5 line-clamp-1">
+            "Payment confirmation received for deposit receipt #REC-0091"
+          </p>
+</div>
+</div>
+</div>
+<!-- PANE B: Center - Active Conversation & Dispatcher (6 cols out of 12) -->
+<div class="col-span-6 bg-surface-container-lowest rounded-lg flex flex-col shadow-sm overflow-hidden">
+<!-- Thread Header -->
+<div class="px-4 py-3 bg-surface-container-low flex items-center justify-between shrink-0">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold font-label-numeric-sm">
+            TN
+          </div>
+<div>
+<div class="flex items-center gap-2">
+<h2 class="font-headline-md text-headline-md font-bold text-on-surface">Dr. Tariq Al-Nuaimi</h2>
+<span class="px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-numeric-sm text-[10px] font-bold">VIP LEAD</span>
+</div>
+<div class="flex items-center gap-2 font-body-sm text-on-surface-variant">
+<span class="font-label-numeric-sm text-[11px] text-on-surface font-medium">+971 50 882 1920</span>
+<span>•</span>
+<span class="flex items-center gap-1 text-[11px]">
+<span class="material-symbols-outlined text-tertiary text-[14px]">verified</span>
+                WhatsApp Business Cloud (Dubai HQ)
+              </span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<div class="bg-surface-container-lowest px-2.5 py-1 rounded shadow-sm text-right">
+<span class="font-table-header text-[10px] uppercase text-on-surface-variant block leading-tight">Service Window</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-tertiary font-bold">18h 42m remaining</span>
+</div>
+<button class="p-1.5 rounded bg-surface-container hover:bg-surface-variant text-on-surface transition-colors" title="Export conversation" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Message History Scroller -->
+<div class="flex-1 overflow-y-auto p-4 space-y-3.5 bg-surface-bright">
+<!-- Day Divider -->
+<div class="flex items-center justify-center my-2">
+<span class="px-2.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[10px] uppercase tracking-wider">
+            Today • 14 October 2024
+          </span>
+</div>
+<!-- Incoming Message 1 -->
+<div class="flex items-end gap-2 max-w-[80%]">
+<div class="w-6 h-6 rounded-full bg-surface-container-highest text-on-surface flex items-center justify-center text-[10px] font-bold shrink-0">
+            TN
+          </div>
+<div class="bg-surface-container-lowest p-3 rounded-lg rounded-bl-none shadow-sm space-y-1">
+<div class="flex items-center justify-between gap-4">
+<span class="font-body-sm font-semibold text-primary">Dr. Tariq Al-Nuaimi</span>
+<span class="font-label-numeric-sm text-[10px] text-on-surface-variant">10:14 AM</span>
+</div>
+<p class="font-body-md text-on-surface leading-relaxed">
+              Salam Faris, what is the best trade-in allowance for my 2021 G63 if I take the 2024 GT3 RS?
+            </p>
+</div>
+</div>
+<!-- Automated System Action -->
+<div class="mx-auto max-w-[85%] bg-surface-container p-2.5 rounded-lg flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-tertiary text-on-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">smart_toy</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-[11px] font-bold text-on-surface">Auto-Desk Engine • Meta Cloud API</span>
+<span class="font-label-numeric-sm text-[10px] text-on-surface-variant">10:15 AM</span>
+</div>
+<p class="font-body-sm text-on-surface-variant truncate">
+              Quotation PDF <strong class="font-label-numeric-sm text-on-surface">#QT-9921</strong> (AED 910,000) generated and delivered.
+            </p>
+</div>
+<button class="px-2 py-1 bg-surface-container-lowest rounded text-body-sm font-medium hover:bg-surface-bright text-primary" type="button">
+            Preview
+          </button>
+</div>
+<!-- Incoming Message 2 -->
+<div class="flex items-end gap-2 max-w-[80%]">
+<div class="w-6 h-6 rounded-full bg-surface-container-highest text-on-surface flex items-center justify-center text-[10px] font-bold shrink-0">
+            TN
+          </div>
+<div class="bg-surface-container-lowest p-3 rounded-lg rounded-bl-none shadow-sm space-y-1">
+<div class="flex items-center justify-between gap-4">
+<span class="font-body-sm font-semibold text-primary">Dr. Tariq Al-Nuaimi</span>
+<span class="font-label-numeric-sm text-[10px] text-error font-bold">11:14 AM</span>
+</div>
+<p class="font-body-md text-on-surface leading-relaxed">
+              Can you send the finance calculation with Emirates NBD 20% down?
+            </p>
+</div>
+</div>
+<!-- Visual Lead SLA Indicator Inside Chat -->
+<div class="flex items-center justify-center py-1">
+<div class="bg-error-container text-on-error-container px-3 py-1 rounded flex items-center gap-2 font-label-numeric-sm text-[11px]">
+<span class="material-symbols-outlined text-[15px]">timer</span>
+<span>Customer unreplied for 28 minutes. Showroom SLA target: 15 minutes.</span>
+</div>
+</div>
+</div>
+<!-- CRITICAL REQUIREMENT: Policy Decision Bar -->
+<div class="bg-surface-container-low px-4 py-2 shrink-0 flex items-center justify-between">
+<div class="flex items-center gap-2 min-w-0">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-numeric-sm text-[11px] font-bold shrink-0">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+            FREE-FORM ALLOWED
+          </span>
+<p class="font-body-sm text-on-surface-variant truncate">
+            24h customer-initiated window active. Direct freeform responses permitted by Meta Business Policy.
+          </p>
+</div>
+<!-- Interactive Policy State Simulator / Info Switcher -->
+<div class="flex items-center gap-1 shrink-0 ml-2">
+<span class="font-table-header text-[10px] uppercase text-on-surface-variant mr-1">Policy State:</span>
+<button class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm bg-tertiary text-on-tertiary font-bold" title="Current Active State" type="button">
+            Open
+          </button>
+<button class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm bg-surface-container text-on-surface hover:bg-surface-variant" title="Simulate 24h+ Expired Policy State" type="button">
+            Template Only
+          </button>
+<button class="px-1.5 py-0.5 rounded text-[10px] font-label-numeric-sm bg-surface-container text-on-surface hover:bg-surface-variant" title="Simulate Opt-out Policy State" type="button">
+            Opted Out
+          </button>
+</div>
+</div>
+<!-- Reply Composer Area -->
+<div class="p-3 bg-surface-container-lowest shrink-0 space-y-2">
+<div class="bg-surface-container-low rounded-lg p-2.5 focus-within:bg-surface-bright focus-within:ring-2 focus-within:ring-primary">
+<textarea class="w-full bg-transparent text-body-md text-on-surface placeholder-on-surface-variant focus:outline-none resize-none leading-relaxed" placeholder="Write a response in English or Arabic..." rows="3">Salam Dr. Tariq, looking at the Emirates NBD schedule right now. The monthly installment at 2.19% fixed over 48 months comes to AED 14,250 with 20% down. I have our senior finance rep ready to lock this rate before 3:00 PM today.</textarea>
+<div class="flex items-center justify-between pt-2">
+<!-- Composer Quick Action Tools -->
+<div class="flex items-center gap-1.5">
+<button class="px-2 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant text-body-sm font-medium flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px] text-primary">attach_file</span>
+<span>+ Attach Inspection / PDF</span>
+</button>
+<button class="px-2 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant text-body-sm font-medium flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px] text-tertiary">quickreply</span>
+<span>Quick HSM Template</span>
+</button>
+<button class="px-2 py-1 rounded bg-surface-container text-on-surface hover:bg-surface-variant text-body-sm font-medium flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[15px] text-secondary">phone_forwarded</span>
+<span>WhatsApp Call</span>
+</button>
+</div>
+<!-- Primary Dispatch CTA -->
+<div class="flex items-center gap-2">
+<button class="p-1 rounded text-on-surface-variant hover:text-on-surface" title="AI Suggestion Desk" type="button">
+<span class="material-symbols-outlined text-[18px]">psychology</span>
+</button>
+<button class="px-4 py-1.5 rounded bg-primary-container text-on-primary font-semibold text-body-md hover:bg-primary transition-colors flex items-center gap-1.5 shadow-sm" type="button">
+<span>Send via WhatsApp Cloud</span>
+<span class="material-symbols-outlined text-[16px]">send</span>
+</button>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between px-1">
+<span class="font-body-sm text-[11px] text-on-surface-variant">Auto-translated to Arabic preview available • Encrypted End-to-End</span>
+<span class="font-label-numeric-sm text-[11px] text-on-surface-variant">Char: 214 • Shift+Enter for newline</span>
+</div>
+</div>
+</div>
+<!-- PANE C: Right - Lead Drawer & Context (3 cols out of 12) -->
+<div class="col-span-3 bg-surface-container-lowest rounded-lg flex flex-col shadow-sm overflow-hidden">
+<!-- Pane C Header -->
+<div class="p-3 bg-surface-container-low flex items-center justify-between shrink-0">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant">Client Dossier &amp; Context</span>
+<button class="font-body-sm text-primary font-semibold hover:underline flex items-center gap-0.5" type="button">
+<span>Open Full Lead</span>
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</button>
+</div>
+<!-- Drawer Body -->
+<div class="flex-1 overflow-y-auto p-3.5 space-y-4">
+<!-- Lead Identity Card -->
+<div class="bg-surface-container-low p-3 rounded-lg space-y-2">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-sm text-[11px] text-on-surface-variant">CRM File #L-9941</span>
+<span class="px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-label-numeric-sm text-[10px] font-bold">HOT CONVERT</span>
+</div>
+<div class="space-y-0.5">
+<h3 class="font-headline-md text-headline-md font-bold text-on-surface">Dr. Tariq Al-Nuaimi</h3>
+<p class="font-body-sm text-on-surface-variant">Cardiothoracic Specialist, Dubai Healthcare City</p>
+</div>
+<div class="pt-1 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-[11px]">UAE Citizen</span>
+<span class="px-2 py-0.5 rounded bg-surface-container text-on-surface font-label-numeric-sm text-[11px]">VIP Repeat 3x</span>
+</div>
+</div>
+<!-- Vehicle of Interest Card with photo placeholder -->
+<div class="space-y-2">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant block">Vehicle Under Discussion</span>
+<div class="bg-surface-container-low rounded-lg p-2.5 space-y-2">
+<div class="relative w-full h-24 rounded overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Matte emerald green Mercedes AMG G63 SUV parked in a brightly lit luxury Dubai showroom floor with architectural LED lighting and clean epoxy polished ground" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUhSr7yaf7lgp7NedW86mcdr-zLBNvEctaELz-PR9B1PyqNMBap8sASpryR-zaw6dhAqG926Ha18oynbSomejrFx-XNr2-bhYb0Btz1EsgWb_Iw9AQBa9ue7YsBNt7KvjH5P5qRwQzKXXMp35Kakc9TW4hF5PpSMTl5NAybRngb5PIbeV3wFuobQspj37yPHxf2w7gISn_eomTSDhiskoehTyvK51xh9YQUd_5Yg"/>
+<span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-on-surface/80 text-surface font-label-numeric-sm text-[10px] font-bold">#DXB-8812</span>
+</div>
+<div>
+<p class="font-body-md font-bold text-on-surface">2023 Mercedes-AMG G63</p>
+<p class="font-body-sm text-on-surface-variant">Magno Night Black / Bengal Red Exclusive</p>
+</div>
+<div class="grid grid-cols-2 gap-2 pt-1">
+<div class="bg-surface-container-lowest p-1.5 rounded">
+<span class="font-table-header text-[9px] uppercase text-on-surface-variant block">Asking Desk</span>
+<span class="font-label-numeric-sm text-[12px] font-bold text-on-surface">AED 850,000</span>
+</div>
+<div class="bg-surface-container-lowest p-1.5 rounded">
+<span class="font-table-header text-[9px] uppercase text-on-surface-variant block">Target Trade-In</span>
+<span class="font-label-numeric-sm text-[12px] font-bold text-tertiary">AED 540,000</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Deal Desk Parameters -->
+<div class="bg-surface-container-low p-3 rounded-lg space-y-2.5">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant block">Floor Execution Specs</span>
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant">Assigned Rep:</span>
+<div class="flex items-center gap-1.5 font-semibold text-on-surface">
+<span class="w-5 h-5 rounded-full bg-primary-container text-on-primary flex items-center justify-center text-[9px] font-bold">FM</span>
+<span>Faris M. (Sales Dir)</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant">Bank Partner:</span>
+<span class="font-label-numeric-sm text-on-surface font-semibold">Emirates NBD Auto Finance</span>
+</div>
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant">Floor Budget Max:</span>
+<span class="font-label-numeric-sm text-on-surface font-bold">AED 920,000</span>
+</div>
+<div class="flex items-center justify-between text-body-sm">
+<span class="text-on-surface-variant">Probability of Close:</span>
+<span class="font-label-numeric-sm text-tertiary font-bold">84% (High)</span>
+</div>
+</div>
+<!-- Quick Floor Actions -->
+<div class="space-y-1.5">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant block">Desk Operations</span>
+<button class="w-full py-1.5 px-3 bg-surface-container text-on-surface hover:bg-surface-variant rounded text-body-sm font-semibold flex items-center justify-between transition-colors" type="button">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-primary">receipt_long</span>
+              Create Deal Voucher
+            </span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+<button class="w-full py-1.5 px-3 bg-surface-container text-on-surface hover:bg-surface-variant rounded text-body-sm font-semibold flex items-center justify-between transition-colors" type="button">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-tertiary">phone_in_talk</span>
+              Log Showroom Call
+            </span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</button>
+</div>
+<!-- Telemetry Trail -->
+<div class="bg-surface-container-low p-3 rounded-lg space-y-2">
+<span class="font-table-header text-table-header uppercase text-on-surface-variant block">Showroom Telemetry</span>
+<div class="space-y-2 font-body-sm">
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-primary text-[15px] mt-0.5">sensors</span>
+<p class="text-on-surface">Floor visit detected at <strong class="font-label-numeric-sm">10:14 AM</strong> (Gate 2 Beacon).</p>
+</div>
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-tertiary text-[15px] mt-0.5">directions_car</span>
+<p class="text-on-surface">Test drive completed with <strong class="font-semibold">Omar K.</strong> (Sheikh Zayed Rd route).</p>
+</div>
+<div class="flex items-start gap-2">
+<span class="material-symbols-outlined text-secondary text-[15px] mt-0.5">verified_user</span>
+<p class="text-on-surface-variant">UAE PASS verification verified on file.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div></main></div></body></html>

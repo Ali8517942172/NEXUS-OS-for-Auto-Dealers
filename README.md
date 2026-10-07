@@ -7,7 +7,7 @@
 >
 > **It is a product for every dealership, not a build for one.** NEXUS is sold to
 > auto dealerships on a subscription — the UAE market first, then worldwide.
-> **ALBA CARS is tenant #1 and the pilot**, the proving ground the product is
+> **Tenant A is tenant #1 and the pilot**, the proving ground the product is
 > measured on, not the customer it was commissioned by.
 >
 > **The honest commercial position today is a controlled, single-dealership
@@ -22,7 +22,7 @@
 # NEXUS OS
 
 An operating system for auto dealerships, built on Supabase, n8n and a
-single-page dashboard. One dealership — ALBA CARS, tenant #1 — is live on it.
+single-page dashboard. One dealership — Tenant A, tenant #1 — is live on it.
 One conversation path is proven end to end. Most of what follows is honest about
 which is which.
 
@@ -55,7 +55,7 @@ workstream's test rows before now.
 holds one active dealership plus a quarantine tenant, and cross-tenant behaviour
 is proven on staging only — deliberately, because activating a second
 dealership on production silences five consumers of `nexus_scoped_tenant_id()`.
-Nothing measured "as the ALBA owner" says what a second dealership would see.
+Nothing measured "as the Tenant A owner" says what a second dealership would see.
 
 ---
 

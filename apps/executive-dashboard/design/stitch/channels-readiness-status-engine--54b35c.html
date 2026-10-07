@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"surface-container-high":"#e1e8ff","on-secondary-fixed-variant":"#34466e","surface-container-low":"#f2f3ff","on-primary-container":"#dee6ff","on-secondary-container":"#465780","on-surface":"#131b2d","surface-tint":"#155ac0","surface-container-lowest":"#ffffff","error-container":"#ffdad6","primary":"#004ba8","on-tertiary-fixed-variant":"#004e59","on-tertiary-fixed":"#001f25","secondary-fixed":"#d9e2ff","error":"#ba1a1a","secondary-container":"#bccefe","tertiary-fixed-dim":"#44d8f0","primary-fixed":"#d9e2ff","inverse-on-surface":"#edf0ff","on-secondary":"#ffffff","tertiary":"#005864","surface-variant":"#dbe2fb","on-primary-fixed-variant":"#004398","tertiary-fixed":"#a0efff","outline-variant":"#c2c6d5","background":"#faf8ff","on-primary":"#ffffff","inverse-surface":"#283043","outline":"#737784","surface-dim":"#d2d9f3","secondary-fixed-dim":"#b4c6f5","surface-container-highest":"#dbe2fb","surface-bright":"#faf8ff","on-primary-fixed":"#001a43","on-surface-variant":"#424753","primary-container":"#2563c9","on-tertiary":"#ffffff","on-tertiary-container":"#b1f1ff","on-error":"#ffffff","inverse-primary":"#afc6ff","surface":"#faf8ff","on-secondary-fixed":"#041a40","on-error-container":"#93000a","tertiary-container":"#007281","surface-container":"#e9edff","on-background":"#131b2d","primary-fixed-dim":"#afc6ff","secondary":"#4c5e87"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"space-xs":"0.25rem","space-sm":"0.5rem","space-md":"1rem","gutter":"1rem","space-xl":"2rem","space-lg":"1.5rem","margin":"1.5rem"},fontFamily:{"body-lg":["Inter"],"table-header":["Inter"],"label-numeric-md":["JetBrains Mono"],"label-numeric-sm":["JetBrains Mono"],"headline-lg":["Inter"],"label-numeric-lg":["JetBrains Mono"],"headline-md":["Inter"],"headline-xl":["Inter"],"body-sm":["Inter"],"body-md":["Inter"]},fontSize:{"body-lg":["1rem",{"lineHeight":"1.5rem","fontWeight":"400"}],"table-header":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.05em","fontWeight":"600"}],"label-numeric-md":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"-0.01em","fontWeight":"500"}],"label-numeric-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-numeric-lg":["1.25rem",{"lineHeight":"1.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"headline-md":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"700"}],"body-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"400"}],"body-md":["0.875rem",{"lineHeight":"1.25rem","fontWeight":"400"}]}}}};</script></head><body class="bg-background font-body-md text-on-surface"><aside class="fixed left-0 top-0 h-screen w-64 bg-surface-container-lowest border-r border-outline-variant z-50 flex flex-col"><div class="h-14 px-space-md border-b border-outline-variant flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-7 h-7 rounded bg-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">directions_car</span></div><div class="flex flex-col"><span class="font-headline-md text-body-sm font-bold tracking-tight text-on-surface leading-none">NEXUS OS</span><span class="font-table-header text-table-header text-outline tracking-wider uppercase mt-0.5">UAE Auto ERP</span></div></div><span class="font-label-numeric-sm text-label-numeric-sm bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded border border-outline-variant font-medium">v4.6</span></div><div class="flex-1 overflow-y-auto px-space-xs py-space-sm space-y-space-xs"><nav class="space-y-0.5" data-active-classes="bg-primary-container text-on-primary font-medium rounded"><div class="pt-space-xs pb-0.5 px-space-sm"><span class="font-table-header text-table-header uppercase text-outline tracking-wider">Primary</span></div><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="overview" href="#"><span>Overview</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="owner-brief" href="#"><span>Owner Brief</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="todays-money-leaks" href="#"><span>Today's Money Leaks</span><span class="font-label-numeric-sm text-label-numeric-sm bg-[#fdecea] text-[#c8321f] px-1.5 py-0.2 rounded font-semibold">ALERT</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="my-queue" href="#"><span>My Queue</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="leads" href="#"><span>Leads</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="record-a-lead" href="#"><span>Record a Lead</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="action-center" href="#"><span>Action Center</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="deals" href="#"><span>Deals</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="appointments" href="#"><span>Appointments</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="conversations" href="#"><span>Conversations</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="campaigns" href="#"><span>Campaigns</span></a><div class="pt-space-sm pb-0.5 px-space-sm"><span class="font-table-header text-table-header uppercase text-outline tracking-wider">Intelligence &amp; Assets</span></div><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="inventory" href="#"><span>Inventory</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="competitors" href="#"><span>Competitors</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="finance-desk" href="#"><span>Finance Desk</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="customer-360" href="#"><span>Customer 360</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="ask-ai" href="#"><span>Ask AI</span><span class="font-label-numeric-sm text-label-numeric-sm bg-[#e8f1fb] text-[#2563a8] px-1.5 py-0.2 rounded font-semibold">COPILOT</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="dealership-event-graph" href="#"><span>Dealership Event Graph</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="dealer-benchmarking" href="#"><span>Dealer Benchmarking</span></a><div class="pt-space-sm pb-0.5 px-space-sm"><span class="font-table-header text-table-header uppercase text-outline tracking-wider">Operations &amp; Infrastructure</span></div><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="customer-portal" href="#"><span>Customer Portal</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="exceptions" href="#"><span>Exceptions</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="lead-sources" href="#"><span>Lead Sources</span></a><a aria-current="page" class="flex items-center justify-between px-space-sm py-1.5 transition-colors bg-primary-container text-on-primary font-medium rounded" data-path="channels" href="#"><span>Channels</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="integrations" href="#"><span>Integrations</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="policy" href="#"><span>Policy &amp; House Rules</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="compliance-and-kyc" href="#"><span>Compliance &amp; KYC</span></a><div class="pt-space-sm pb-0.5 px-space-sm"><span class="font-table-header text-table-header uppercase text-outline tracking-wider">Settings</span></div><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="settings" href="#"><span>Workspace &amp; System Configuration</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="team" href="#"><span>Team</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="automation" href="#"><span>Automation</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="group-and-branches" href="#"><span>Group &amp; Branches</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="markets-and-localization" href="#"><span>Markets &amp; Localization</span></a><a class="flex items-center justify-between px-space-sm py-1.5 rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors font-body-md text-body-sm" data-path="subscription" href="#"><span>Subscription &amp; Tier</span></a></nav></div><div class="p-space-sm border-t border-outline-variant bg-surface-container-low"><div class="flex items-center justify-between text-on-surface-variant"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-[#157a5b]"></span><span class="font-label-numeric-sm text-label-numeric-sm font-medium">Desk Online</span></div><span class="font-label-numeric-sm text-label-numeric-sm text-outline">DXB-E11-HUB</span></div></div></aside><div class="pl-64"><header class="fixed top-0 left-64 right-0 h-14 bg-surface-container-lowest border-b border-outline-variant z-40 px-space-lg flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm"><span class="font-headline-md text-body-lg text-on-surface font-semibold tracking-tight">Demo Motors</span><span class="text-outline text-body-sm">|</span><span class="font-body-md text-body-sm text-on-surface-variant">Dubai, UAE</span><span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#e6f4ef] text-[#157a5b] border border-[#a3e0ca] font-semibold uppercase">PRODUCTION</span></div><div class="h-4 w-[1px] bg-outline-variant"></div><div class="relative flex items-center"><span class="material-symbols-outlined text-outline absolute left-2.5 text-[18px]">search</span><input class="w-80 pl-8 pr- space-sm py-1 text-body-sm font-body-md rounded bg-surface border border-outline-variant text-on-surface placeholder-outline focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" placeholder="Search VIN, stock #, customer, phone (AED)..." type="text"/></div></div><div class="flex items-center gap-space-md"><div class="flex items-center bg-surface-container rounded border border-outline-variant p-0.5 text-label-numeric-sm font-label-numeric-sm"><button class="px-2 py-0.5 rounded bg-surface-container-lowest text-primary font-semibold shadow-xs">AED</button><button class="px-2 py-0.5 rounded text-on-surface-variant hover:text-on-surface">USD</button></div><div class="flex items-center gap-space-xs px-2.5 py-1 rounded bg-surface-container-low border border-outline-variant"><span class="material-symbols-outlined text-outline text-[16px]">schedule</span><span class="font-label-numeric-md text-label-numeric-sm text-on-surface">14:48:12 <span class="text-outline font-normal">GST</span></span></div><div class="h-4 w-[1px] bg-outline-variant"></div><button class="relative p-1.5 rounded hover:bg-surface-container text-on-surface-variant transition-colors"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-error"></span></button><div class="flex items-center gap-space-sm pl-space-xs"><div class="flex flex-col text-right"><span class="font-body-md text-body-sm font-semibold text-on-surface leading-tight">Rashid Al-Maktoum</span><span class="font-table-header text-table-header text-outline uppercase">Dealer Principal</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-14 px-space-lg py-space-lg bg-background"><div class="flex flex-col w-full relative">
+<!-- Top Command Ribbon / Breadcrumbs & Title -->
+<div class="flex flex-col lg:flex-row lg:items-center justify-between pb-space-lg gap-space-md">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs text-on-surface-variant font-table-header text-table-header tracking-wider uppercase">
+<span class="hover:text-primary transition-colors cursor-pointer">Operations &amp; Infrastructure</span>
+<span class="text-outline">/</span>
+<span class="text-primary font-semibold">Channels</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight font-bold">
+        Channels — Omnichannel &amp; Customer Touchpoints
+      </h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+        Live communication gateways connecting WhatsApp Cloud API, Telephony PBX, Showroom Walk-in Desks, SMS, and Portal Web Chat across Demo Motors Dubai.
+      </p>
+</div>
+<!-- Executive Action Bar -->
+<div class="flex items-center gap-space-sm self-start lg:self-auto flex-wrap">
+<button class="flex items-center gap-1.5 px-space-md py-2 rounded bg-surface-container hover:bg-surface-container-high text-primary font-semibold font-body-md text-body-sm shadow-sm transition-all active:scale-95" id="test-all-btn" onclick="simulateAllTest()">
+<span class="material-symbols-outlined text-[18px]">play_circle</span>
+<span>Test all connections</span>
+</button>
+<button class="flex items-center gap-1.5 px-space-md py-2 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-medium font-body-md text-body-sm shadow-sm transition-all">
+<span class="material-symbols-outlined text-outline text-[18px]">menu_book</span>
+<span>Documentation</span>
+</button>
+<button class="flex items-center gap-1.5 px-space-md py-2 rounded bg-primary hover:bg-primary-container text-on-primary font-semibold font-body-md text-body-sm shadow-sm transition-all">
+<span class="material-symbols-outlined text-[18px]">add_circle</span>
+<span>Add channel</span>
+</button>
+</div>
+</div>
+<!-- Gateway State Telemetry Bar (Status Badges Legend & Fleet Health) -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-space-md mb-space-lg">
+<div class="bg-surface-container-lowest p-space-md rounded-xl flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-[#e6f4ef] flex items-center justify-center text-[#157a5b]">
+<span class="material-symbols-outlined text-[20px]">sensors</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e6f4ef] text-[#157a5b] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157a5b] animate-ping"></span>
+              RECEIVING
+            </span>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">2</span>
+</div>
+<span class="font-table-header text-table-header text-on-surface-variant block mt-0.5">Events inside &lt;24h</span>
+</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">100% Inbound</span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-xl flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-[#e8f1fb] flex items-center justify-center text-[#2563a8]">
+<span class="material-symbols-outlined text-[20px]">check_circle</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e8f1fb] text-[#2563a8] px-2 py-0.5 rounded font-semibold tracking-wide uppercase">
+              CONNECTED
+            </span>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">2</span>
+</div>
+<span class="font-table-header text-table-header text-on-surface-variant block mt-0.5">Webhook listening / Idle</span>
+</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Standby</span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-xl flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-[#fef3e2] flex items-center justify-center text-[#96570a]">
+<span class="material-symbols-outlined text-[20px]">edit_note</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#fef3e2] text-[#96570a] px-2 py-0.5 rounded font-semibold tracking-wide uppercase">
+              MANUAL
+            </span>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">1</span>
+</div>
+<span class="font-table-header text-table-header text-on-surface-variant block mt-0.5">Physical showroom intake</span>
+</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline">Desk Reps Active</span>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-xl flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-lg bg-[#fdecea] flex items-center justify-center text-[#c8321f]">
+<span class="material-symbols-outlined text-[20px]">warning</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#fdecea] text-[#c8321f] px-2 py-0.5 rounded font-semibold tracking-wide uppercase">
+              NOT CONNECTED
+            </span>
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">1</span>
+</div>
+<span class="font-table-header text-table-header text-on-surface-variant block mt-0.5">Credentials expired</span>
+</div>
+</div>
+<span class="font-label-numeric-sm text-label-numeric-sm text-error font-semibold">Action Required</span>
+</div>
+</div>
+<!-- Operational Two-Column Workspace (List View + Active Slide-Over Inspection Drawer) -->
+<div class="flex flex-col xl:flex-row gap-space-lg items-start w-full">
+<!-- Channels Inventory & Health Panel (Left Workspace) -->
+<div class="flex-1 w-full bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col">
+<!-- Panel Header Bar -->
+<div class="px-space-lg py-space-md bg-surface-container-lowest flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-md text-headline-md font-semibold text-on-surface">Configured Ingestion Touchpoints</span>
+<span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-on-surface-variant">6 Active Endpoints</span>
+</div>
+<div class="flex items-center gap-space-xs text-body-sm font-body-md text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-[#157a5b]">sync</span>
+<span>Live Polling: every 15s</span>
+</div>
+</div>
+<!-- Dense Channels Operations Table -->
+<div class="overflow-x-auto w-full">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low text-on-surface-variant font-table-header text-table-header uppercase tracking-wider h-10">
+<th class="px-space-lg py-2">Channel Name &amp; Spec</th>
+<th class="px-space-md py-2">Gateway Status</th>
+<th class="px-space-md py-2 text-right">Last Activity</th>
+<th class="px-space-md py-2 text-right">Volume (24h)</th>
+<th class="px-space-md py-2 text-center">Error Rate</th>
+<th class="px-space-lg py-2 text-right">Readiness Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container">
+<!-- Row 1: WhatsApp Business Cloud API (Active / Selected) -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer bg-primary-fixed/20 group" id="row-whatsapp" onclick="selectChannel('whatsapp')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#25D366]/10 text-[#128C7E] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">chat</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary flex items-center gap-1.5">
+                      WhatsApp Business Cloud API (Official)
+                      <span class="font-label-numeric-sm text-label-numeric-sm px-1.5 py-0.2 rounded bg-primary text-on-primary font-medium text-[10px]">SELECTED</span>
+</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Endpoint: +971 4 800 3366 • WABA ID #829401928</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e6f4ef] text-[#157a5b] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1.5 shadow-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157a5b] animate-ping"></span>
+                  RECEIVING
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                4m ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-outline">14:44:08 GST</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+                1,420 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">events</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold bg-[#e6f4ef] px-2 py-0.5 rounded">0 errors (0.0%)</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-primary text-on-primary rounded font-body-md text-body-sm font-semibold hover:bg-primary-container transition-all">
+                  Inspect
+                </button>
+</td>
+</tr>
+<!-- Row 2: Showroom Floor Intake -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group" id="row-walkin" onclick="selectChannel('walkin')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#fef3e2] text-[#96570a] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">storefront</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary">
+                      Showroom Floor Intake (Walk-in Desk)
+                    </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Concierge Terminal DXB-SZR-FL1 • 4 Stations</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#fef3e2] text-[#96570a] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">person_edit</span>
+                  MANUAL
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                28m ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-outline">14:20:15 GST</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+                14 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">entries</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant font-medium bg-surface-container px-2 py-0.5 rounded">—</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-surface-container text-on-surface-variant hover:text-on-surface rounded font-body-md text-body-sm font-medium transition-all">
+                  Configure
+                </button>
+</td>
+</tr>
+<!-- Row 3: Telephony 3CX Cloud PBX -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group" id="row-telephony" onclick="selectChannel('telephony')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#e8f1fb] text-[#2563a8] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">phone_in_talk</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary">
+                      Telephony 3CX Cloud PBX (Voice &amp; SIP)
+                    </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">SIP Trunk: sip.demomotors.ae:5060 • Webhook v2</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e6f4ef] text-[#157a5b] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157a5b] animate-ping"></span>
+                  RECEIVING
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                18m ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-outline">14:30:02 GST</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+                184 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">calls</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#96570a] font-semibold bg-[#fef3e2] px-2 py-0.5 rounded">1 error (0.54%)</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-surface-container text-on-surface-variant hover:text-on-surface rounded font-body-md text-body-sm font-medium transition-all">
+                  Configure
+                </button>
+</td>
+</tr>
+<!-- Row 4: Website Webhook Live Chat (Portal) -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group" id="row-portal" onclick="selectChannel('portal')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#f2f3ff] text-primary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">devices</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary">
+                      Website Webhook Live Chat (Portal)
+                    </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">wss://portal.demomotors.ae • Customer Desk Widget</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e8f1fb] text-[#2563a8] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>
+                  CONNECTED
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                29h ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-outline">Yesterday 09:12</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+                39 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">sessions</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold bg-[#e6f4ef] px-2 py-0.5 rounded">0 errors</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-surface-container text-on-surface-variant hover:text-on-surface rounded font-body-md text-body-sm font-medium transition-all">
+                  Configure
+                </button>
+</td>
+</tr>
+<!-- Row 5: SMS Gateway (Etisalat / du TDRA) -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group" id="row-sms" onclick="selectChannel('sms')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#e8f1fb] text-[#2563a8] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">sms</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary">
+                      SMS Gateway (Etisalat / du TDRA Sender ID)
+                    </span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Sender ID: DEMO-MOTORS • DLR Hook v3</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e8f1fb] text-[#2563a8] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">check_circle</span>
+                  CONNECTED
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                3h ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-outline">11:41:20 GST</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-on-surface">
+                612 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">outbound</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold bg-[#e6f4ef] px-2 py-0.5 rounded">0 errors</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-surface-container text-on-surface-variant hover:text-on-surface rounded font-body-md text-body-sm font-medium transition-all">
+                  Configure
+                </button>
+</td>
+</tr>
+<!-- Row 6: Instagram Direct & Meta Messenger -->
+<tr class="hover:bg-surface-container-low transition-colors cursor-pointer group bg-[#fdecea]/10" id="row-instagram" onclick="selectChannel('instagram')">
+<td class="px-space-lg py-3.5">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded bg-[#fdecea] text-[#c8321f] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">photo_camera</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-semibold text-on-surface group-hover:text-primary flex items-center gap-1.5">
+                      Instagram Direct &amp; Meta Messenger
+                      <span class="material-symbols-outlined text-error text-[16px]">priority_high</span>
+</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-error">Access Token Expired 3d ago (OAuth refresh required)</span>
+</div>
+</div>
+</td>
+<td class="px-space-md py-3.5">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#fdecea] text-[#c8321f] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px]">warning</span>
+                  NOT CONNECTED
+                </span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-medium text-on-surface">
+                72h ago
+                <span class="block font-label-numeric-sm text-label-numeric-sm text-error font-semibold">TOKEN STALE</span>
+</td>
+<td class="px-space-md py-3.5 text-right font-label-numeric-md text-label-numeric-md font-semibold text-outline">
+                0 <span class="font-body-sm text-body-sm font-normal text-on-surface-variant">events</span>
+</td>
+<td class="px-space-md py-3.5 text-center">
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#c8321f] font-semibold bg-[#fdecea] px-2 py-0.5 rounded">12 failed pings</span>
+</td>
+<td class="px-space-lg py-3.5 text-right">
+<button class="px-3 py-1 bg-error text-on-error rounded font-body-md text-body-sm font-semibold hover:bg-error/90 transition-all">
+                  Reconnect
+                </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Inbound Traffic Sparkline & Dispatch Distribution Bar -->
+<div class="p-space-lg bg-surface-container-low flex flex-col md:flex-row items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-lg">
+<div class="flex flex-col">
+<span class="font-table-header text-table-header uppercase text-outline">Total 24h Payload</span>
+<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-on-surface">2,269 Messages</span>
+</div>
+<div class="w-[1px] h-8 bg-outline-variant hidden md:block"></div>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header uppercase text-outline">Global Delivery Success</span>
+<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-[#157a5b]">99.86%</span>
+</div>
+<div class="w-[1px] h-8 bg-outline-variant hidden md:block"></div>
+<div class="flex flex-col">
+<span class="font-table-header text-table-header uppercase text-outline">Avg Gateway Latency</span>
+<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-on-surface">38ms</span>
+</div>
+</div>
+<!-- Inline SVG Sparkline Diagram -->
+<div class="flex items-center gap-space-sm">
+<div class="flex flex-col items-end">
+<span class="font-table-header text-table-header uppercase text-outline">Live 24h Inbound Curve</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-medium">+12.4% vs Yesterday</span>
+</div>
+<div class="w-36 h-9 bg-surface-container-lowest rounded px-1.5 py-1 flex items-center justify-center">
+<svg class="w-full h-full text-primary" fill="none" preserveaspectratio="none" viewbox="0 0 100 24">
+<path d="M0 20 L10 18 L20 22 L30 14 L40 16 L50 8 L60 11 L70 5 L80 12 L90 4 L100 9" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M0 20 L10 18 L20 22 L30 14 L40 16 L50 8 L60 11 L70 5 L80 12 L90 4 L100 9 L100 24 L0 24 Z" fill="currentColor" fill-opacity="0.12"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<!-- 480px Slide-Over Readiness Inspection Drawer (Focused on WhatsApp Cloud API) -->
+<div class="w-full xl:w-[480px] bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden flex flex-col shrink-0 transition-all" id="readiness-drawer">
+<!-- Drawer Header -->
+<div class="p-space-lg bg-surface-container flex items-start justify-between">
+<div class="flex items-start gap-space-sm">
+<div class="w-10 h-10 rounded-lg bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-[24px]">chat</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-headline-md font-bold text-on-surface">Channel Readiness</span>
+</div>
+<span class="font-body-md text-body-sm font-semibold text-primary">WhatsApp Business Cloud API</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant mt-0.5">+971 4 800 3366 • WABA Production</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-numeric-sm text-label-numeric-sm bg-[#e6f4ef] text-[#157a5b] px-2 py-0.5 rounded font-semibold tracking-wide uppercase inline-flex items-center gap-1 shadow-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-[#157a5b] animate-ping"></span>
+            RECEIVING
+          </span>
+<button class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant transition-colors" onclick="toggleDrawer()" title="Close Panel">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+</div>
+<!-- Overall Strict Verdict Banner (Mandatory Partial logic) -->
+<div class="px-space-lg py-space-md bg-[#FEF3E2] flex items-start gap-space-sm">
+<div class="w-7 h-7 rounded bg-[#96570A] text-white flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+</div>
+<div class="flex flex-col flex-1">
+<div class="flex items-center justify-between">
+<span class="font-label-numeric-md text-label-numeric-md font-bold text-[#96570A] uppercase tracking-wide">
+              VERDICT: PARTIAL
+            </span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-[#96570A] bg-white/70 px-2 py-0.2 rounded">
+              4 of 5 Gates Cleared
+            </span>
+</div>
+<p class="font-body-sm text-body-sm text-[#733F05] mt-1 leading-snug">
+            Ready for inbound customer messages. Outbound test pre-checks pending dealer principal template confirmation.
+          </p>
+<div class="mt-2 text-[11px] font-body-sm text-[#96570A] bg-[#FEF3E2] p-1.5 rounded flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">info</span>
+<span>Policy rule: One NOT TESTED item makes the overall verdict PARTIAL. Never green until all 5 gates pass.</span>
+</div>
+</div>
+</div>
+<!-- Readiness Checklist (5 Gates) -->
+<div class="p-space-lg flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<span class="font-table-header text-table-header uppercase text-outline tracking-wider">Gate Verification Matrix</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">Last pinged: 14:48:12 GST</span>
+</div>
+<div class="flex flex-col gap-2.5">
+<!-- Gate 1: Authentication -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-sm hover:bg-surface-container transition-colors">
+<div class="w-6 h-6 rounded-full bg-[#e6f4ef] text-[#157a5b] flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[16px] font-bold">check</span>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between">
+<span class="font-body-md text-body-sm font-semibold text-on-surface">1. Authentication</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold uppercase">PASSED</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Meta Graph API System User Token valid</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline mt-0.5">SHA Token ID #SYS_8192 • Expires in 42 days</span>
+</div>
+</div>
+<!-- Gate 2: Dealership Mapping -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-sm hover:bg-surface-container transition-colors">
+<div class="w-6 h-6 rounded-full bg-[#e6f4ef] text-[#157a5b] flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[16px] font-bold">check</span>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between">
+<span class="font-body-md text-body-sm font-semibold text-on-surface">2. Dealership mapping</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold uppercase">PASSED</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Mapped to Demo Motors Dubai SZR entity</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline mt-0.5">Branch Tenant ID: #DM-DXB-01 • Auto-route to BDC pool</span>
+</div>
+</div>
+<!-- Gate 3: Webhook Latency & HMAC -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-sm hover:bg-surface-container transition-colors">
+<div class="w-6 h-6 rounded-full bg-[#e6f4ef] text-[#157a5b] flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[16px] font-bold">check</span>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between">
+<span class="font-body-md text-body-sm font-semibold text-on-surface">3. Webhook listener</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold uppercase">PASSED</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Endpoint 200 OK — latency 42ms</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline mt-0.5">HMAC SHA-256 signature verified • TLS 1.3 Strict</span>
+</div>
+</div>
+<!-- Gate 4: Inbound test -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-sm hover:bg-surface-container transition-colors">
+<div class="w-6 h-6 rounded-full bg-[#e6f4ef] text-[#157a5b] flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[16px] font-bold">check</span>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between">
+<span class="font-body-md text-body-sm font-semibold text-on-surface">4. Inbound test</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#157a5b] font-semibold uppercase">PASSED</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Synthetic inbound message echoed</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline mt-0.5">Payload verified at 14:32 GST • 0 payload drops</span>
+</div>
+</div>
+<!-- Gate 5: Outbound test (Blocking Gate) -->
+<div class="p-space-sm rounded-lg bg-[#FEF3E2]/60 flex items-start gap-space-sm hover:bg-[#FEF3E2] transition-colors">
+<div class="w-6 h-6 rounded-full bg-[#fef3e2] text-[#96570a] flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[16px] font-bold">remove</span>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="flex items-center justify-between">
+<span class="font-body-md text-body-sm font-semibold text-on-surface">5. Outbound test</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-[#96570a] font-bold uppercase">NOT TESTED</span>
+</div>
+<span class="font-body-sm text-body-sm text-[#96570a] mt-0.5 font-medium">Template HSM ping pending dealer principal confirmation</span>
+<span class="font-label-numeric-sm text-label-numeric-sm text-outline mt-0.5">Requires 'test_drive_reminder_v2' sample trigger</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Callout Metrics Grid -->
+<div class="pt-space-sm">
+<span class="font-table-header text-table-header uppercase text-outline tracking-wider block mb-2">Live Gateway Telemetry</span>
+<div class="grid grid-cols-3 gap-2">
+<div class="bg-surface-container-low p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-[10px] uppercase text-outline">Last Inbound</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface mt-1">14:44:08 GST</span>
+<span class="font-body-sm text-[11px] text-[#157a5b] font-medium">4 mins ago</span>
+</div>
+<div class="bg-surface-container-low p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-[10px] uppercase text-outline">24h SLA</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-[#157a5b] mt-1">100.0%</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant">0 errors</span>
+</div>
+<div class="bg-surface-container-low p-2.5 rounded-lg flex flex-col">
+<span class="font-table-header text-[10px] uppercase text-outline">Packet Buffer</span>
+<span class="font-label-numeric-sm text-label-numeric-sm font-bold text-on-surface mt-1">0 Dropped</span>
+<span class="font-body-sm text-[11px] text-outline">Clean queue</span>
+</div>
+</div>
+</div>
+<!-- Drawer Interactive Actions -->
+<div class="pt-space-sm flex flex-col gap-2">
+<button class="w-full flex items-center justify-center gap-2 px-space-md py-2.5 rounded bg-primary hover:bg-primary-container text-on-primary font-semibold font-body-md text-body-sm shadow-sm transition-all active:scale-[0.99]" id="run-diagnostic-btn" onclick="runDiagnosticTest()">
+<span class="material-symbols-outlined text-[18px]">bolt</span>
+<span id="diagnostic-text">Run diagnostic test</span>
+</button>
+<div class="flex items-center gap-2">
+<button class="flex-1 flex items-center justify-center gap-1.5 px-space-md py-2 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-body-md text-body-sm font-medium transition-all" onclick="openRawLogs()">
+<span class="material-symbols-outlined text-outline text-[16px]">terminal</span>
+<span>View raw webhook logs</span>
+</button>
+<button class="flex items-center justify-center p-2 rounded bg-surface-container hover:bg-surface-container-high text-on-surface transition-all" title="Copy Webhook URL">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+</div>
+<a class="text-center font-body-sm text-body-sm text-primary hover:underline font-medium py-1" href="#">
+            Channel configuration settings →
+          </a>
+</div>
+</div>
+</div>
+</div>
+<!-- Diagnostic Toast Notification Overlay -->
+<div class="fixed bottom-6 right-6 bg-inverse-surface text-inverse-on-surface px-space-md py-space-sm rounded-lg shadow-xl hidden flex items-center gap- space-sm z-50 transition-opacity font-body-md text-body-sm" id="toast">
+<span class="material-symbols-outlined text-tertiary-fixed text-[20px]" id="toast-icon">check_circle</span>
+<span id="toast-msg">Ping executed across all endpoints.</span>
+</div>
+</div>
+<script>
+  function selectChannel(channelKey) {
+    const rows = ['whatsapp', 'walkin', 'telephony', 'portal', 'sms', 'instagram'];
+    rows.forEach(r => {
+      const el = document.getElementById('row-' + r);
+      if (el) {
+        if (r === channelKey) {
+          el.classList.add('bg-primary-fixed/20');
+        } else {
+          el.classList.remove('bg-primary-fixed/20');
+        }
+      }
+    });
+
+    const drawer = document.getElementById('readiness-drawer');
+    if (drawer) {
+      drawer.classList.remove('hidden');
+      drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function toggleDrawer() {
+    const drawer = document.getElementById('readiness-drawer');
+    if (drawer) {
+      drawer.classList.toggle('hidden');
+    }
+  }
+
+  function showToast(message, iconName = 'check_circle') {
+    const toast = document.getElementById('toast');
+    const msg = document.getElementById('toast-msg');
+    const icon = document.getElementById('toast-icon');
+    if (toast && msg) {
+      msg.textContent = message;
+      if (icon) icon.textContent = iconName;
+      toast.classList.remove('hidden');
+      toast.classList.add('flex');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+        toast.classList.remove('flex');
+      }, 3500);
+    }
+  }
+
+  function simulateAllTest() {
+    const btn = document.getElementById('test-all-btn');
+    if (btn) {
+      btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">refresh</span><span>Pinging 6 gateways...</span>`;
+      setTimeout(() => {
+        btn.innerHTML = `<span class="material-symbols-outlined text-[18px]">play_circle</span><span>Test all connections</span>`;
+        showToast("Gateway health test complete: 5 responding, 1 token expired (Instagram).");
+      }, 1200);
+    }
+  }
+
+  function runDiagnosticTest() {
+    const btn = document.getElementById('run-diagnostic-btn');
+    const label = document.getElementById('diagnostic-text');
+    if (btn && label) {
+      label.textContent = "Executing synthetic HMAC echo ping...";
+      btn.classList.add('opacity-80', 'pointer-events-none');
+      setTimeout(() => {
+        label.textContent = "Run diagnostic test";
+        btn.classList.remove('opacity-80', 'pointer-events-none');
+        showToast("Diagnostic handshake passed. Inbound latency: 39ms. Outbound test still awaits manual template authorization.", "verified");
+      }, 1400);
+    }
+  }
+
+  function openRawLogs() {
+    showToast("Opened raw webhook audit log in inspector view.", "terminal");
+  }
+</script></main></div></body></html>

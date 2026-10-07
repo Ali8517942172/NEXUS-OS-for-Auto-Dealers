@@ -42,9 +42,9 @@ order is deliberate:
    rules, consent law, the messaging channel — which is why those belong in
    per-tenant data and in the policy engine rather than in code.
 
-**ALBA CARS is tenant #1 and the pilot**, the first dealership the product has
+**Tenant A is tenant #1 and the pilot**, the first dealership the product has
 to be good enough for. It is not the customer NEXUS was built for, and a
-capability is not on the route below because ALBA needs it — it is there because
+capability is not on the route below because Tenant A needs it — it is there because
 dealerships need it.
 
 This is the intended route, not a proven one. There is no second dealership on

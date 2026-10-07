@@ -6,7 +6,7 @@ the read-only SQL channel. **No row was written. No migration was applied. No n8
 workflow was called.** Every claim below carries the query that produced it.
 
 **Reading caveat that applies to the whole file.** The SQL channel connects as a
-privileged role, not as a signed-in dealership session, and ALBA CARS is the only
+privileged role, not as a signed-in dealership session, and Tenant A is the only
 active dealership on this project. Every count is therefore a one-tenant count
 taken by a role that RLS does not constrain. Where a check could only run at one
 dealership it is recorded as NOT RUN for the multi-tenant case, not as a PASS.
@@ -21,10 +21,10 @@ customers touch this system, and what may honestly be said afterwards.**
 The 30-day plan says "one dealership, 7–14 days of real traffic". That is two
 different projects and they have different blocker lists:
 
-- **Pilot A — ALBA CARS, tenant #1.** No new tenant is activated. The tenancy
+- **Pilot A — Tenant A, tenant #1.** No new tenant is activated. The tenancy
   blockers in §2 stay dormant. The test-data, WhatsApp-number, correlation-id and
   data-protection blockers all still fire.
-- **Pilot B — a dealership that is not ALBA.** Activating them makes
+- **Pilot B — a dealership that is not Tenant A.** Activating them makes
   `count(*) from tenants where status='active'` equal 2, and §2.2 through §2.4
   fire on the first day. This is the more likely reading of "a real dealership
   pilot" and it is the harder one.
@@ -357,7 +357,7 @@ select (select count(*) from audit_log where tenant_id='02c86264-6653-4522-b055-
 ```
 
 The quarantine tenant is doing its job — these rows are visible and recoverable
-rather than silently filed under ALBA. But **an unidentified live writer is still
+rather than silently filed under Tenant A. But **an unidentified live writer is still
 producing them**, and at two dealerships that writer's output is a row that
 belongs to somebody and is filed under nobody.
 
@@ -640,7 +640,7 @@ most important thing the pilot exists to produce, and today it has produced zero
 
 ## 3. Blocker summary, ranked
 
-| # | blocker | Pilot A (ALBA) | Pilot B (new dealership) |
+| # | blocker | Pilot A (Tenant A) | Pilot B (new dealership) |
 |---|---|---|---|
 | 2.2 | WhatsApp on a personal handset; strangers' messages on file | **BLOCKS** | **BLOCKS** |
 | 2.3 | Private data on file; no consent; no retention ever run; no DPA | **BLOCKS** | **BLOCKS** |
@@ -960,7 +960,7 @@ available today is defensible only until someone asks for the query.
 
 Decisions only the owner can make. Each one changes the work.
 
-1. **Which pilot is it — ALBA CARS again, or a dealership that is not ALBA?**
+1. **Which pilot is it — Tenant A again, or a dealership that is not Tenant A?**
    Everything in §2.4, §2.5, §2.6 and §2.12 is dormant for one answer and a hard
    blocker for the other. Nothing else in this plan can be sequenced until this
    is settled.

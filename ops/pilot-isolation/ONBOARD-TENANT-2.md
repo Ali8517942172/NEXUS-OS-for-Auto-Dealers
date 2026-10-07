@@ -22,7 +22,7 @@ consequences, from `ISOLATION-MODEL.md`:
 |---|---|---|
 | `nexus_scoped_tenant_id()` starts returning **NULL** | its own guard: `… and (select count(*) from tenants where status='active' and not is_quarantine) = 1` | the nightly Customer 360 batch syncs nobody |
 | **Ask AI answers nothing, for both dealerships** | `search_rag_documents(q, limit)` passes that NULL on, and the 3-arg body returns early when `v_tenant is null and count(active tenants) > 1` | every user of the Ask AI screen (H7) |
-| dealership 2's owner can read **ALBA's full workflow register**, 18 rows | `nexus_workflow_catalogue()` guards with `exists(select 1 from nexus_current_tenant_ids())` — a membership test, not a filter (H1) | nobody, unless someone looks |
+| dealership 2's owner can read **Tenant A's full workflow register**, 18 rows | `nexus_workflow_catalogue()` guards with `exists(select 1 from nexus_current_tenant_ids())` — a membership test, not a filter (H1) | nobody, unless someone looks |
 | any human who is a member of both gets a **silent pick** of one dealership on six code paths | `nexus_current_tenant_id()` → `order by created_at limit 1` (H5) | the vendor, on day 1 |
 
 **So the order is: fix, rehearse, then activate.** Activating first and fixing after
@@ -44,7 +44,7 @@ Not a wish list. Each line is a measured item with a named source.
 | G5 | The 6 predicted-to-fail break tests in `BREAK-TESTS.md` have been **run on staging** and their results recorded | **NOT RUN** | this folder |
 | G6 | No single human is a member of both dealerships, or `nexus_current_tenant_id()` refuses ambiguity the way `nexus_lead_record_manual` already does | **open** | H5 |
 | G7 | The deployed n8n workflows have been exported and diffed, and every Supabase write node either names a tenant or calls a resolver | **UNKNOWN — export is 4 days older than `channel_registry`** | `BLOCKERS.md` §2.6, G1 in BREAK-TESTS |
-| G8 | ALBA's non-dealership WhatsApp traffic is deleted and the personal handset disconnected | **open — 107 of 142 messages, arriving as of 8 Sep** | `BLOCKERS.md` §2.2, §2.3 |
+| G8 | Tenant A's non-dealership WhatsApp traffic is deleted and the personal handset disconnected | **open — 107 of 142 messages, arriving as of 8 Sep** | `BLOCKERS.md` §2.2, §2.3 |
 | G9 | A written controller/processor term exists, naming retention, deletion-on-request and hosting location | **open** | `BLOCKERS.md` §2.3 |
 
 **G8 and G9 are not tenancy work and they are not optional.** Dealership 2's
@@ -183,8 +183,8 @@ refusal is the control working. Do not force past it.
 ```sql
 select * from public.nexus_resolve_channel_tenant('whatsapp_cloud_phone_number_id','<id>');
 -- must return dealership 2, and nothing else
-select * from public.nexus_resolve_channel_tenant('whatsapp_cloud_phone_number_id','<ALBA id>');
--- must still return ALBA
+select * from public.nexus_resolve_channel_tenant('whatsapp_cloud_phone_number_id','<Tenant A id>');
+-- must still return Tenant A
 ```
 
 **The gap this step cannot close.** `nexus_resolve_channel_tenant` is a pure function
@@ -307,7 +307,7 @@ What must be true, stated as requirements rather than steps:
    UNKNOWN** — the repository export predates the table by four days.
 3. The inbound webhooks reject an unsigned request **before** starting an execution.
 4. The **silence detector's second write path** is found and fixed (H12). One of its
-   two paths omits the tenant; on 8 Sep four markers landed on ALBA and one landed in
+   two paths omits the tenant; on 8 Sep four markers landed on Tenant A and one landed in
    quarantine, five minutes apart.
 
 **Do not proceed past this step until the live workflows have been exported and

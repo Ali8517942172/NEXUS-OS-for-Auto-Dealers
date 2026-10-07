@@ -119,12 +119,12 @@ change when a source is added.
 
 ## Open business decision
 
-**Does ALBA CARS earn commission from the bank on arranged finance?** If yes, a financed sale is worth more
+**Does Tenant A earn commission from the bank on arranged finance?** If yes, a financed sale is worth more
 than a cash sale and the bot should steer that way — but CBUAE 5.2.3.3 requires that arrangement to be
 disclosed to the customer, with controls against conflict of interest. The number is in the bank
 agreements. This is a business decision, not a technical one, and it changes how the bot should negotiate.
 
-**Note added 8 September 2026.** ALBA CARS is tenant #1 and the pilot, not the dealership NEXUS was built
+**Note added 8 September 2026.** Tenant A is tenant #1 and the pilot, not the dealership NEXUS was built
 for. Every dealership on the product has its own bank agreements and its own answer here, so this is a
 **per-tenant configuration** question rather than a one-time decision — the answer belongs in tenant data
 and in the policy engine. Nothing measured above changes.

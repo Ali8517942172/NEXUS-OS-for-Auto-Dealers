@@ -2290,6 +2290,14 @@ const NAV_IDS = [...navBlock.matchAll(/\bid\s*:\s*'([a-z0-9_]+)'/g)].map(m => m[
    exempts them from "registers a screen" and S11 asserts they do not. */
 const FOUNDER_PAGE_MODULES = new Set(['screens/founder.js']);
 /* Any founderOnly flag surviving in NAV is itself a defect (S11). */
+/* ROUTE-ONLY ITEMS (7 Oct 2026, the Stitch navigation). An item marked
+   `sidebar: false` is routable — S1 still requires a module to register it and
+   R2 still renders it — but has no sidebar row (Vehicle 360 is opened from
+   Inventory). R1 counts sidebar rows against NAV_IDS minus these, and nothing
+   else is relaxed for them. */
+const NAV_ROUTE_ONLY_IDS = new Set(
+  [...navBlock.matchAll(/\{\s*id\s*:\s*'([a-z0-9_]+)'[^}]*sidebar\s*:\s*false/g)].map(m => m[1]));
+const NAV_SIDEBAR_IDS = NAV_IDS.filter(id => !NAV_ROUTE_ONLY_IDS.has(id));
 const NAV_FOUNDER_ONLY_IDS = new Set(
   [...navBlock.matchAll(/\{\s*id\s*:\s*'([a-z0-9_]+)'[^}]*founderOnly\s*:\s*true/g)].map(m => m[1]));
 
@@ -3874,7 +3882,7 @@ function stubRest(url, method, body) {
   }
 
   const row = fabricate(name);
-  if (name === 'tenants') return { status: 200, body: [{ ...row, id: 't1', name: 'ALBA CARS', slug: 'alba-cars', status: 'active', is_unattributed_default: true }] };
+  if (name === 'tenants') return { status: 200, body: [{ ...row, id: 't1', name: 'Tenant A', slug: 'alba-cars', status: 'active', is_unattributed_default: true }] };
   if (name === 'tenant_members') return { status: 200, body: [{ tenant_id: 't1', auth_user_id: 'u1', role: 'member', staff_user_id: 's1', created_at: '2026-09-01T00:00:00Z' }] };
 
   if (name === 'v_inventory_profit_sentinel')
@@ -4051,7 +4059,19 @@ try {
   await page.goto('http://127.0.0.1:8071/', { waitUntil: 'load' });
   await page.waitForTimeout(2200);
   const loggedIn = await page.evaluate(() => !document.getElementById('app').classList.contains('hide'));
-  const nav = await page.evaluate(() => document.querySelectorAll('.nav-item').length);
+  /* `.nx-nav-item` since the Stitch sidebar (7 Oct 2026); every row, including
+     the roadmap rows inside a collapsed "+N coming soon" group, is in the DOM. */
+  const nav = await page.evaluate(() => document.querySelectorAll('.nx-nav-item').length);
+  /* R8's input, from the shell with every overlay open: the scope menu, the
+     health popover and the notifications drawer only exist as classes while
+     they are painted. */
+  const classTokens = new Set();
+  const harvest = async () => (await page.evaluate(() =>
+    [...document.querySelectorAll('[class]')].flatMap(e => [...e.classList]))).forEach(t => classTokens.add(t));
+  for (const sel of ['#scopeBtn', '#healthBtn', '#bellBtn']) {
+    if (await page.$(sel)) { await page.click(sel).catch(() => {}); await page.waitForTimeout(400); await harvest(); }
+  }
+  await page.keyboard.press('Escape').catch(() => {});
   const bootText = await page.evaluate(() => (document.getElementById('boot').innerText || '').slice(0, 200));
 
   const screens = {};
@@ -4074,17 +4094,18 @@ try {
            these two count those and only those. */
         decideButtons: host.querySelectorAll('button[data-decide]').length,
         decideDisabled: host.querySelectorAll('button[data-decide][disabled]').length,
-        stuckLoading: host.querySelectorAll('.skeleton').length > 0,
+        stuckLoading: host.querySelectorAll('.skeleton, [data-skeleton]').length > 0,
         errored: /Couldn.t load/.test(h) };
     });
     screens[id].newErrors = errs.length - before;
+    await harvest();
   }
   /* A stale #founder hash (a bookmark from when the console lived in this app)
      must land on the default screen, and no nav item may name the founder. */
   await page.evaluate(() => { location.hash = 'founder'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
   await page.waitForTimeout(900);
   const staleFounder = await page.evaluate(() => ({ hash: location.hash,
-    navFounder: [...document.querySelectorAll('.nav-item')].some(b => /founder/i.test(b.innerText || '')) }));
+    navFounder: [...document.querySelectorAll('.nx-nav-item')].some(b => /founder/i.test(b.textContent || '')) }));
   /* The founder page, opened by this same NON-founder stub account (never
      seeded into platform_admin): it must say "Not authorised" and draw no
      console. */
@@ -4096,7 +4117,7 @@ try {
     consoleChars: document.getElementById('screen').innerHTML.length }));
   await browser.close();
   srv.close();
-  render = { loggedIn, nav, bootText, screens, errs, rejections, restCalls, staleFounder, founderPage };
+  render = { loggedIn, nav, bootText, screens, errs, rejections, restCalls, staleFounder, founderPage, classTokens: [...classTokens] };
 } catch (e) {
   render = { failed: String(e.message || e) };
 }
@@ -4109,20 +4130,21 @@ if (render.failed) {
                          ['R4', 'An uncomputable figure renders as words, never as zero'],
                          ['R5', 'A fabricated recovered value is refused by the screen'],
                          ['R6', 'Every action lifecycle state has its own words'],
-                         ['R7', 'Authorisation is shown and disabled, not hidden']])
+                         ['R7', 'Authorisation is shown and disabled, not hidden'],
+                         ['R8', 'Every Tailwind class on a rendered screen exists in the built CSS']])
     NOTRUN(id, LANE.RENDER, 'P0', t, why);
 } else {
   const r = render;
 
   verdict('R1', LANE.RENDER, 'P0', 'The app boots and registers every screen',
     [!r.loggedIn && `the app did not reach a signed-in state (boot said: ${r.bootText || 'nothing'})`,
-     r.nav !== NAV_IDS.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length}`,
+     r.nav !== NAV_SIDEBAR_IDS.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_SIDEBAR_IDS.length} sidebar rows (${NAV_IDS.length} routes, ${NAV_ROUTE_ONLY_IDS.size} route-only)`,
      r.staleFounder.hash !== '#moneyleaks' && `a stale #founder hash landed on ${r.staleFounder.hash}, not the default screen`,
      r.staleFounder.navFounder && 'a dealer nav item names the founder',
      ...NAV_IDS.filter(id => /founder/i.test(r.screens[id].text || '')).map(id => `the ${id} screen shows the word "founder" to a dealer`),
      (r.founderPage.appShown || r.founderPage.consoleChars > 0) && 'the founder page drew its console for a non-founder account',
      !/Not authorised/.test(r.founderPage.boot) && `the founder page did not say "Not authorised" to a non-founder (it said: ${r.founderPage.boot || 'nothing'})`].filter(Boolean),
-    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_IDS.length} lib/nav.js declares`, `${r.errs.length} page errors across the whole run`,
+    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_SIDEBAR_IDS.length} sidebar rows lib/nav.js declares (+${NAV_ROUTE_ONLY_IDS.size} route-only: ${[...NAV_ROUTE_ONLY_IDS].join(', ') || 'none'})`, `${r.errs.length} page errors across the whole run`,
      `#founder -> ${r.staleFounder.hash}; founder page as a non-founder: "Not authorised"`]);
 
   const broken = NAV_IDS.filter(id => { const s = r.screens[id]; return s.len < 200 || s.errored || s.newErrors > 0 || s.stuckLoading; });
@@ -4243,6 +4265,43 @@ if (render.failed) {
       [`served may_decide=false / NOT_AN_APPROVER; the screen rendered ${s.decideButtons} decision control(s) (button[data-decide]) and all ${s.decideDisabled} of them are disabled`,
        'the refusal sentence checked is the exact string the stub served, not a family of approver-ish words',
        `${s.disabledButtons} disabled buttons on the screen in total — reported for context and deliberately NOT the test`]);
+  }
+}
+
+/* ── R8 · no Tailwind class is missing from the built CSS ───────────────────
+   Added 7 Oct 2026 with the Stitch redesign. Tailwind was removed from this
+   dashboard in August because a class assembled at runtime (`bg-${tone}`) is
+   invisible to its content scanner, is never generated, and renders unstyled
+   — in production only. It came back on condition that this cannot happen
+   silently, and this is the end-to-end half of that condition:
+
+     · every class on every element of every rendered screen (and of the
+       shell's three overlays, opened) is collected in the render lane above;
+     · Tailwind itself is asked which of those tokens are its utilities
+       (a legacy class such as `card` is not, and is not judged here);
+     · each such utility must be present in dist/assets/*.css — the CSS the
+       gate just built.
+
+   scripts/stitch-classes.mjs runs the source-side half (a lint for class
+   strings glued to an interpolation, and the same presence question over the
+   content globs) on every `npm run build`; its lint runs here too, so a
+   gate-only run cannot skip it. */
+if (!render.failed) {
+  try {
+    const sc = await import(pathToFileURL(join(HERE, 'scripts', 'stitch-classes.mjs')).href);
+    const css = sc.builtCss(join(HERE, 'dist'));
+    const have = css ? sc.classesInCss(css) : new Set();
+    const tw = await sc.recognised(render.classTokens || []);
+    const missing = tw.filter(c => !have.has(c)).sort();
+    const lintHits = sc.lint();
+    verdict('R8', LANE.RENDER, 'P0', 'Every Tailwind class on a rendered screen exists in the built CSS',
+      [...(css ? [] : ['dist/assets has no CSS to check against']),
+       ...missing.map(c => `rendered with class "${c}", which Tailwind recognises and the built CSS does not contain — it renders unstyled`),
+       ...lintHits.map(h => `class string assembled at runtime from a Tailwind root (invisible to the content scanner): ${h}`)],
+      [`${(render.classTokens || []).length} distinct class tokens rendered across ${NAV_IDS.length} screens and the shell overlays; ${tw.length} of them are Tailwind utilities, all present in the built CSS`,
+       'source lint (scripts/stitch-classes.mjs): no class string glued to an interpolation or a concatenation']);
+  } catch (e) {
+    NOTRUN('R8', LANE.RENDER, 'P0', 'Every Tailwind class on a rendered screen exists in the built CSS', `the class check could not run: ${String(e && e.message || e)}`);
   }
 }
 

@@ -133,7 +133,7 @@ the returned versionId. `versionId == activeVersionId` confirmed
 mismatches.
 
 **Live re-run, 20 Sep ~15:01 UTC, all 3 cases PASS**: A-claims-B resolved to
-dealer A's real tenant (ALBA), B-claims-A resolved to dealer B's real tenant,
+dealer A's real tenant (Tenant A), B-claims-A resolved to dealer B's real tenant,
 B-no-claim resolved to dealer B's real tenant -- in every case the claimed
 `tenant_id` in the body was completely ignored and the caller's authenticated
 identity won, which is a stronger guarantee than "refuse on mismatch" (the
@@ -404,7 +404,7 @@ re-exported with `scripts/export_workflows.py` and re-ran the test against
 that fresh export — 18/18 again. Also ran
 `ops/tenant-precedence/code/rule-scorer.test.mjs` — 10/10.
 
-**Live proof (exec `16187`, lead id `152`, tenant `fff6a2b5-cfd5-4460-8383-875bc5826de0` = dealer A / ALBA):**
+**Live proof (exec `16187`, lead id `152`, tenant `fff6a2b5-cfd5-4460-8383-875bc5826de0` = dealer A / Tenant A):**
 pushed one NEXUS-TEST lead through the Master Router webhook as dealer A
 (marker `NXTEST-496e60820198`, no `tenant_id` claim). The live free model
 babbled its own system-prompt instructions back ("We need to return a raw

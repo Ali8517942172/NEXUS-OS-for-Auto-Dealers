@@ -33,7 +33,7 @@ if (webhookJson) {
     // authenticated its caller belongs to no dealership, so that workflow omits
     // tenant_id and audit_log's own DEFAULT nexus_default_tenant_id() retains
     // the row under the quarantine tenant instead of appending an anonymous
-    // stranger's row to ALBA CARS' audit trail. Keep the marker at the START of
+    // stranger's row to Tenant A' audit trail. Keep the marker at the START of
     // the message: the handler tests position 0.
     throw new Error('[NEXUS-UNATTRIBUTED] Closed-won sync aborted: unauthorized. A valid Supabase session token is required in the Authorization header.');
   }
@@ -121,7 +121,7 @@ if (!dealId) {
 // with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is
 // filed under the quarantine tenant instead of being appended to some real
 // dealership's audit trail.
-const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS
+const NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // Tenant A
 const NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let nexusMap = {};
 try { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }

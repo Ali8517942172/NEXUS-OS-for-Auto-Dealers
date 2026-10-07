@@ -27,6 +27,9 @@ import '../lib/theme-auth.css';
 import '../lib/theme-modal.css';
 import '../lib/theme-table.css';
 import '../lib/theme-forms.css';
+/* The Stitch layer, last, exactly as app.js loads it: the founder console was
+   rebuilt from its Stitch exports on 7 Oct 2026 (screens/founder.js). */
+import '../lib/stitch.css';
 
 import { $ } from '../lib/dom.js';
 import { esc } from '../lib/format.js';

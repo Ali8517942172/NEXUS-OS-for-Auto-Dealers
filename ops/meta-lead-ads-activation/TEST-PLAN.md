@@ -142,7 +142,7 @@ source key here means the origin was lost again.
 coalesces both and nothing complains if it stops (`GO-LIVE.md:614-626`).
 
 ### H10 · Dashboard UI
-**Proof lives in:** the screen, opened as a signed-in ALBA session — and it is
+**Proof lives in:** the screen, opened as a signed-in Tenant A session — and it is
 **level 3 evidence at best**, because production has exactly one login and it
 belongs to the owner (`STATUS-LADDER.md:27`).
 **Required:** the lead visible, attributed to Facebook, with the vehicle and the

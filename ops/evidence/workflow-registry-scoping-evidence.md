@@ -39,7 +39,7 @@ predicate that filters nothing, written so it reads like a scope. It would clear
 can see by exactly zero rows. That is the definition of chasing the check.
 A *non*-nullable `tenant_id` is worse: it can only be populated by inventing
 18 mappings that no measurement supports, and one of those inventions would be
-"NEXUS's privacy page belongs to ALBA CARS".
+"NEXUS's privacy page belongs to Tenant A".
 
 **Rejected — splitting the table.** A vendor half (`id`, triggers, cadence) and a
 dealer-safe half (the naming/alias projection the views need). The dealer-safe
@@ -229,22 +229,22 @@ both **false**; function ACL `postgres=X | authenticated=X | service_role=X` wit
 ## 5. Adversarial proof — PRODUCTION (`dsvuoovivysszdoiorch`)
 
 Rolled-back transaction, `set_config('role', …)` plus a real JWT `sub` claim for
-the ALBA CARS owner (`21460dfd-…`, tenant `fff6a2b5-…`, `status='active'`).
+the Tenant A owner (`21460dfd-…`, tenant `fff6a2b5-…`, `status='active'`).
 
 ```
-ALBA MEMBER  count(*) workflow_registry              -> 42501
-ALBA MEMBER  select name from table                  -> 42501
-ALBA MEMBER  select * from table                     -> 42501
-ALBA MEMBER  select id from table                    -> 42501
-ALBA MEMBER  nexus_workflow_catalogue()              -> EXECUTED n=18
-ALBA MEMBER  v_workflow_health                       -> EXECUTED n=18
-ALBA MEMBER  v_workflow_health where health not null -> EXECUTED n=18
-ALBA MEMBER  select id from v_workflow_health        -> 42703
-ALBA MEMBER  select trigger_detail from v_workflow_health -> 42703
-ALBA MEMBER  v_lead_recovery                         -> EXECUTED n=3
-ALBA MEMBER  v_lead_recovery detector_last_run_at not null -> EXECUTED n=3
-ALBA MEMBER  v_needs_attention                       -> EXECUTED n=9
-ALBA MEMBER  v_audit_unregistered_writers            -> EXECUTED n=2
+Tenant A MEMBER  count(*) workflow_registry              -> 42501
+Tenant A MEMBER  select name from table                  -> 42501
+Tenant A MEMBER  select * from table                     -> 42501
+Tenant A MEMBER  select id from table                    -> 42501
+Tenant A MEMBER  nexus_workflow_catalogue()              -> EXECUTED n=18
+Tenant A MEMBER  v_workflow_health                       -> EXECUTED n=18
+Tenant A MEMBER  v_workflow_health where health not null -> EXECUTED n=18
+Tenant A MEMBER  select id from v_workflow_health        -> 42703
+Tenant A MEMBER  select trigger_detail from v_workflow_health -> 42703
+Tenant A MEMBER  v_lead_recovery                         -> EXECUTED n=3
+Tenant A MEMBER  v_lead_recovery detector_last_run_at not null -> EXECUTED n=3
+Tenant A MEMBER  v_needs_attention                       -> EXECUTED n=9
+Tenant A MEMBER  v_audit_unregistered_writers            -> EXECUTED n=2
 NOMEMBER     count(*) workflow_registry              -> 42501
 NOMEMBER     nexus_workflow_catalogue()              -> EXECUTED n=0
 NOMEMBER     v_workflow_health                       -> EXECUTED n=0
@@ -258,7 +258,7 @@ ANON         nexus_workflow_catalogue()              -> 42501
 ANON         v_workflow_health                       -> 42501
 ```
 
-`FORGED CLAIM` is the ALBA `sub` plus a `tenant_id` claim naming a tenant that
+`FORGED CLAIM` is the Tenant A `sub` plus a `tenant_id` claim naming a tenant that
 does not exist; it changes nothing, because the accessor asks
 `nexus_current_tenant_ids()` rather than reading a claim.
 
@@ -280,7 +280,7 @@ v_audit_unregistered_writers : symmetric difference vs its pre-change body = 0 r
 ```
 
 And the source relation is identical for the caller who matters: the accessor read
-as the ALBA member and the table read as `postgres` produce the same 18 tuples over
+as the Tenant A member and the table read as `postgres` produce the same 18 tuples over
 all seven projected columns — `md5 = 549253c266b376a8760a8d616eb18c73` on both
 sides.
 
@@ -455,7 +455,7 @@ re-derive is a claim:
    proofs above are `set_config('role',…)` plus a JWT `sub` claim in a rolled-back
    transaction, which is conclusive about grants and about what the accessor
    returns; the `anon` proofs *are* over the live REST API. No browser session was
-   signed in and no ALBA password is available in this environment, so the five
+   signed in and no Tenant A password is available in this environment, so the five
    repointed screens are syntax-checked, built and reasoned about, **not observed**
    rendering against live data.
 4. **The render lane now exercises a different branch for those five screens.**
